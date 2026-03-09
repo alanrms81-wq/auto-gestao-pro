@@ -2,114 +2,57 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-type Usuario = {
-  id: number;
-  usuario: string;
-  nome: string;
-  senha: string;
-  role: "ADMIN" | "FUNCIONARIO";
-  status: "ATIVO" | "INATIVO";
-  privilegios?: string[];
-};
-
-const LS_USUARIOS = "usuarios";
-
-function readUsuarios(): Usuario[] {
-  try {
-    const raw = localStorage.getItem(LS_USUARIOS);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-function seedAdmin() {
-  const lista = readUsuarios();
-
-  if (lista.length > 0) return;
-
-  const admin: Usuario = {
-    id: 1,
-    usuario: "ADMIN",
-    nome: "ADMINISTRADOR",
-    senha: "123456",
-    role: "ADMIN",
-    status: "ATIVO",
-    privilegios: [
-      "DASHBOARD",
-      "CLIENTES",
-      "ORDENS",
-      "PRODUTOS",
-      "CATEGORIAS",
-      "FORNECEDORES",
-      "VENDAS",
-      "FINANCEIRO",
-      "USUARIOS",
-    ],
-  };
-
-  localStorage.setItem(LS_USUARIOS, JSON.stringify([admin]));
-}
+import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
   const router = useRouter();
 
-  const [usuario, setUsuario] = useState("");
+  const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function login() {
-    seedAdmin();
+  async function fazerLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
 
-    const lista = readUsuarios();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: senha,
+    });
 
-    const u = lista.find(
-      (x) =>
-        x.usuario.toUpperCase() === usuario.toUpperCase() &&
-        x.senha === senha
-    );
-
-    if (!u) {
-      alert("USUÁRIO OU SENHA INVÁLIDOS");
+    if (error) {
+      alert("ERRO NO LOGIN: " + error.message);
+      setLoading(false);
       return;
     }
 
-    if (u.status !== "ATIVO") {
-      alert("USUÁRIO INATIVO");
+    if (!data.user) {
+      alert("USUÁRIO NÃO ENCONTRADO.");
+      setLoading(false);
       return;
     }
-
-    const session = {
-      ok: true,
-      id: u.id,
-      usuario: u.usuario,
-      nome: u.nome,
-      role: u.role,
-      privilegios: u.privilegios || [],
-    };
-
-    localStorage.setItem("sessionUser", JSON.stringify(session));
-    localStorage.setItem("agp_auth", "1");
 
     router.push("/dashboard");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]">
-      <div className="bg-white shadow-lg rounded-2xl p-8 w-96">
-
-        <h1 className="text-2xl font-black text-[#0A569E] mb-6 text-center">
-          AUTO GESTÃO PRÓ
+    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] px-4">
+      <div className="bg-white p-8 rounded-2xl shadow w-full max-w-[380px]">
+        <h1 className="text-2xl font-black text-center mb-2 text-[#0A569E]">
+          AUTO GESTÃO PRO
         </h1>
+        <p className="text-sm text-center text-[#6C757D] mb-6">
+          Login com Supabase
+        </p>
 
-        <div className="flex flex-col gap-3">
-
+        <form onSubmit={fazerLogin} className="space-y-4">
           <input
-            placeholder="USUÁRIO"
-            value={usuario}
-            onChange={(e) => setUsuario(e.target.value.toUpperCase())}
-            className="border rounded-lg px-3 py-2"
+            type="email"
+            placeholder="EMAIL"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="border p-3 rounded w-full"
+            required
           />
 
           <input
@@ -117,22 +60,18 @@ export default function LoginPage() {
             placeholder="SENHA"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
-            className="border rounded-lg px-3 py-2"
+            className="border p-3 rounded w-full"
+            required
           />
 
           <button
-            onClick={login}
-            className="bg-[#0A569E] text-white font-bold py-2 rounded-lg mt-2 hover:opacity-95"
+            type="submit"
+            disabled={loading}
+            className="bg-[#0A569E] text-white w-full p-3 rounded-lg font-bold"
           >
-            ENTRAR
+            {loading ? "ENTRANDO..." : "ENTRAR"}
           </button>
-
-        </div>
-
-        <div className="text-xs text-center text-gray-500 mt-4">
-          ADMIN / 123456
-        </div>
-
+        </form>
       </div>
     </div>
   );

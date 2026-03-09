@@ -3,59 +3,39 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter } from "next/navigation";
-import { canAccess, isLogged } from "@/lib/authGuard";
+import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/session";
 
 type Produto = {
-  id: number;
+  id: string;
+  empresa_id: string;
   nome: string;
-  codigoSku: string;
-  codigoBarras: string;
-
-  categoria: string;
-  subcategoria: string;
-
-  ncm: string;
-  cest: string;
-  cfop: string;
-  unidade: string;
-  origem: string;
-  cstCsosn: string;
-  aliquotaIcms: number;
-  aliquotaPis: number;
-  aliquotaCofins: number;
-
-  precoBalcao: number;
-  precoInstalacao: number;
-  precoRevenda: number;
-
-  controlaEstoque: boolean;
-  estoqueAtual: number;
-  estoqueMinimo: number;
-
-  status: "ATIVO" | "INATIVO";
-
-  fotoBase64?: string;
-  fotoUrl?: string;
+  codigo_sku?: string | null;
+  codigo_barras?: string | null;
+  categoria?: string | null;
+  subcategoria?: string | null;
+  ncm?: string | null;
+  cest?: string | null;
+  cfop?: string | null;
+  unidade?: string | null;
+  origem?: string | null;
+  cst_csosn?: string | null;
+  aliquota_icms?: number | null;
+  aliquota_pis?: number | null;
+  aliquota_cofins?: number | null;
+  preco_balcao?: number | null;
+  preco_instalacao?: number | null;
+  preco_revenda?: number | null;
+  controla_estoque?: boolean | null;
+  estoque_atual?: number | null;
+  estoque_minimo?: number | null;
+  status?: string | null;
+  foto_url?: string | null;
+  created_at?: string | null;
 };
-
-const LS_PRODUTOS = "produtos";
 
 function up(v: any) {
   return String(v ?? "").toUpperCase();
-}
-
-function readLS<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLS<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value));
 }
 
 function toMoney(v: any) {
@@ -125,7 +105,7 @@ function mapHeaderIndex(headers: string[]) {
   return idx;
 }
 
-function getCell(row: any[], map: Record<string, number>, keys: string[]) {
+function getCell(row: string[], map: Record<string, number>, keys: string[]) {
   for (const k of keys) {
     const i = map[normalizeKey(k)];
     if (i !== undefined) return row[i] ?? "";
@@ -133,34 +113,22 @@ function getCell(row: any[], map: Record<string, number>, keys: string[]) {
   return "";
 }
 
-function getFotoSrc(produto: Produto | null, fotoBase64: string, fotoUrl: string) {
-  if (produto) {
-    if (produto.fotoBase64) return produto.fotoBase64;
-    if (produto.fotoUrl) return produto.fotoUrl;
-    return "";
-  }
-
-  if (fotoBase64) return fotoBase64;
-  if (fotoUrl) return fotoUrl;
-  return "";
-}
-
 export default function ProdutosPage() {
   const router = useRouter();
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState("");
-
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [nome, setNome] = useState("");
   const [codigoSku, setCodigoSku] = useState("");
   const [codigoBarras, setCodigoBarras] = useState("");
-
   const [categoria, setCategoria] = useState("");
   const [subcategoria, setSubcategoria] = useState("");
-
   const [ncm, setNcm] = useState("");
   const [cest, setCest] = useState("");
   const [cfop, setCfop] = useState("5102");
@@ -170,59 +138,85 @@ export default function ProdutosPage() {
   const [aliquotaIcms, setAliquotaIcms] = useState("0");
   const [aliquotaPis, setAliquotaPis] = useState("0");
   const [aliquotaCofins, setAliquotaCofins] = useState("0");
-
   const [precoBalcao, setPrecoBalcao] = useState("");
   const [precoInstalacao, setPrecoInstalacao] = useState("");
   const [precoRevenda, setPrecoRevenda] = useState("");
-
   const [controlaEstoque, setControlaEstoque] = useState(true);
   const [estoqueAtual, setEstoqueAtual] = useState("");
   const [estoqueMinimo, setEstoqueMinimo] = useState("");
-
-  const [status, setStatus] = useState<"ATIVO" | "INATIVO">("ATIVO");
-  const [fotoBase64, setFotoBase64] = useState("");
+  const [status, setStatus] = useState("ATIVO");
   const [fotoUrl, setFotoUrl] = useState("");
 
-  const csvInputRef = useRef<HTMLInputElement | null>(null);
-  const fotoInputRef = useRef<HTMLInputElement | null>(null);
-
   useEffect(() => {
-    if (!isLogged()) {
-      router.push("/login");
-      return;
+    async function init() {
+      const user = await getSessionUser();
+
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      setEmpresaId(user.empresa_id);
+      await carregarProdutos(user.empresa_id);
+      setReady(true);
     }
 
-    if (!canAccess("PRODUTOS")) {
-      alert("ACESSO NEGADO");
-      router.push("/dashboard");
-      return;
-    }
-
-    setProdutos(readLS<Produto[]>(LS_PRODUTOS, []));
-    setReady(true);
+    init();
   }, [router]);
+
+  async function carregarProdutos(eid?: string) {
+    const empId = eid || empresaId;
+    if (!empId) return;
+
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("produtos")
+      .select("*")
+      .eq("empresa_id", empId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      alert("ERRO AO CARREGAR PRODUTOS: " + error.message);
+    } else {
+      setProdutos((data || []) as Produto[]);
+    }
+
+    setLoading(false);
+  }
 
   const produtosFiltrados = useMemo(() => {
     const q = up(busca.trim());
     if (!q) return produtos;
 
-    return produtos.filter((p) => {
-      const texto = up(
-        `${p.nome} ${p.codigoSku} ${p.codigoBarras} ${p.categoria} ${p.subcategoria} ${p.ncm} ${p.cest} ${p.cfop} ${p.cstCsosn}`
-      );
-      return texto.includes(q);
-    });
-  }, [busca, produtos]);
+    return produtos.filter((p) =>
+      up(
+        `${p.nome} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""} ${p.ncm || ""} ${p.cfop || ""}`
+      ).includes(q)
+    );
+  }, [produtos, busca]);
 
-  const totalEstoque = useMemo(() => {
-    return produtos.reduce((acc, p) => acc + toMoney(p.estoqueAtual), 0);
-  }, [produtos]);
+  const total = useMemo(() => produtos.length, [produtos]);
 
-  const estoqueBaixo = useMemo(() => {
-    return produtos.filter(
-      (p) => p.controlaEstoque && toMoney(p.estoqueAtual) <= toMoney(p.estoqueMinimo)
-    ).length;
-  }, [produtos]);
+  const ativos = useMemo(
+    () => produtos.filter((p) => (p.status || "ATIVO") !== "INATIVO").length,
+    [produtos]
+  );
+
+  const estoqueTotal = useMemo(
+    () => produtos.reduce((acc, p) => acc + toMoney(p.estoque_atual), 0),
+    [produtos]
+  );
+
+  const estoqueBaixo = useMemo(
+    () =>
+      produtos.filter(
+        (p) =>
+          !!p.controla_estoque &&
+          toMoney(p.estoque_atual) <= toMoney(p.estoque_minimo)
+      ).length,
+    [produtos]
+  );
 
   function resetForm() {
     setEditingId(null);
@@ -247,72 +241,78 @@ export default function ProdutosPage() {
     setEstoqueAtual("");
     setEstoqueMinimo("");
     setStatus("ATIVO");
-    setFotoBase64("");
     setFotoUrl("");
   }
 
-  function salvarProduto() {
+  async function salvarProduto() {
+    if (!empresaId) return;
+
     if (!nome.trim()) {
-      alert("INFORME O NOME DO PRODUTO.");
+      alert("PREENCHA O NOME DO PRODUTO.");
       return;
     }
 
-    const base: Produto = {
-      id: editingId || Date.now(),
-      nome: up(nome),
-      codigoSku: up(codigoSku),
-      codigoBarras: up(codigoBarras),
-
-      categoria: up(categoria),
-      subcategoria: up(subcategoria),
-
-      ncm: up(ncm),
-      cest: up(cest),
-      cfop: up(cfop || "5102"),
-      unidade: up(unidade || "UN"),
-      origem: up(origem || "0"),
-      cstCsosn: up(cstCsosn || "102"),
-      aliquotaIcms: toMoney(aliquotaIcms),
-      aliquotaPis: toMoney(aliquotaPis),
-      aliquotaCofins: toMoney(aliquotaCofins),
-
-      precoBalcao: toMoney(precoBalcao),
-      precoInstalacao: toMoney(precoInstalacao),
-      precoRevenda: toMoney(precoRevenda),
-
-      controlaEstoque,
-      estoqueAtual: controlaEstoque ? toMoney(estoqueAtual) : 0,
-      estoqueMinimo: controlaEstoque ? toMoney(estoqueMinimo) : 0,
-
-      status,
-      fotoBase64,
-      fotoUrl: fotoUrl.trim(),
+    const payload = {
+      empresa_id: empresaId,
+      nome: up(nome.trim()),
+      codigo_sku: up(codigoSku.trim()),
+      codigo_barras: up(codigoBarras.trim()),
+      categoria: up(categoria.trim()),
+      subcategoria: up(subcategoria.trim()),
+      ncm: up(ncm.trim()),
+      cest: up(cest.trim()),
+      cfop: up(cfop.trim() || "5102"),
+      unidade: up(unidade.trim() || "UN"),
+      origem: up(origem.trim() || "0"),
+      cst_csosn: up(cstCsosn.trim() || "102"),
+      aliquota_icms: toMoney(aliquotaIcms),
+      aliquota_pis: toMoney(aliquotaPis),
+      aliquota_cofins: toMoney(aliquotaCofins),
+      preco_balcao: toMoney(precoBalcao),
+      preco_instalacao: toMoney(precoInstalacao),
+      preco_revenda: toMoney(precoRevenda),
+      controla_estoque: controlaEstoque,
+      estoque_atual: controlaEstoque ? toMoney(estoqueAtual) : 0,
+      estoque_minimo: controlaEstoque ? toMoney(estoqueMinimo) : 0,
+      status: up(status || "ATIVO"),
+      foto_url: fotoUrl.trim(),
     };
 
-    const lista = [...produtos];
-
     if (editingId) {
-      const idx = lista.findIndex((p) => p.id === editingId);
-      if (idx < 0) {
-        alert("PRODUTO NÃO ENCONTRADO.");
+      const { error } = await supabase
+        .from("produtos")
+        .update(payload)
+        .eq("id", editingId)
+        .eq("empresa_id", empresaId);
+
+      if (error) {
+        alert("ERRO AO ATUALIZAR PRODUTO: " + error.message);
         return;
       }
-      lista[idx] = base;
-    } else {
-      lista.push(base);
+
+      alert("PRODUTO ATUALIZADO!");
+      resetForm();
+      carregarProdutos();
+      return;
     }
 
-    writeLS(LS_PRODUTOS, lista);
-    setProdutos(lista);
+    const { error } = await supabase.from("produtos").insert([payload]);
+
+    if (error) {
+      alert("ERRO AO CRIAR PRODUTO: " + error.message);
+      return;
+    }
+
+    alert("PRODUTO CRIADO!");
     resetForm();
-    alert(editingId ? "PRODUTO ATUALIZADO!" : "PRODUTO CRIADO!");
+    carregarProdutos();
   }
 
   function editarProduto(p: Produto) {
     setEditingId(p.id);
     setNome(p.nome || "");
-    setCodigoSku(p.codigoSku || "");
-    setCodigoBarras(p.codigoBarras || "");
+    setCodigoSku(p.codigo_sku || "");
+    setCodigoBarras(p.codigo_barras || "");
     setCategoria(p.categoria || "");
     setSubcategoria(p.subcategoria || "");
     setNcm(p.ncm || "");
@@ -320,212 +320,210 @@ export default function ProdutosPage() {
     setCfop(p.cfop || "5102");
     setUnidade(p.unidade || "UN");
     setOrigem(p.origem || "0");
-    setCstCsosn(p.cstCsosn || "102");
-    setAliquotaIcms(String(toMoney(p.aliquotaIcms)));
-    setAliquotaPis(String(toMoney(p.aliquotaPis)));
-    setAliquotaCofins(String(toMoney(p.aliquotaCofins)));
-    setPrecoBalcao(String(toMoney(p.precoBalcao)));
-    setPrecoInstalacao(String(toMoney(p.precoInstalacao)));
-    setPrecoRevenda(String(toMoney(p.precoRevenda)));
-    setControlaEstoque(!!p.controlaEstoque);
-    setEstoqueAtual(String(toMoney(p.estoqueAtual)));
-    setEstoqueMinimo(String(toMoney(p.estoqueMinimo)));
+    setCstCsosn(p.cst_csosn || "102");
+    setAliquotaIcms(String(toMoney(p.aliquota_icms)));
+    setAliquotaPis(String(toMoney(p.aliquota_pis)));
+    setAliquotaCofins(String(toMoney(p.aliquota_cofins)));
+    setPrecoBalcao(String(toMoney(p.preco_balcao)));
+    setPrecoInstalacao(String(toMoney(p.preco_instalacao)));
+    setPrecoRevenda(String(toMoney(p.preco_revenda)));
+    setControlaEstoque(!!p.controla_estoque);
+    setEstoqueAtual(String(toMoney(p.estoque_atual)));
+    setEstoqueMinimo(String(toMoney(p.estoque_minimo)));
     setStatus(p.status || "ATIVO");
-    setFotoBase64(p.fotoBase64 || "");
-    setFotoUrl(p.fotoUrl || "");
+    setFotoUrl(p.foto_url || "");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function removerProduto(id: number) {
-    if (!confirm("REMOVER PRODUTO?")) return;
+  async function removerProduto(id: string) {
+    if (!empresaId) return;
+    if (!confirm("REMOVER ESTE PRODUTO?")) return;
 
-    const lista = produtos.filter((p) => p.id !== id);
-    writeLS(LS_PRODUTOS, lista);
-    setProdutos(lista);
+    const { error } = await supabase
+      .from("produtos")
+      .delete()
+      .eq("id", id)
+      .eq("empresa_id", empresaId);
+
+    if (error) {
+      alert("ERRO AO REMOVER PRODUTO: " + error.message);
+      return;
+    }
+
+    alert("PRODUTO REMOVIDO!");
+    carregarProdutos();
   }
 
-  function lerFoto(file: File) {
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      setFotoBase64(String(reader.result || ""));
-      setFotoUrl("");
-    };
-
-    reader.readAsDataURL(file);
+  function aplicarFotoUrl() {
+    setFotoUrl((v) => v.trim());
   }
 
-  function importarCSV(file: File) {
-    const reader = new FileReader();
+  function limparFoto() {
+    setFotoUrl("");
+  }
 
-    reader.onload = () => {
-      try {
-        const text = String(reader.result || "");
-        const lines = text
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean);
+  async function importarCSV(file: File) {
+    if (!empresaId) return;
 
-        if (lines.length < 2) {
-          alert("CSV VAZIO OU INVÁLIDO.");
-          return;
-        }
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
-        const delim = detectDelimiter(lines[0]);
-        const headers = splitCsvLine(lines[0], delim);
-        const map = mapHeaderIndex(headers);
+    if (lines.length < 2) {
+      alert("CSV VAZIO OU INVÁLIDO.");
+      return;
+    }
 
-        const atuais = readLS<Produto[]>(LS_PRODUTOS, []);
-        const next = [...atuais];
+    const delim = detectDelimiter(lines[0]);
+    const headers = splitCsvLine(lines[0], delim);
+    const map = mapHeaderIndex(headers);
 
-        let created = 0;
-        let updated = 0;
+    let created = 0;
+    let updated = 0;
 
-        for (let i = 1; i < lines.length; i++) {
-          const row = splitCsvLine(lines[i], delim);
+    for (let i = 1; i < lines.length; i++) {
+      const row = splitCsvLine(lines[i], delim);
 
-          const nomeCsv = up(getCell(row, map, ["nome", "produto"]));
-          if (!nomeCsv) continue;
+      const nomeCsv = up(getCell(row, map, ["nome", "produto"]));
+      if (!nomeCsv) continue;
 
-          const skuCsv = up(getCell(row, map, ["sku", "codigosku", "codigo", "codigointerno"]));
-          const barrasCsv = up(getCell(row, map, ["codigobarras", "barras", "ean"]));
-          const categoriaCsv = up(getCell(row, map, ["categoria"]));
-          const subcategoriaCsv = up(getCell(row, map, ["subcategoria"]));
+      const skuCsv = up(
+        getCell(row, map, ["sku", "codigosku", "codigo", "codigo_sku"])
+      );
+      const barrasCsv = up(
+        getCell(row, map, ["codigobarras", "codigo_barras", "ean", "barras"])
+      );
+      const categoriaCsv = up(getCell(row, map, ["categoria"]));
+      const subcategoriaCsv = up(getCell(row, map, ["subcategoria"]));
+      const ncmCsv = up(getCell(row, map, ["ncm"]));
+      const cestCsv = up(getCell(row, map, ["cest"]));
+      const cfopCsv = up(getCell(row, map, ["cfop"]) || "5102");
+      const unidadeCsv = up(getCell(row, map, ["unidade", "un"]) || "UN");
+      const origemCsv = up(getCell(row, map, ["origem"]) || "0");
+      const cstCsv = up(
+        getCell(row, map, ["cstcsosn", "cst_csosn", "csosn", "cst"]) || "102"
+      );
 
-          const ncmCsv = up(getCell(row, map, ["ncm"]));
-          const cestCsv = up(getCell(row, map, ["cest"]));
-          const cfopCsv = up(getCell(row, map, ["cfop"]) || "5102");
-          const unidadeCsv = up(getCell(row, map, ["unidade", "un"]) || "UN");
-          const origemCsv = up(getCell(row, map, ["origem"]) || "0");
-          const cstCsosnCsv = up(getCell(row, map, ["cstcsosn", "csosn", "cst"]) || "102");
-          const aliquotaIcmsCsv = toMoney(getCell(row, map, ["aliquotaicms", "icms"]));
-          const aliquotaPisCsv = toMoney(getCell(row, map, ["aliquotapis", "pis"]));
-          const aliquotaCofinsCsv = toMoney(getCell(row, map, ["aliquotacofins", "cofins"]));
+      const icmsCsv = toMoney(
+        getCell(row, map, ["aliquotaicms", "aliquota_icms", "icms"])
+      );
+      const pisCsv = toMoney(
+        getCell(row, map, ["aliquotapis", "aliquota_pis", "pis"])
+      );
+      const cofinsCsv = toMoney(
+        getCell(row, map, ["aliquotacofins", "aliquota_cofins", "cofins"])
+      );
 
-          const precoBalcaoCsv = toMoney(getCell(row, map, ["precobalcao", "balcao"]));
-          const precoInstalacaoCsv = toMoney(
-            getCell(row, map, ["precoinstalacao", "instalacao"])
-          );
-          const precoRevendaCsv = toMoney(getCell(row, map, ["precorevenda", "revenda"]));
+      const precoBalcaoCsv = toMoney(
+        getCell(row, map, ["precobalcao", "preco_balcao", "balcao"])
+      );
+      const precoInstalacaoCsv = toMoney(
+        getCell(row, map, ["precoinstalacao", "preco_instalacao", "instalacao"])
+      );
+      const precoRevendaCsv = toMoney(
+        getCell(row, map, ["precorevenda", "preco_revenda", "revenda"])
+      );
 
-          const controlaEstoqueCsv =
-            up(getCell(row, map, ["controlaestoque"]) || "SIM") !== "NÃO" &&
-            up(getCell(row, map, ["controlaestoque"]) || "SIM") !== "NAO" &&
-            up(getCell(row, map, ["controlaestoque"]) || "SIM") !== "FALSE";
+      const controlaEstoqueCsv =
+        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !==
+          "NAO" &&
+        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !==
+          "NÃO" &&
+        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !==
+          "FALSE";
 
-          const estoqueAtualCsv = toMoney(getCell(row, map, ["estoque", "estoqueatual"]));
-          const estoqueMinimoCsv = toMoney(getCell(row, map, ["estoqueminimo", "minimo"]));
-          const statusCsv =
-            up(getCell(row, map, ["status"]) || "ATIVO") === "INATIVO" ? "INATIVO" : "ATIVO";
+      const estoqueAtualCsv = toMoney(
+        getCell(row, map, ["estoque", "estoqueatual", "estoque_atual"])
+      );
+      const estoqueMinimoCsv = toMoney(
+        getCell(row, map, ["estoqueminimo", "estoque_minimo", "minimo"])
+      );
 
-          const fotoUrlCsv = String(
-            getCell(row, map, ["fotourl", "foto", "imagem", "imageurl", "urlimagem"]) || ""
-          ).trim();
+      const statusCsv = up(getCell(row, map, ["status"]) || "ATIVO");
+      const fotoUrlCsv = String(
+        getCell(row, map, ["fotourl", "foto_url", "imagem", "urlimagem", "imageurl"]) || ""
+      ).trim();
 
-          const idx = next.findIndex((p) => {
-            if (skuCsv && up(p.codigoSku) === skuCsv) return true;
-            if (barrasCsv && up(p.codigoBarras) === barrasCsv) return true;
-            return up(p.nome) === nomeCsv;
-          });
+      const { data: existente } = await supabase
+        .from("produtos")
+        .select("id")
+        .eq("empresa_id", empresaId)
+        .or(`nome.eq.${nomeCsv},codigo_sku.eq.${skuCsv},codigo_barras.eq.${barrasCsv}`)
+        .limit(1);
 
-          if (idx >= 0) {
-            next[idx] = {
-              ...next[idx],
-              nome: nomeCsv || next[idx].nome,
-              codigoSku: skuCsv || next[idx].codigoSku,
-              codigoBarras: barrasCsv || next[idx].codigoBarras,
-              categoria: categoriaCsv || next[idx].categoria,
-              subcategoria: subcategoriaCsv || next[idx].subcategoria,
-              ncm: ncmCsv || next[idx].ncm,
-              cest: cestCsv || next[idx].cest,
-              cfop: cfopCsv || next[idx].cfop,
-              unidade: unidadeCsv || next[idx].unidade,
-              origem: origemCsv || next[idx].origem,
-              cstCsosn: cstCsosnCsv || next[idx].cstCsosn,
-              aliquotaIcms: aliquotaIcmsCsv || next[idx].aliquotaIcms,
-              aliquotaPis: aliquotaPisCsv || next[idx].aliquotaPis,
-              aliquotaCofins: aliquotaCofinsCsv || next[idx].aliquotaCofins,
-              precoBalcao: precoBalcaoCsv || next[idx].precoBalcao,
-              precoInstalacao: precoInstalacaoCsv || next[idx].precoInstalacao,
-              precoRevenda: precoRevendaCsv || next[idx].precoRevenda,
-              controlaEstoque: controlaEstoqueCsv,
-              estoqueAtual: estoqueAtualCsv,
-              estoqueMinimo: estoqueMinimoCsv,
-              status: statusCsv,
-              fotoUrl: fotoUrlCsv || next[idx].fotoUrl || "",
-            };
-            updated++;
-          } else {
-            next.push({
-              id: Date.now() + i,
-              nome: nomeCsv,
-              codigoSku: skuCsv,
-              codigoBarras: barrasCsv,
-              categoria: categoriaCsv,
-              subcategoria: subcategoriaCsv,
-              ncm: ncmCsv,
-              cest: cestCsv,
-              cfop: cfopCsv,
-              unidade: unidadeCsv,
-              origem: origemCsv,
-              cstCsosn: cstCsosnCsv,
-              aliquotaIcms: aliquotaIcmsCsv,
-              aliquotaPis: aliquotaPisCsv,
-              aliquotaCofins: aliquotaCofinsCsv,
-              precoBalcao: precoBalcaoCsv,
-              precoInstalacao: precoInstalacaoCsv,
-              precoRevenda: precoRevendaCsv,
-              controlaEstoque: controlaEstoqueCsv,
-              estoqueAtual: estoqueAtualCsv,
-              estoqueMinimo: estoqueMinimoCsv,
-              status: statusCsv,
-              fotoBase64: "",
-              fotoUrl: fotoUrlCsv,
-            });
-            created++;
-          }
-        }
+      const payload = {
+        empresa_id: empresaId,
+        nome: nomeCsv,
+        codigo_sku: skuCsv,
+        codigo_barras: barrasCsv,
+        categoria: categoriaCsv,
+        subcategoria: subcategoriaCsv,
+        ncm: ncmCsv,
+        cest: cestCsv,
+        cfop: cfopCsv,
+        unidade: unidadeCsv,
+        origem: origemCsv,
+        cst_csosn: cstCsv,
+        aliquota_icms: icmsCsv,
+        aliquota_pis: pisCsv,
+        aliquota_cofins: cofinsCsv,
+        preco_balcao: precoBalcaoCsv,
+        preco_instalacao: precoInstalacaoCsv,
+        preco_revenda: precoRevendaCsv,
+        controla_estoque: controlaEstoqueCsv,
+        estoque_atual: estoqueAtualCsv,
+        estoque_minimo: estoqueMinimoCsv,
+        status: statusCsv === "INATIVO" ? "INATIVO" : "ATIVO",
+        foto_url: fotoUrlCsv,
+      };
 
-        writeLS(LS_PRODUTOS, next);
-        setProdutos(next);
-        alert(`IMPORTAÇÃO CSV CONCLUÍDA!\nCRIADOS: ${created}\nATUALIZADOS: ${updated}`);
-      } catch {
-        alert("ERRO AO IMPORTAR CSV.");
+      if (existente && existente.length > 0) {
+        const { error } = await supabase
+          .from("produtos")
+          .update(payload)
+          .eq("id", existente[0].id)
+          .eq("empresa_id", empresaId);
+
+        if (!error) updated++;
+      } else {
+        const { error } = await supabase.from("produtos").insert([payload]);
+        if (!error) created++;
       }
-    };
+    }
 
-    reader.readAsText(file, "utf-8");
+    alert(`IMPORTAÇÃO CONCLUÍDA!\nCRIADOS: ${created}\nATUALIZADOS: ${updated}`);
+    carregarProdutos();
   }
-
-  const fotoPreview = getFotoSrc(null, fotoBase64, fotoUrl);
 
   if (!ready) {
     return <div className="p-6">CARREGANDO...</div>;
   }
 
   return (
-    <div className="min-h-screen flex bg-[#F8F9FA]">
+    <div className="min-h-screen flex bg-[#F6F7F9]">
       <Sidebar />
 
       <main className="flex-1 p-6">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-6">
+        <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-black text-[#6C757D]">PRODUTOS PREMIUM</h1>
-            <div className="text-sm text-[#6C757D]">
+            <h1 className="text-[26px] font-black text-[#6C757D] leading-none">
+              PRODUTOS
+            </h1>
+            <p className="text-[14px] text-[#6C757D] mt-2">
               CADASTRO COMPLETO, ESTOQUE, PREÇOS E BLOCO FISCAL
-            </div>
+            </p>
           </div>
 
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-3 flex-wrap">
             <input
               placeholder="BUSCAR PRODUTO..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="border p-2 rounded-lg w-80 max-w-full"
+              className="h-[54px] w-[320px] xl:w-[410px] max-w-full rounded-2xl border border-[#2F2F2F] bg-white px-5 text-[18px] outline-none"
             />
 
             <button
               onClick={() => csvInputRef.current?.click()}
-              className="border px-4 py-2 rounded-lg bg-white"
+              className="h-[54px] rounded-2xl border border-[#2F2F2F] bg-white px-6 text-[18px] font-medium"
               type="button"
             >
               IMPORTAR CSV
@@ -545,182 +543,163 @@ export default function ProdutosPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">TOTAL DE PRODUTOS</div>
-            <div className="text-3xl font-black mt-2">{produtos.length}</div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">ATIVOS</div>
-            <div className="text-3xl font-black mt-2">
-              {produtos.filter((p) => p.status === "ATIVO").length}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">ESTOQUE TOTAL</div>
-            <div className="text-3xl font-black mt-2">{totalEstoque}</div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">ESTOQUE BAIXO</div>
-            <div className="text-3xl font-black mt-2">{estoqueBaixo}</div>
-          </div>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+          <CardKpi titulo="TOTAL DE PRODUTOS" valor={String(total)} />
+          <CardKpi titulo="ATIVOS" valor={String(ativos)} />
+          <CardKpi titulo="ESTOQUE TOTAL" valor={String(estoqueTotal)} />
+          <CardKpi titulo="ESTOQUE BAIXO" valor={String(estoqueBaixo)} />
         </div>
 
-        <div className="bg-white p-4 rounded-2xl shadow mb-6">
-          <div className="text-sm font-bold text-[#6C757D] mb-3">
+        <section className="bg-white rounded-[24px] shadow-sm p-5 mb-6">
+          <h2 className="text-[15px] font-black text-[#6C757D] mb-5">
             {editingId ? "EDITAR PRODUTO" : "NOVO PRODUTO"}
-          </div>
+          </h2>
 
-          <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-            <div className="xl:col-span-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_250px] gap-6">
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <input
                   placeholder="NOME"
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
-                  className="border p-2 rounded md:col-span-2"
+                  className="campo md:col-span-2"
                 />
 
                 <input
                   placeholder="SKU / CÓDIGO INTERNO"
                   value={codigoSku}
                   onChange={(e) => setCodigoSku(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
                   placeholder="CÓDIGO DE BARRAS"
                   value={codigoBarras}
                   onChange={(e) => setCodigoBarras(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
                   placeholder="CATEGORIA"
                   value={categoria}
                   onChange={(e) => setCategoria(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
                   placeholder="SUBCATEGORIA"
                   value={subcategoria}
                   onChange={(e) => setSubcategoria(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
                   placeholder="PREÇO BALCÃO"
                   value={precoBalcao}
                   onChange={(e) => setPrecoBalcao(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
                   placeholder="PREÇO INSTALAÇÃO"
                   value={precoInstalacao}
                   onChange={(e) => setPrecoInstalacao(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
                   placeholder="PREÇO REVENDA"
                   value={precoRevenda}
                   onChange={(e) => setPrecoRevenda(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
                   placeholder="NCM"
                   value={ncm}
                   onChange={(e) => setNcm(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
                   placeholder="CEST"
                   value={cest}
                   onChange={(e) => setCest(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
                   placeholder="CFOP"
                   value={cfop}
                   onChange={(e) => setCfop(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
-                  placeholder="UNIDADE"
+                  placeholder="UN"
                   value={unidade}
                   onChange={(e) => setUnidade(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <select
                   value={origem}
                   onChange={(e) => setOrigem(e.target.value)}
-                  className="border p-2 rounded bg-white"
+                  className="campo"
                 >
                   <option value="0">ORIGEM 0 - NACIONAL</option>
                   <option value="1">ORIGEM 1 - IMPORTAÇÃO DIRETA</option>
                   <option value="2">ORIGEM 2 - IMPORTAÇÃO MERCADO INTERNO</option>
-                  <option value="3">ORIGEM 3 - NACIONAL C/ CONTEÚDO IMPORTADO &gt; 40%</option>
-                  <option value="4">ORIGEM 4 - NACIONAL PRODUÇÃO BÁSICA</option>
-                  <option value="5">ORIGEM 5 - NACIONAL C/ CONTEÚDO IMPORTADO ≤ 40%</option>
-                  <option value="6">ORIGEM 6 - IMPORTAÇÃO DIRETA S/ SIMILAR</option>
-                  <option value="7">ORIGEM 7 - IMPORTAÇÃO MERCADO INTERNO S/ SIMILAR</option>
-                  <option value="8">ORIGEM 8 - NACIONAL C/ CONTEÚDO IMPORTADO &gt; 70%</option>
+                  <option value="3">ORIGEM 3</option>
+                  <option value="4">ORIGEM 4</option>
+                  <option value="5">ORIGEM 5</option>
+                  <option value="6">ORIGEM 6</option>
+                  <option value="7">ORIGEM 7</option>
+                  <option value="8">ORIGEM 8</option>
                 </select>
 
                 <input
-                  placeholder="CST / CSOSN"
+                  placeholder="102"
                   value={cstCsosn}
                   onChange={(e) => setCstCsosn(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
-                  placeholder="ALÍQUOTA ICMS"
+                  placeholder="0"
                   value={aliquotaIcms}
                   onChange={(e) => setAliquotaIcms(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
-                  placeholder="ALÍQUOTA PIS"
+                  placeholder="0"
                   value={aliquotaPis}
                   onChange={(e) => setAliquotaPis(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
                 <input
-                  placeholder="ALÍQUOTA COFINS"
+                  placeholder="0"
                   value={aliquotaCofins}
                   onChange={(e) => setAliquotaCofins(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                 />
 
-                <div className="flex items-center gap-2 border rounded p-2">
+                <label className="campo flex items-center gap-3 cursor-pointer font-bold text-[#6C757D]">
                   <input
                     type="checkbox"
                     checked={controlaEstoque}
                     onChange={(e) => setControlaEstoque(e.target.checked)}
                   />
-                  <span className="text-sm font-bold text-[#6C757D]">
-                    CONTROLA ESTOQUE
-                  </span>
-                </div>
+                  CONTROLA ESTOQUE
+                </label>
 
                 <input
                   placeholder="ESTOQUE ATUAL"
                   value={estoqueAtual}
                   onChange={(e) => setEstoqueAtual(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                   disabled={!controlaEstoque}
                 />
 
@@ -728,14 +707,14 @@ export default function ProdutosPage() {
                   placeholder="ESTOQUE MÍNIMO"
                   value={estoqueMinimo}
                   onChange={(e) => setEstoqueMinimo(e.target.value)}
-                  className="border p-2 rounded"
+                  className="campo"
                   disabled={!controlaEstoque}
                 />
 
                 <select
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as "ATIVO" | "INATIVO")}
-                  className="border p-2 rounded bg-white"
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="campo"
                 >
                   <option value="ATIVO">ATIVO</option>
                   <option value="INATIVO">INATIVO</option>
@@ -744,26 +723,23 @@ export default function ProdutosPage() {
                 <input
                   placeholder="URL DA FOTO"
                   value={fotoUrl}
-                  onChange={(e) => {
-                    setFotoUrl(e.target.value);
-                    if (e.target.value.trim()) setFotoBase64("");
-                  }}
-                  className="border p-2 rounded md:col-span-3"
+                  onChange={(e) => setFotoUrl(e.target.value)}
+                  className="campo md:col-span-4"
                 />
               </div>
 
-              <div className="flex gap-2 mt-4">
+              <div className="flex gap-3 mt-5">
                 <button
                   onClick={salvarProduto}
-                  className="bg-[#0A569E] text-white px-4 py-2 rounded-lg"
+                  className="h-[54px] rounded-2xl bg-[#0456A3] px-7 text-[17px] font-medium text-white"
                   type="button"
                 >
-                  {editingId ? "SALVAR ALTERAÇÕES" : "SALVAR PRODUTO"}
+                  {editingId ? "SALVAR PRODUTO" : "SALVAR PRODUTO"}
                 </button>
 
                 <button
                   onClick={resetForm}
-                  className="border px-4 py-2 rounded-lg"
+                  className="h-[54px] rounded-2xl border border-[#2F2F2F] bg-white px-7 text-[17px] font-medium text-[#1C1C1C]"
                   type="button"
                 >
                   LIMPAR
@@ -771,94 +747,102 @@ export default function ProdutosPage() {
               </div>
             </div>
 
-            <div className="xl:col-span-1">
-              <div className="border rounded-2xl p-4 h-full">
-                <div className="text-sm font-bold text-[#6C757D] mb-3">FOTO</div>
+            <div className="rounded-[24px] border border-[#B7B7B7] p-4">
+              <div className="text-[14px] font-black text-[#6C757D] mb-3">FOTO</div>
 
-                <div className="aspect-square rounded-xl overflow-hidden border bg-[#F8F9FA] flex items-center justify-center">
-                  {fotoPreview ? (
-                    <img
-                      src={fotoPreview}
-                      alt="Produto"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="text-xs text-[#6C757D]">SEM FOTO</div>
-                  )}
-                </div>
-
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={() => fotoInputRef.current?.click()}
-                    className="border px-3 py-2 rounded-lg w-full"
-                    type="button"
-                  >
-                    ENVIAR FOTO
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setFotoBase64("");
-                      setFotoUrl("");
+              <div className="w-full h-[230px] rounded-[18px] border border-[#B7B7B7] bg-[#F6F7F9] overflow-hidden flex items-center justify-center">
+                {fotoUrl ? (
+                  <img
+                    src={fotoUrl}
+                    alt="Foto do produto"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
                     }}
-                    className="border px-3 py-2 rounded-lg"
-                    type="button"
-                  >
-                    X
-                  </button>
-                </div>
+                  />
+                ) : (
+                  <span className="text-[#7B848C] text-[14px]">SEM FOTO</span>
+                )}
+              </div>
 
-                <input
-                  ref={fotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) lerFoto(file);
-                    e.currentTarget.value = "";
-                  }}
-                />
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={aplicarFotoUrl}
+                  className="flex-1 h-[46px] rounded-2xl border border-[#2F2F2F] bg-white text-[15px] font-medium"
+                  type="button"
+                >
+                  ENVIAR FOTO
+                </button>
+
+                <button
+                  onClick={limparFoto}
+                  className="w-[48px] h-[46px] rounded-2xl border border-[#2F2F2F] bg-white text-[20px]"
+                  type="button"
+                >
+                  X
+                </button>
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="bg-white rounded-2xl shadow overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#F8F9FA]">
-              <tr>
-                <th className="p-3 text-left">PRODUTO</th>
-                <th className="p-3 text-left">SKU</th>
-                <th className="p-3 text-left">FISCAL</th>
-                <th className="p-3 text-left">P. BALCÃO</th>
-                <th className="p-3 text-left">P. INSTALAÇÃO</th>
-                <th className="p-3 text-left">P. REVENDA</th>
-                <th className="p-3 text-left">ESTOQUE</th>
-                <th className="p-3 text-left">STATUS</th>
-                <th className="p-3 text-right">AÇÕES</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {produtosFiltrados.length === 0 ? (
+        <section className="bg-white rounded-[24px] shadow-sm overflow-hidden">
+          <div className="overflow-auto">
+            <table className="w-full min-w-[1200px] text-sm">
+              <thead className="bg-[#F3F4F6]">
                 <tr>
-                  <td colSpan={9} className="p-6 text-center text-[#6C757D]">
-                    NENHUM PRODUTO ENCONTRADO.
-                  </td>
+                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
+                    PRODUTO
+                  </th>
+                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
+                    SKU
+                  </th>
+                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
+                    FISCAL
+                  </th>
+                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
+                    P. BALCÃO
+                  </th>
+                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
+                    P. INSTALAÇÃO
+                  </th>
+                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
+                    P. REVENDA
+                  </th>
+                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
+                    ESTOQUE
+                  </th>
+                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
+                    STATUS
+                  </th>
+                  <th className="px-4 py-5 text-right text-[14px] font-black text-[#1F1F1F]">
+                    AÇÕES
+                  </th>
                 </tr>
-              ) : (
-                produtosFiltrados.map((p) => {
-                  const fotoSrc = p.fotoBase64 || p.fotoUrl || "";
+              </thead>
 
-                  return (
-                    <tr key={p.id} className="border-b">
-                      <td className="p-3">
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-10 text-center text-[#6C757D]">
+                      CARREGANDO...
+                    </td>
+                  </tr>
+                ) : produtosFiltrados.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-10 text-center text-[#6C757D]">
+                      NENHUM PRODUTO ENCONTRADO.
+                    </td>
+                  </tr>
+                ) : (
+                  produtosFiltrados.map((p) => (
+                    <tr key={p.id} className="border-t border-[#EFF1F4]">
+                      <td className="px-4 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-lg overflow-hidden border bg-[#F8F9FA] flex items-center justify-center">
-                            {fotoSrc ? (
+                          <div className="w-12 h-12 rounded-xl overflow-hidden bg-[#EEF2F7] border border-[#E5E7EB] flex items-center justify-center">
+                            {p.foto_url ? (
                               <img
-                                src={fotoSrc}
+                                src={p.foto_url}
                                 alt={p.nome}
                                 className="w-full h-full object-cover"
                               />
@@ -868,46 +852,42 @@ export default function ProdutosPage() {
                           </div>
 
                           <div>
-                            <div className="font-bold">{p.nome}</div>
+                            <div className="font-bold text-[#111]">{p.nome}</div>
                             <div className="text-xs text-[#6C757D]">
-                              {p.categoria || "-"}{p.subcategoria ? ` / ${p.subcategoria}` : ""}
+                              {p.categoria || "-"}
+                              {p.subcategoria ? ` / ${p.subcategoria}` : ""}
                             </div>
                           </div>
                         </div>
                       </td>
 
-                      <td className="p-3">
-                        <div>{p.codigoSku || "-"}</div>
+                      <td className="px-4 py-4 text-[#1F1F1F]">{p.codigo_sku || "-"}</td>
+
+                      <td className="px-4 py-4 text-[#1F1F1F]">
+                        <div className="font-medium">NCM: {p.ncm || "-"}</div>
                         <div className="text-xs text-[#6C757D]">
-                          BARRAS: {p.codigoBarras || "-"}
+                          CFOP: {p.cfop || "-"}
                         </div>
                       </td>
 
-                      <td className="p-3">
-                        <div className="text-xs">
-                          <b>NCM:</b> {p.ncm || "-"}
-                        </div>
-                        <div className="text-xs">
-                          <b>CEST:</b> {p.cest || "-"}
-                        </div>
-                        <div className="text-xs">
-                          <b>CFOP:</b> {p.cfop || "-"} • <b>CST:</b> {p.cstCsosn || "-"}
-                        </div>
-                        <div className="text-xs">
-                          <b>ORIGEM:</b> {p.origem || "-"} • <b>UN:</b> {p.unidade || "-"}
-                        </div>
+                      <td className="px-4 py-4 text-[#1F1F1F]">
+                        {moneyBR(toMoney(p.preco_balcao))}
                       </td>
 
-                      <td className="p-3">{moneyBR(toMoney(p.precoBalcao))}</td>
-                      <td className="p-3">{moneyBR(toMoney(p.precoInstalacao))}</td>
-                      <td className="p-3">{moneyBR(toMoney(p.precoRevenda))}</td>
+                      <td className="px-4 py-4 text-[#1F1F1F]">
+                        {moneyBR(toMoney(p.preco_instalacao))}
+                      </td>
 
-                      <td className="p-3">
-                        {p.controlaEstoque ? (
+                      <td className="px-4 py-4 text-[#1F1F1F]">
+                        {moneyBR(toMoney(p.preco_revenda))}
+                      </td>
+
+                      <td className="px-4 py-4 text-[#1F1F1F]">
+                        {p.controla_estoque ? (
                           <div>
-                            <div><b>{toMoney(p.estoqueAtual)}</b></div>
+                            <div className="font-semibold">{toMoney(p.estoque_atual)}</div>
                             <div className="text-xs text-[#6C757D]">
-                              MÍN: {toMoney(p.estoqueMinimo)}
+                              MÍN: {toMoney(p.estoque_minimo)}
                             </div>
                           </div>
                         ) : (
@@ -915,13 +895,13 @@ export default function ProdutosPage() {
                         )}
                       </td>
 
-                      <td className="p-3">{p.status}</td>
+                      <td className="px-4 py-4 text-[#1F1F1F]">{p.status || "ATIVO"}</td>
 
-                      <td className="p-3 text-right">
-                        <div className="flex gap-2 justify-end">
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
                           <button
                             onClick={() => editarProduto(p)}
-                            className="border px-3 py-1 rounded"
+                            className="rounded-xl border border-[#2F2F2F] bg-white px-4 py-2 text-[13px] font-medium"
                             type="button"
                           >
                             EDITAR
@@ -929,7 +909,7 @@ export default function ProdutosPage() {
 
                           <button
                             onClick={() => removerProduto(p.id)}
-                            className="border px-3 py-1 rounded"
+                            className="rounded-xl border border-[#2F2F2F] bg-white px-4 py-2 text-[13px] font-medium"
                             type="button"
                           >
                             REMOVER
@@ -937,22 +917,40 @@ export default function ProdutosPage() {
                         </div>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-4 bg-white rounded-2xl shadow p-4">
-          <div className="text-sm font-bold text-[#6C757D] mb-2">MODELO DE CSV</div>
-          <div className="text-xs text-[#6C757D] whitespace-pre-wrap">
-            nome,sku,codigo_barras,categoria,subcategoria,ncm,cest,cfop,unidade,origem,cst_csosn,aliquota_icms,aliquota_pis,aliquota_cofins,preco_balcao,preco_instalacao,preco_revenda,controla_estoque,estoque_atual,estoque_minimo,status,foto_url
-            {"\n"}
-            LED H4,LED001,789000000001,ILUMINACAO,FAROL,85122019,2801200,5102,UN,0,102,18,1.65,7.60,120,150,90,SIM,10,2,ATIVO,https://exemplo.com/imagem.jpg
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </section>
       </main>
+
+      <style jsx>{`
+        .campo {
+          height: 46px;
+          width: 100%;
+          border-radius: 12px;
+          border: 1.5px solid #9a9a9a;
+          background: #ffffff;
+          padding: 0 12px;
+          font-size: 16px;
+          color: #1f1f1f;
+          outline: none;
+        }
+
+        .campo::placeholder {
+          color: #8b929a;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function CardKpi({ titulo, valor }: { titulo: string; valor: string }) {
+  return (
+    <div className="bg-white rounded-[22px] shadow-sm p-5 min-h-[110px]">
+      <div className="text-[14px] font-bold text-[#6C757D]">{titulo}</div>
+      <div className="mt-3 text-[24px] font-black text-[#111]">{valor}</div>
     </div>
   );
 }

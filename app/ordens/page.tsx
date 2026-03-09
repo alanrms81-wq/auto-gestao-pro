@@ -1,155 +1,98 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
-import { canAccess, isLogged } from "@/lib/authGuard";
+import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/session";
 
 type Cliente = {
-  id: number;
+  id: string;
   nome: string;
-  telefone?: string;
-  email?: string;
-  cpfCnpj?: string;
-  cidade?: string;
-  estado?: string;
-  rua?: string;
-  numero?: string;
-  bairro?: string;
-};
-
-type Veiculo = {
-  id: number;
-  clienteId: number;
-  placa?: string;
-  marca?: string;
-  modelo?: string;
-  ano?: string;
-  cor?: string;
-  combustivel?: string;
-  km?: string;
-  chassi?: string;
-  observacoes?: string;
-  status?: "ATIVO" | "INATIVO";
+  telefone?: string | null;
+  celular?: string | null;
+  whatsapp?: string | null;
+  cpf_cnpj?: string | null;
 };
 
 type Produto = {
-  id: number;
+  id: string;
   nome: string;
-  sku?: string;
-  codigoSku?: string;
-  preco?: number;
-  precoVenda?: number;
-  precoBalcao?: number;
-  precoInstalacao?: number;
-  precoRevenda?: number;
-  estoqueAtual?: number;
-  controlaEstoque?: boolean;
-  status?: "ATIVO" | "INATIVO";
+  codigo_sku?: string | null;
+  preco_balcao?: number | null;
+  controla_estoque?: boolean | null;
+  estoque_atual?: number | null;
 };
 
-type OsProdutoItem = {
-  id: number;
-  produtoId: number | null;
-  nome: string;
-  codigo?: string;
-  quantidade: number;
-  valorUnitario: number;
-  total: number;
-};
-
-type OsServicoItem = {
-  id: number;
-  descricao: string;
-  quantidade: number;
-  valorUnitario: number;
-  total: number;
+type Veiculo = {
+  id: string;
+  empresa_id: string;
+  cliente_id: string;
+  cliente_nome?: string | null;
+  placa?: string | null;
+  marca?: string | null;
+  modelo?: string | null;
+  ano?: string | null;
+  cor?: string | null;
+  combustivel?: string | null;
+  km_atual?: string | null;
+  chassi?: string | null;
+  observacoes?: string | null;
+  created_at?: string | null;
 };
 
 type OrdemServico = {
-  id: number;
-  numero: string;
-  dataISO: string;
-  clienteId: number | null;
-  clienteNome: string;
-  clienteTelefone?: string;
-  veiculoId: number | null;
-  veiculoDescricao: string;
-  tecnico: string;
-  prazo?: string;
-  status: "ABERTA" | "EM ANDAMENTO" | "FINALIZADA" | "ENTREGUE";
-  garantiaNumero?: string;
-  garantiaTipo?: "DIAS" | "MESES";
-  formaPagamento: string;
-  produtos: OsProdutoItem[];
-  servicos: OsServicoItem[];
-  subtotalProdutos: number;
-  subtotalServicos: number;
-  desconto: number;
-  total: number;
-  observacoes?: string;
-  faturado?: boolean;
-  dataFaturamento?: string;
-  financeiroGeradoId?: number | null;
-  estoqueBaixado?: boolean;
+  id: string;
+  empresa_id: string;
+  numero?: string | null;
+  cliente_id?: string | null;
+  cliente_nome?: string | null;
+  veiculo_id?: string | null;
+  veiculo_descricao?: string | null;
+  placa?: string | null;
+  km?: string | null;
+  tecnico_responsavel?: string | null;
+  prazo_data?: string | null;
+  garantia_numero?: string | null;
+  garantia_tipo?: string | null;
+  forma_pagamento?: string | null;
+  defeito_relatado?: string | null;
+  observacoes?: string | null;
+  status?: string | null;
+  subtotal_produtos?: number | null;
+  subtotal_servicos?: number | null;
+  desconto?: number | null;
+  acrescimo?: number | null;
+  total?: number | null;
+  faturado?: boolean | null;
+  data_faturamento?: string | null;
+  created_at?: string | null;
 };
 
-type FinanceiroTitulo = {
-  id: number;
-  tipo: "RECEBER" | "PAGAR";
-  descricao: string;
-  categoria: string;
-  clienteId?: number | null;
-  clienteNome?: string;
-  documento?: string;
-  formaPagamento?: string;
-  valorOriginal: number;
-  valorPago: number;
-  desconto: number;
-  juros: number;
-  multa: number;
-  dataEmissao?: string;
-  dataVencimento?: string;
-  dataPagamento?: string;
-  status: string;
-  observacoes?: string;
-  createdAt: string;
+type OsProduto = {
+  id?: string;
+  empresa_id?: string;
+  ordem_servico_id?: string;
+  produto_id?: string | null;
+  produto_nome?: string | null;
+  codigo?: string | null;
+  quantidade?: number | null;
+  valor_unitario?: number | null;
+  subtotal?: number | null;
 };
 
-type FluxoLancamento = {
-  id: number;
-  tipo: "ENTRADA" | "SAIDA";
-  descricao: string;
-  categoria: string;
-  valor: number;
-  data: string;
-  origem?: string;
-  observacoes?: string;
+type OsServico = {
+  id?: string;
+  empresa_id?: string;
+  ordem_servico_id?: string;
+  descricao?: string | null;
+  quantidade?: number | null;
+  valor_unitario?: number | null;
+  subtotal?: number | null;
 };
-
-const LS_CLIENTES = "clientes";
-const LS_VEICULOS = "veiculos";
-const LS_PRODUTOS = "produtos";
-const LS_ORDENS = "ordensServico";
-const LS_TITULOS = "financeiro_titulos";
-const LS_FLUXO = "financeiro_lancamentos";
 
 function up(v: any) {
   return String(v ?? "").toUpperCase();
-}
-
-function readLS<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLS<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value));
 }
 
 function toMoney(v: any) {
@@ -164,761 +107,641 @@ function moneyBR(v: number) {
   });
 }
 
-function nextOsNumero(lista?: OrdemServico[]) {
-  const base = lista || readLS<OrdemServico[]>(LS_ORDENS, []);
-  if (!base.length) return "OS-000001";
+function gerarNumeroOS() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const rnd = String(Math.floor(Math.random() * 9000) + 1000);
+  return `OS-${y}${m}${day}-${rnd}`;
+}
 
-  let maior = 0;
-  for (const item of base) {
-    const m = String(item.numero || "").match(/\d+/);
-    const n = m ? Number(m[0]) : 0;
-    if (n > maior) maior = n;
+function hojeISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function makeLocalId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
   }
-
-  return `OS-${String(maior + 1).padStart(6, "0")}`;
+  return Math.random().toString(36).slice(2, 10);
 }
 
-function getPrecoProduto(p: Produto) {
-  return (
-    toMoney(p.precoInstalacao) ||
-    toMoney(p.precoBalcao) ||
-    toMoney(p.precoVenda) ||
-    toMoney(p.precoRevenda) ||
-    toMoney(p.preco) ||
-    0
-  );
-}
-
-function pagamentoImediato(fp: string) {
-  const x = up(fp);
-  return (
-    x === "DINHEIRO" ||
-    x === "PIX" ||
-    x === "CARTÃO DE DÉBITO" ||
-    x === "CARTAO DE DEBITO"
-  );
+function montarDescricaoVeiculo(v: Veiculo) {
+  return [v.marca, v.modelo, v.ano].filter(Boolean).join(" / ");
 }
 
 export default function OrdensPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [empresaId, setEmpresaId] = useState<string | null>(null);
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
-  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [produtosBase, setProdutosBase] = useState<Produto[]>([]);
+  const [veiculosCliente, setVeiculosCliente] = useState<Veiculo[]>([]);
   const [historico, setHistorico] = useState<OrdemServico[]>([]);
 
-  const [editingId, setEditingId] = useState<number | null>(null);
-
-  const [numeroOs, setNumeroOs] = useState("");
-  const [status, setStatus] = useState<
-    "ABERTA" | "EM ANDAMENTO" | "FINALIZADA" | "ENTREGUE"
-  >("ABERTA");
-
   const [buscaCliente, setBuscaCliente] = useState("");
-  const [clienteId, setClienteId] = useState<number | null>(null);
-
-  const [buscaVeiculo, setBuscaVeiculo] = useState("");
-  const [veiculoId, setVeiculoId] = useState<number | null>(null);
-
   const [buscaProduto, setBuscaProduto] = useState("");
-  const [produtosItens, setProdutosItens] = useState<OsProdutoItem[]>([]);
-  const [servicosItens, setServicosItens] = useState<OsServicoItem[]>([]);
-
-  const [tecnico, setTecnico] = useState("");
-  const [prazo, setPrazo] = useState("");
-  const [garantiaNumero, setGarantiaNumero] = useState("");
-  const [garantiaTipo, setGarantiaTipo] = useState<"DIAS" | "MESES">("DIAS");
-  const [formaPagamento, setFormaPagamento] = useState("DINHEIRO");
-  const [desconto, setDesconto] = useState("0");
-  const [observacoes, setObservacoes] = useState("");
-
   const [buscaHistorico, setBuscaHistorico] = useState("");
 
-  const clienteBoxRef = useRef<HTMLDivElement | null>(null);
-  const veiculoBoxRef = useRef<HTMLDivElement | null>(null);
-  const produtoBoxRef = useRef<HTMLDivElement | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [openClientes, setOpenClientes] = useState(false);
-  const [openVeiculos, setOpenVeiculos] = useState(false);
-  const [openProdutos, setOpenProdutos] = useState(false);
+  const [numeroOS, setNumeroOS] = useState(gerarNumeroOS());
+  const [clienteId, setClienteId] = useState("");
+  const [clienteNome, setClienteNome] = useState("");
+
+  const [veiculoId, setVeiculoId] = useState("");
+  const [veiculo, setVeiculo] = useState("");
+  const [placa, setPlaca] = useState("");
+  const [km, setKm] = useState("");
+
+  const [status, setStatus] = useState("ABERTA");
+  const [tecnico, setTecnico] = useState("");
+  const [prazoData, setPrazoData] = useState("");
+  const [garantiaNumero, setGarantiaNumero] = useState("");
+  const [garantiaTipo, setGarantiaTipo] = useState("DIAS");
+  const [formaPagamento, setFormaPagamento] = useState("DINHEIRO");
+  const [defeitoRelatado, setDefeitoRelatado] = useState("");
+  const [observacoes, setObservacoes] = useState("");
+  const [desconto, setDesconto] = useState("0");
+  const [acrescimo, setAcrescimo] = useState("0");
+
+  const [produtosOS, setProdutosOS] = useState<OsProduto[]>([]);
+  const [servicosOS, setServicosOS] = useState<OsServico[]>([]);
 
   useEffect(() => {
-    if (!isLogged()) {
-      router.push("/login");
-      return;
+    async function init() {
+      const user = await getSessionUser();
+
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      setEmpresaId(user.empresa_id);
+      await carregarBase(user.empresa_id);
+      setReady(true);
     }
 
-    if (!canAccess("ORDENS")) {
-      alert("ACESSO NEGADO");
-      router.push("/dashboard");
-      return;
-    }
-
-    carregarBase();
-    setReady(true);
+    init();
   }, [router]);
 
   useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      const target = e.target as Node;
-      if (clienteBoxRef.current && !clienteBoxRef.current.contains(target)) {
-        setOpenClientes(false);
-      }
-      if (veiculoBoxRef.current && !veiculoBoxRef.current.contains(target)) {
-        setOpenVeiculos(false);
-      }
-      if (produtoBoxRef.current && !produtoBoxRef.current.contains(target)) {
-        setOpenProdutos(false);
+    if (!ready || !empresaId || clientes.length === 0) return;
+
+    const clienteIdParam = searchParams.get("cliente_id");
+    if (!clienteIdParam) return;
+
+    carregarDadosDoAgendamento();
+  }, [ready, empresaId, clientes, searchParams]);
+
+  async function carregarBase(eid?: string) {
+    const emp = eid || empresaId;
+    if (!emp) return;
+
+    setLoading(true);
+
+    const [clientesResp, produtosResp, historicoResp] = await Promise.all([
+      supabase
+        .from("clientes")
+        .select("id,nome,telefone,celular,whatsapp,cpf_cnpj")
+        .eq("empresa_id", emp)
+        .order("nome"),
+      supabase
+        .from("produtos")
+        .select("id,nome,codigo_sku,preco_balcao,controla_estoque,estoque_atual")
+        .eq("empresa_id", emp)
+        .order("nome"),
+      supabase
+        .from("ordens_servico")
+        .select("*")
+        .eq("empresa_id", emp)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (clientesResp.error) alert("ERRO CLIENTES: " + clientesResp.error.message);
+    if (produtosResp.error) alert("ERRO PRODUTOS: " + produtosResp.error.message);
+    if (historicoResp.error) alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
+
+    setClientes((clientesResp.data || []) as Cliente[]);
+    setProdutosBase((produtosResp.data || []) as Produto[]);
+    setHistorico((historicoResp.data || []) as OrdemServico[]);
+
+    setLoading(false);
+  }
+
+  async function carregarVeiculosDoCliente(idCliente: string) {
+    if (!empresaId || !idCliente) {
+      setVeiculosCliente([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("veiculos")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .eq("cliente_id", idCliente)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      alert("ERRO AO CARREGAR VEÍCULOS: " + error.message);
+      setVeiculosCliente([]);
+      return;
+    }
+
+    setVeiculosCliente((data || []) as Veiculo[]);
+  }
+
+  async function carregarDadosDoAgendamento() {
+    const clienteIdParam = searchParams.get("cliente_id") || "";
+    const veiculoIdParam = searchParams.get("veiculo_id") || "";
+    const agendamentoIdParam = searchParams.get("agendamento_id") || "";
+
+    if (!empresaId || !clienteIdParam) return;
+
+    const cliente = clientes.find((c) => c.id === clienteIdParam);
+
+    if (cliente) {
+      setClienteId(cliente.id);
+      setClienteNome(cliente.nome);
+      setBuscaCliente(cliente.nome);
+    }
+
+    await carregarVeiculosDoCliente(clienteIdParam);
+
+    if (veiculoIdParam) {
+      const { data: veiculoResp, error: veiculoError } = await supabase
+        .from("veiculos")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .eq("id", veiculoIdParam)
+        .single();
+
+      if (!veiculoError && veiculoResp) {
+        setVeiculoId(veiculoResp.id || "");
+        setVeiculo(montarDescricaoVeiculo(veiculoResp));
+        setPlaca(veiculoResp.placa || "");
+        setKm(veiculoResp.km_atual || "");
       }
     }
 
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
+    if (agendamentoIdParam) {
+      const { data: agResp, error: agError } = await supabase
+        .from("agendamentos")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .eq("id", agendamentoIdParam)
+        .single();
 
-  function carregarBase() {
-    const listaOs = readLS<OrdemServico[]>(LS_ORDENS, []);
-    setClientes(readLS<Cliente[]>(LS_CLIENTES, []));
-    setVeiculos(readLS<Veiculo[]>(LS_VEICULOS, []));
-    setProdutos(readLS<Produto[]>(LS_PRODUTOS, []));
-    setHistorico(listaOs);
-    setNumeroOs(nextOsNumero(listaOs));
+      if (!agError && agResp) {
+        setTecnico(agResp.tecnico_responsavel || "");
+        setDefeitoRelatado(agResp.servico || "");
+        setObservacoes(agResp.observacoes || "");
+      }
+    }
   }
 
-  const clienteSelecionado = useMemo(() => {
-    return clientes.find((c) => c.id === clienteId) || null;
-  }, [clientes, clienteId]);
-
-  const veiculosDoCliente = useMemo(() => {
-    if (!clienteId) return [];
-    return veiculos.filter((v) => v.clienteId === clienteId);
-  }, [veiculos, clienteId]);
-
-  const veiculoSelecionado = useMemo(() => {
-    return veiculos.find((v) => v.id === veiculoId) || null;
-  }, [veiculos, veiculoId]);
-
-  const clientesSugestao = useMemo(() => {
+  const clientesFiltrados = useMemo(() => {
     const q = up(buscaCliente.trim());
-    if (q.length < 2) return [];
+    if (!q) return clientes.slice(0, 8);
 
     return clientes
-      .filter((c) => {
-        const texto = up(
-          `${c.nome} ${c.telefone || ""} ${c.email || ""} ${c.cpfCnpj || ""}`
-        );
-        return texto.includes(q);
-      })
-      .slice(0, 10);
+      .filter((c) =>
+        up(`${c.nome} ${c.telefone || ""} ${c.celular || ""} ${c.whatsapp || ""} ${c.cpf_cnpj || ""}`).includes(q)
+      )
+      .slice(0, 8);
   }, [clientes, buscaCliente]);
 
-  const veiculosSugestao = useMemo(() => {
-    const q = up(buscaVeiculo.trim());
-    const base = veiculosDoCliente;
-
-    if (!q) return base.slice(0, 10);
-
-    return base
-      .filter((v) => {
-        const texto = up(
-          `${v.placa || ""} ${v.marca || ""} ${v.modelo || ""} ${v.ano || ""}`
-        );
-        return texto.includes(q);
-      })
-      .slice(0, 10);
-  }, [veiculosDoCliente, buscaVeiculo]);
-
-  const produtosSugestao = useMemo(() => {
+  const produtosFiltrados = useMemo(() => {
     const q = up(buscaProduto.trim());
-    if (q.length < 3) return [];
+    if (!q || q.length < 3) return [];
 
-    return produtos
-      .filter((p) => (p.status || "ATIVO") !== "INATIVO")
-      .filter((p) => {
-        const texto = up(`${p.nome} ${p.sku || ""} ${p.codigoSku || ""}`);
-        return texto.includes(q);
-      })
-      .slice(0, 12);
-  }, [produtos, buscaProduto]);
-
-  const subtotalProdutos = useMemo(
-    () => produtosItens.reduce((acc, item) => acc + toMoney(item.total), 0),
-    [produtosItens]
-  );
-
-  const subtotalServicos = useMemo(
-    () => servicosItens.reduce((acc, item) => acc + toMoney(item.total), 0),
-    [servicosItens]
-  );
-
-  const totalGeral = useMemo(
-    () => Math.max(0, subtotalProdutos + subtotalServicos - toMoney(desconto)),
-    [subtotalProdutos, subtotalServicos, desconto]
-  );
+    return produtosBase
+      .filter((p) => up(`${p.nome} ${p.codigo_sku || ""}`).includes(q))
+      .slice(0, 8);
+  }, [produtosBase, buscaProduto]);
 
   const historicoFiltrado = useMemo(() => {
     const q = up(buscaHistorico.trim());
+    if (!q) return historico;
 
-    return [...historico]
-      .sort((a, b) => (b.dataISO || "").localeCompare(a.dataISO || ""))
-      .filter((os) => {
-        if (!q) return true;
-        const texto = up(
-          `${os.numero} ${os.clienteNome} ${os.veiculoDescricao} ${os.status} ${os.tecnico || ""}`
-        );
-        return texto.includes(q);
-      });
+    return historico.filter((item) =>
+      up(
+        `${item.numero || ""} ${item.cliente_nome || ""} ${item.veiculo_descricao || ""} ${item.status || ""} ${item.placa || ""}`
+      ).includes(q)
+    );
   }, [historico, buscaHistorico]);
 
-  function selecionarCliente(c: Cliente) {
-    setClienteId(c.id);
-    setBuscaCliente(c.nome);
-    setOpenClientes(false);
-    setVeiculoId(null);
-    setBuscaVeiculo("");
-  }
+  const subtotalProdutos = useMemo(() => {
+    return produtosOS.reduce((acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario), 0);
+  }, [produtosOS]);
 
-  function selecionarVeiculo(v: Veiculo) {
-    setVeiculoId(v.id);
-    setBuscaVeiculo(
-      up(`${v.marca || ""} ${v.modelo || ""} ${v.placa ? `- ${v.placa}` : ""}`)
-    );
-    setOpenVeiculos(false);
-  }
+  const subtotalServicos = useMemo(() => {
+    return servicosOS.reduce((acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario), 0);
+  }, [servicosOS]);
 
-  function adicionarProduto(p: Produto) {
-    const preco = getPrecoProduto(p);
+  const totalGeral = useMemo(() => {
+    return subtotalProdutos + subtotalServicos - toMoney(desconto) + toMoney(acrescimo);
+  }, [subtotalProdutos, subtotalServicos, desconto, acrescimo]);
 
-    const item: OsProdutoItem = {
-      id: Date.now(),
-      produtoId: p.id,
-      nome: up(p.nome),
-      codigo: up(p.codigoSku || p.sku || ""),
-      quantidade: 1,
-      valorUnitario: preco,
-      total: preco,
-    };
-
-    setProdutosItens((prev) => [...prev, item]);
-    setBuscaProduto("");
-    setOpenProdutos(false);
-  }
-
-  function atualizarProdutoItem(
-    id: number,
-    campo: "nome" | "codigo" | "quantidade" | "valorUnitario",
-    valor: string | number
-  ) {
-    setProdutosItens((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-
-        const next = {
-          ...item,
-          [campo]:
-            campo === "nome" || campo === "codigo" ? String(valor) : Number(valor),
-        };
-
-        next.total = toMoney(next.quantidade) * toMoney(next.valorUnitario);
-        return next;
-      })
-    );
-  }
-
-  function removerProdutoItem(id: number) {
-    setProdutosItens((prev) => prev.filter((item) => item.id !== id));
-  }
-
-  function adicionarServico() {
-    const item: OsServicoItem = {
-      id: Date.now(),
-      descricao: "",
-      quantidade: 1,
-      valorUnitario: 0,
-      total: 0,
-    };
-
-    setServicosItens((prev) => [...prev, item]);
-  }
-
-  function atualizarServicoItem(
-    id: number,
-    campo: "descricao" | "quantidade" | "valorUnitario",
-    valor: string | number
-  ) {
-    setServicosItens((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-
-        const next = {
-          ...item,
-          [campo]: campo === "descricao" ? String(valor) : Number(valor),
-        };
-
-        next.total = toMoney(next.quantidade) * toMoney(next.valorUnitario);
-        return next;
-      })
-    );
-  }
-
-  function removerServicoItem(id: number) {
-    setServicosItens((prev) => prev.filter((item) => item.id !== id));
-  }
-
-  function limparOs() {
-    const listaOs = readLS<OrdemServico[]>(LS_ORDENS, []);
+  function novaOS() {
     setEditingId(null);
-    setNumeroOs(nextOsNumero(listaOs));
-    setStatus("ABERTA");
+    setNumeroOS(gerarNumeroOS());
+    setClienteId("");
+    setClienteNome("");
     setBuscaCliente("");
-    setClienteId(null);
-    setBuscaVeiculo("");
-    setVeiculoId(null);
-    setBuscaProduto("");
-    setProdutosItens([]);
-    setServicosItens([]);
+    setVeiculoId("");
+    setVeiculo("");
+    setPlaca("");
+    setKm("");
+    setVeiculosCliente([]);
+    setStatus("ABERTA");
     setTecnico("");
-    setPrazo("");
+    setPrazoData("");
     setGarantiaNumero("");
     setGarantiaTipo("DIAS");
     setFormaPagamento("DINHEIRO");
-    setDesconto("0");
+    setDefeitoRelatado("");
     setObservacoes("");
+    setBuscaProduto("");
+    setDesconto("0");
+    setAcrescimo("0");
+    setProdutosOS([]);
+    setServicosOS([]);
   }
 
-  function salvarOs() {
-    if (!clienteSelecionado) {
+  async function selecionarCliente(c: Cliente) {
+    setClienteId(c.id);
+    setClienteNome(c.nome);
+    setBuscaCliente(c.nome);
+
+    setVeiculoId("");
+    setVeiculo("");
+    setPlaca("");
+    setKm("");
+
+    await carregarVeiculosDoCliente(c.id);
+  }
+
+  function selecionarVeiculo(id: string) {
+    setVeiculoId(id);
+
+    const v = veiculosCliente.find((item) => item.id === id);
+    if (!v) return;
+
+    setVeiculo(montarDescricaoVeiculo(v));
+    setPlaca(v.placa || "");
+    setKm(v.km_atual || "");
+  }
+
+  function adicionarProdutoDoBanco(p: Produto) {
+    setProdutosOS((prev) => [
+      ...prev,
+      {
+        id: makeLocalId(),
+        produto_id: p.id,
+        produto_nome: p.nome,
+        codigo: p.codigo_sku || "",
+        quantidade: 1,
+        valor_unitario: toMoney(p.preco_balcao),
+        subtotal: toMoney(p.preco_balcao),
+      },
+    ]);
+    setBuscaProduto("");
+  }
+
+  function atualizarProdutoOS(id: string | undefined, campo: keyof OsProduto, valor: any) {
+    setProdutosOS((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+
+        const atualizado = {
+          ...item,
+          [campo]:
+            campo === "quantidade" || campo === "valor_unitario"
+              ? toMoney(valor)
+              : valor,
+        };
+
+        atualizado.subtotal =
+          toMoney(atualizado.quantidade) * toMoney(atualizado.valor_unitario);
+
+        return atualizado;
+      })
+    );
+  }
+
+  function removerProdutoOS(id: string | undefined) {
+    setProdutosOS((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  function adicionarServico() {
+    setServicosOS((prev) => [
+      ...prev,
+      {
+        id: makeLocalId(),
+        descricao: "",
+        quantidade: 1,
+        valor_unitario: 0,
+        subtotal: 0,
+      },
+    ]);
+  }
+
+  function atualizarServicoOS(id: string | undefined, campo: keyof OsServico, valor: any) {
+    setServicosOS((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+
+        const atualizado = {
+          ...item,
+          [campo]:
+            campo === "quantidade" || campo === "valor_unitario"
+              ? toMoney(valor)
+              : valor,
+        };
+
+        atualizado.subtotal =
+          toMoney(atualizado.quantidade) * toMoney(atualizado.valor_unitario);
+
+        return atualizado;
+      })
+    );
+  }
+
+  function removerServicoOS(id: string | undefined) {
+    setServicosOS((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  async function salvarOS() {
+    if (!empresaId) return;
+
+    if (!clienteNome.trim()) {
       alert("SELECIONE UM CLIENTE.");
       return;
     }
 
-    if (!veiculoSelecionado) {
-      alert("SELECIONE UM VEÍCULO.");
-      return;
-    }
-
-    if (!produtosItens.length && !servicosItens.length) {
-      alert("ADICIONE PRODUTOS OU MÃO DE OBRA.");
-      return;
-    }
-
-    const listaOs = readLS<OrdemServico[]>(LS_ORDENS, []);
-    const osAntiga = editingId ? listaOs.find((x) => x.id === editingId) : null;
-
-    const nova: OrdemServico = {
-      id: editingId || Date.now(),
-      numero: numeroOs,
-      dataISO: osAntiga?.dataISO || new Date().toISOString(),
-      clienteId: clienteSelecionado.id,
-      clienteNome: clienteSelecionado.nome,
-      clienteTelefone: clienteSelecionado.telefone || "",
-      veiculoId: veiculoSelecionado.id,
-      veiculoDescricao: up(
-        `${veiculoSelecionado.marca || ""} ${veiculoSelecionado.modelo || ""} ${
-          veiculoSelecionado.placa ? `- ${veiculoSelecionado.placa}` : ""
-        }`
-      ),
-      tecnico: up(tecnico),
-      prazo,
-      status,
-      garantiaNumero,
-      garantiaTipo,
-      formaPagamento: up(formaPagamento),
-      produtos: produtosItens.map((p) => ({
-        ...p,
-        nome: up(p.nome),
-        codigo: up(p.codigo || ""),
-        quantidade: toMoney(p.quantidade),
-        valorUnitario: toMoney(p.valorUnitario),
-        total: toMoney(p.total),
-      })),
-      servicos: servicosItens.map((s) => ({
-        ...s,
-        descricao: up(s.descricao),
-        quantidade: toMoney(s.quantidade),
-        valorUnitario: toMoney(s.valorUnitario),
-        total: toMoney(s.total),
-      })),
-      subtotalProdutos,
-      subtotalServicos,
-      desconto: toMoney(desconto),
-      total: totalGeral,
+    const payload = {
+      empresa_id: empresaId,
+      numero: up(numeroOS),
+      cliente_id: clienteId || null,
+      cliente_nome: up(clienteNome),
+      veiculo_id: veiculoId || null,
+      veiculo_descricao: up(veiculo),
+      placa: up(placa),
+      km: up(km),
+      tecnico_responsavel: up(tecnico),
+      prazo_data: prazoData || null,
+      garantia_numero: up(garantiaNumero),
+      garantia_tipo: up(garantiaTipo),
+      forma_pagamento: up(formaPagamento),
+      defeito_relatado: up(defeitoRelatado),
       observacoes: up(observacoes),
-      faturado: osAntiga?.faturado || false,
-      dataFaturamento: osAntiga?.dataFaturamento || "",
-      financeiroGeradoId: osAntiga?.financeiroGeradoId || null,
-      estoqueBaixado: osAntiga?.estoqueBaixado || false,
-    };
-
-    const next = editingId
-      ? listaOs.map((x) => (x.id === editingId ? nova : x))
-      : [...listaOs, nova];
-
-    writeLS(LS_ORDENS, next);
-    setHistorico(next);
-    alert(editingId ? "ORDEM DE SERVIÇO ATUALIZADA!" : "ORDEM DE SERVIÇO SALVA!");
-    limparOs();
-  }
-
-  function carregarOs(os: OrdemServico) {
-    setEditingId(os.id);
-    setNumeroOs(os.numero);
-    setStatus(os.status);
-    setClienteId(os.clienteId);
-    setBuscaCliente(os.clienteNome || "");
-    setVeiculoId(os.veiculoId);
-    setBuscaVeiculo(os.veiculoDescricao || "");
-    setProdutosItens(os.produtos || []);
-    setServicosItens(os.servicos || []);
-    setTecnico(os.tecnico || "");
-    setPrazo(os.prazo || "");
-    setGarantiaNumero(os.garantiaNumero || "");
-    setGarantiaTipo(os.garantiaTipo || "DIAS");
-    setFormaPagamento(os.formaPagamento || "DINHEIRO");
-    setDesconto(String(toMoney(os.desconto)));
-    setObservacoes(os.observacoes || "");
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function removerOs(id: number) {
-    const listaOs = readLS<OrdemServico[]>(LS_ORDENS, []);
-    const alvo = listaOs.find((x) => x.id === id);
-
-    if (alvo?.faturado) {
-      alert("ESSA OS JÁ FOI FATURADA. REMOVA MANUALMENTE O FINANCEIRO ANTES, SE NECESSÁRIO.");
-      return;
-    }
-
-    if (!confirm("REMOVER ESTA ORDEM DE SERVIÇO?")) return;
-
-    const next = listaOs.filter((x) => x.id !== id);
-    writeLS(LS_ORDENS, next);
-    setHistorico(next);
-
-    if (editingId === id) {
-      limparOs();
-    }
-
-    alert("ORDEM DE SERVIÇO REMOVIDA!");
-  }
-
-  function montarHtmlImpressao(modoTecnico: boolean, os?: OrdemServico) {
-    const base = os || {
-      numero: numeroOs,
-      clienteNome: clienteSelecionado?.nome || "-",
-      clienteTelefone: clienteSelecionado?.telefone || "-",
-      veiculoDescricao: veiculoSelecionado
-        ? up(
-            `${veiculoSelecionado.marca || ""} ${veiculoSelecionado.modelo || ""} ${
-              veiculoSelecionado.placa ? `- ${veiculoSelecionado.placa}` : ""
-            }`
-          )
-        : "-",
-      status,
-      tecnico: up(tecnico || "-"),
-      prazo,
-      garantiaNumero,
-      garantiaTipo,
-      formaPagamento: up(formaPagamento),
-      produtos: produtosItens,
-      servicos: servicosItens,
-      subtotalProdutos,
-      subtotalServicos,
+      status: up(status),
+      subtotal_produtos: subtotalProdutos,
+      subtotal_servicos: subtotalServicos,
       desconto: toMoney(desconto),
+      acrescimo: toMoney(acrescimo),
       total: totalGeral,
-      observacoes: up(observacoes || "-"),
       faturado: false,
     };
 
-    const produtosRows = (base.produtos || [])
-      .map((item: OsProdutoItem) => {
-        return `
-          <tr>
-            <td>${item.nome}</td>
-            <td>${item.codigo || "-"}</td>
-            <td style="text-align:right;">${item.quantidade}</td>
-            ${
-              modoTecnico
-                ? ""
-                : `<td style="text-align:right;">${moneyBR(item.valorUnitario)}</td>
-                   <td style="text-align:right;">${moneyBR(item.total)}</td>`
-            }
-          </tr>
-        `;
-      })
-      .join("");
+    let ordemId = editingId;
 
-    const servicosRows = (base.servicos || [])
-      .map((item: OsServicoItem) => {
-        return `
-          <tr>
-            <td>${item.descricao || "-"}</td>
-            <td style="text-align:right;">${item.quantidade}</td>
-            ${
-              modoTecnico
-                ? ""
-                : `<td style="text-align:right;">${moneyBR(item.valorUnitario)}</td>
-                   <td style="text-align:right;">${moneyBR(item.total)}</td>`
-            }
-          </tr>
-        `;
-      })
-      .join("");
+    if (editingId) {
+      const { error } = await supabase
+        .from("ordens_servico")
+        .update(payload)
+        .eq("id", editingId)
+        .eq("empresa_id", empresaId);
 
-    return `
-      <html>
-        <head>
-          <title>${base.numero}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
-            h1,h2,h3 { margin: 0 0 10px 0; }
-            .topo { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #0A569E; padding-bottom:12px; margin-bottom:18px; }
-            .tag { background:#0A569E; color:#fff; padding:8px 14px; border-radius:999px; font-weight:bold; font-size:12px; }
-            .bloco { border:1px solid #ddd; border-radius:12px; padding:12px; margin-bottom:14px; }
-            .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-            .muted { color:#666; font-size:12px; }
-            table { width:100%; border-collapse:collapse; margin-top:8px; }
-            th,td { border-bottom:1px solid #eee; padding:8px; font-size:12px; text-align:left; }
-            th { background:#f5f5f5; }
-            .totais { width:320px; margin-left:auto; margin-top:14px; }
-            .linha-total { display:flex; justify-content:space-between; padding:6px 0; font-size:13px; }
-            .final { font-weight:900; font-size:16px; border-top:2px solid #111; margin-top:6px; padding-top:8px; }
-            .assinaturas { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:40px; }
-            .assinatura { border-top:1px solid #999; padding-top:8px; text-align:center; font-size:12px; }
-          </style>
-        </head>
-        <body>
-          <div class="topo">
-            <div>
-              <h1>AUTO GESTÃO PRÓ</h1>
-              <div class="muted">ORDEM DE SERVIÇO</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="tag">${modoTecnico ? "IMPRESSÃO TÉCNICOS" : "ORDEM DE SERVIÇO"}</div>
-              <div style="margin-top:10px;font-weight:bold;">${base.numero}</div>
-              <div class="muted">${new Date().toLocaleString("pt-BR")}</div>
-            </div>
-          </div>
+      if (error) {
+        alert("ERRO AO ATUALIZAR OS: " + error.message);
+        return;
+      }
 
-          <div class="bloco grid-2">
-            <div>
-              <div class="muted">CLIENTE</div>
-              <div><b>${base.clienteNome || "-"}</b></div>
-              <div>Telefone: ${base.clienteTelefone || "-"}</div>
-            </div>
-            <div>
-              <div class="muted">VEÍCULO</div>
-              <div><b>${base.veiculoDescricao || "-"}</b></div>
-              <div>Status: ${base.status || "-"}</div>
-              <div>Técnico: ${base.tecnico || "-"}</div>
-            </div>
-          </div>
+      await supabase
+        .from("ordens_servico_produtos")
+        .delete()
+        .eq("empresa_id", empresaId)
+        .eq("ordem_servico_id", editingId);
 
-          <div class="bloco grid-2">
-            <div><div class="muted">PRAZO</div><div>${base.prazo || "-"}</div></div>
-            <div><div class="muted">GARANTIA</div><div>${base.garantiaNumero || "-"} ${base.garantiaNumero ? base.garantiaTipo || "" : ""}</div></div>
-          </div>
+      await supabase
+        .from("ordens_servico_servicos")
+        .delete()
+        .eq("empresa_id", empresaId)
+        .eq("ordem_servico_id", editingId);
+    } else {
+      const { data, error } = await supabase
+        .from("ordens_servico")
+        .insert([payload])
+        .select("id")
+        .single();
 
-          <div class="bloco">
-            <h3>PRODUTOS</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>DESCRIÇÃO</th>
-                  <th>CÓDIGO</th>
-                  <th style="text-align:right;">QTD</th>
-                  ${
-                    modoTecnico
-                      ? ""
-                      : '<th style="text-align:right;">V. UNIT.</th><th style="text-align:right;">TOTAL</th>'
-                  }
-                </tr>
-              </thead>
-              <tbody>
-                ${produtosRows || '<tr><td colspan="5">NENHUM PRODUTO</td></tr>'}
-              </tbody>
-            </table>
-          </div>
+      if (error || !data) {
+        alert("ERRO AO CRIAR OS: " + (error?.message || ""));
+        return;
+      }
 
-          <div class="bloco">
-            <h3>MÃO DE OBRA / SERVIÇOS</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>DESCRIÇÃO</th>
-                  <th style="text-align:right;">QTD</th>
-                  ${
-                    modoTecnico
-                      ? ""
-                      : '<th style="text-align:right;">V. UNIT.</th><th style="text-align:right;">TOTAL</th>'
-                  }
-                </tr>
-              </thead>
-              <tbody>
-                ${servicosRows || '<tr><td colspan="4">NENHUM SERVIÇO</td></tr>'}
-              </tbody>
-            </table>
-          </div>
+      ordemId = data.id;
+    }
 
-          <div class="bloco">
-            <h3>OBSERVAÇÕES</h3>
-            <div>${base.observacoes || "-"}</div>
-          </div>
+    const produtosPayload = produtosOS.map((item) => ({
+      empresa_id: empresaId,
+      ordem_servico_id: ordemId,
+      produto_id: item.produto_id || null,
+      produto_nome: up(item.produto_nome || ""),
+      codigo: up(item.codigo || ""),
+      quantidade: toMoney(item.quantidade),
+      valor_unitario: toMoney(item.valor_unitario),
+      subtotal: toMoney(item.quantidade) * toMoney(item.valor_unitario),
+    }));
 
-          ${
-            modoTecnico
-              ? ""
-              : `
-            <div class="totais">
-              <div class="linha-total"><span>SUBTOTAL PRODUTOS</span><b>${moneyBR(toMoney(base.subtotalProdutos || 0))}</b></div>
-              <div class="linha-total"><span>SUBTOTAL MÃO DE OBRA</span><b>${moneyBR(toMoney(base.subtotalServicos || 0))}</b></div>
-              <div class="linha-total"><span>DESCONTO</span><b>${moneyBR(toMoney(base.desconto || 0))}</b></div>
-              <div class="linha-total final"><span>TOTAL GERAL</span><b>${moneyBR(toMoney(base.total || 0))}</b></div>
-            </div>
-          `
-          }
+    const servicosPayload = servicosOS
+      .filter((item) => String(item.descricao || "").trim())
+      .map((item) => ({
+        empresa_id: empresaId,
+        ordem_servico_id: ordemId,
+        descricao: up(item.descricao || ""),
+        quantidade: toMoney(item.quantidade),
+        valor_unitario: toMoney(item.valor_unitario),
+        subtotal: toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      }));
 
-          <div class="assinaturas">
-            <div class="assinatura">ASSINATURA DO CLIENTE</div>
-            <div class="assinatura">ASSINATURA DO RESPONSÁVEL</div>
-          </div>
+    if (produtosPayload.length > 0) {
+      const { error } = await supabase.from("ordens_servico_produtos").insert(produtosPayload);
+      if (error) {
+        alert("ERRO AO SALVAR PRODUTOS DA OS: " + error.message);
+        return;
+      }
+    }
 
-          <script>window.onload = function(){ window.print(); }</script>
-        </body>
-      </html>
-    `;
+    if (servicosPayload.length > 0) {
+      const { error } = await supabase.from("ordens_servico_servicos").insert(servicosPayload);
+      if (error) {
+        alert("ERRO AO SALVAR SERVIÇOS DA OS: " + error.message);
+        return;
+      }
+    }
+
+    const agendamentoIdParam = searchParams.get("agendamento_id");
+
+    if (agendamentoIdParam && empresaId) {
+      await supabase
+        .from("agendamentos")
+        .update({
+          status: "CONVERTIDO",
+        })
+        .eq("empresa_id", empresaId)
+        .eq("id", agendamentoIdParam);
+    }
+
+    alert(editingId ? "OS ATUALIZADA!" : "OS SALVA COM SUCESSO!");
+    novaOS();
+    carregarBase();
   }
 
-  function imprimirOs(modoTecnico: boolean, os?: OrdemServico) {
-    const base = os || null;
+  async function editarOS(item: OrdemServico) {
+    if (!empresaId) return;
 
-    if (!base && !clienteSelecionado) {
-      alert("SELECIONE UM CLIENTE.");
-      return;
-    }
+    setEditingId(item.id);
+    setNumeroOS(item.numero || "");
+    setClienteId(item.cliente_id || "");
+    setClienteNome(item.cliente_nome || "");
+    setBuscaCliente(item.cliente_nome || "");
 
-    if (!base && !veiculoSelecionado) {
-      alert("SELECIONE UM VEÍCULO.");
-      return;
-    }
+    await carregarVeiculosDoCliente(item.cliente_id || "");
 
-    if (!base && !produtosItens.length && !servicosItens.length) {
-      alert("ADICIONE PRODUTOS OU SERVIÇOS.");
-      return;
-    }
+    setVeiculoId(item.veiculo_id || "");
+    setVeiculo(item.veiculo_descricao || "");
+    setPlaca(item.placa || "");
+    setKm(item.km || "");
 
-    const w = window.open("", "_blank", "width=1000,height=900");
-    if (!w) {
-      alert("LIBERE POPUP PARA IMPRIMIR.");
-      return;
-    }
+    setStatus(item.status || "ABERTA");
+    setTecnico(item.tecnico_responsavel || "");
+    setPrazoData(item.prazo_data || "");
+    setGarantiaNumero(item.garantia_numero || "");
+    setGarantiaTipo(item.garantia_tipo || "DIAS");
+    setFormaPagamento(item.forma_pagamento || "DINHEIRO");
+    setDefeitoRelatado(item.defeito_relatado || "");
+    setObservacoes(item.observacoes || "");
+    setDesconto(String(toMoney(item.desconto)));
+    setAcrescimo(String(toMoney(item.acrescimo)));
 
-    w.document.open();
-    w.document.write(montarHtmlImpressao(modoTecnico, os));
-    w.document.close();
+    const [prodResp, servResp] = await Promise.all([
+      supabase
+        .from("ordens_servico_produtos")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .eq("ordem_servico_id", item.id),
+      supabase
+        .from("ordens_servico_servicos")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .eq("ordem_servico_id", item.id),
+    ]);
+
+    setProdutosOS((prodResp.data || []).map((p: any) => ({ ...p, id: p.id || makeLocalId() })));
+    setServicosOS((servResp.data || []).map((s: any) => ({ ...s, id: s.id || makeLocalId() })));
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function faturarOs(id: number) {
-    const listaOs = readLS<OrdemServico[]>(LS_ORDENS, []);
-    const listaProdutos = readLS<Produto[]>(LS_PRODUTOS, []);
-    const titulos = readLS<FinanceiroTitulo[]>(LS_TITULOS, []);
-    const fluxo = readLS<FluxoLancamento[]>(LS_FLUXO, []);
+  async function removerOS(id: string) {
+    if (!empresaId) return;
+    if (!confirm("REMOVER ESTA OS?")) return;
 
-    const os = listaOs.find((x) => x.id === id);
+    await supabase
+      .from("ordens_servico_produtos")
+      .delete()
+      .eq("empresa_id", empresaId)
+      .eq("ordem_servico_id", id);
 
-    if (!os) {
-      alert("OS NÃO ENCONTRADA.");
+    await supabase
+      .from("ordens_servico_servicos")
+      .delete()
+      .eq("empresa_id", empresaId)
+      .eq("ordem_servico_id", id);
+
+    const { error } = await supabase
+      .from("ordens_servico")
+      .delete()
+      .eq("empresa_id", empresaId)
+      .eq("id", id);
+
+    if (error) {
+      alert("ERRO AO REMOVER OS: " + error.message);
       return;
     }
 
-    if (os.faturado) {
-      alert("ESSA OS JÁ FOI FATURADA.");
+    alert("OS REMOVIDA!");
+    if (editingId === id) novaOS();
+    carregarBase();
+  }
+
+  async function faturarOS(item: OrdemServico) {
+    if (!empresaId) return;
+
+    if (item.faturado) {
+      alert("ESSA OS JÁ ESTÁ FATURADA.");
       return;
     }
 
-    const produtosAtualizados = listaProdutos.map((p) => {
-      const item = os.produtos.find((i) => i.produtoId === p.id);
-      if (!item) return p;
-      if (!p.controlaEstoque) return p;
+    const { error: osError } = await supabase
+      .from("ordens_servico")
+      .update({
+        faturado: true,
+        data_faturamento: hojeISO(),
+      })
+      .eq("empresa_id", empresaId)
+      .eq("id", item.id);
 
-      return {
-        ...p,
-        estoqueAtual: Math.max(
-          0,
-          toMoney(p.estoqueAtual) - toMoney(item.quantidade)
-        ),
-      };
-    });
-
-    writeLS(LS_PRODUTOS, produtosAtualizados);
-
-    const ehPagoNaHora = pagamentoImediato(os.formaPagamento);
-    const tituloId = Date.now() + 100;
-
-    const titulo: FinanceiroTitulo = {
-      id: tituloId,
-      tipo: "RECEBER",
-      descricao: up(`OS ${os.numero}`),
-      categoria: "ORDEM DE SERVIÇO",
-      clienteId: os.clienteId,
-      clienteNome: os.clienteNome,
-      documento: os.numero,
-      formaPagamento: os.formaPagamento,
-      valorOriginal: toMoney(os.total),
-      valorPago: ehPagoNaHora ? toMoney(os.total) : 0,
-      desconto: 0,
-      juros: 0,
-      multa: 0,
-      dataEmissao: new Date().toISOString().slice(0, 10),
-      dataVencimento: os.prazo || new Date().toISOString().slice(0, 10),
-      dataPagamento: ehPagoNaHora ? new Date().toISOString().slice(0, 10) : "",
-      status: ehPagoNaHora ? "PAGO" : "ABERTO",
-      observacoes: os.observacoes || "",
-      createdAt: new Date().toISOString(),
-    };
-
-    writeLS(LS_TITULOS, [...titulos, titulo]);
-
-    if (ehPagoNaHora) {
-      const lancamento: FluxoLancamento = {
-        id: Date.now() + 200,
-        tipo: "ENTRADA",
-        descricao: up(`RECEBIMENTO OS ${os.numero}`),
-        categoria: "ORDEM DE SERVIÇO",
-        valor: toMoney(os.total),
-        data: new Date().toISOString().slice(0, 10),
-        origem: "OS",
-        observacoes: up(os.clienteNome),
-      };
-
-      writeLS(LS_FLUXO, [...fluxo, lancamento]);
+    if (osError) {
+      alert("ERRO AO FATURAR OS: " + osError.message);
+      return;
     }
 
-    const nextOs = listaOs.map((x) =>
-      x.id === id
-        ? {
-            ...x,
-            status: "ENTREGUE" as const,
-            faturado: true,
-            estoqueBaixado: true,
-            dataFaturamento: new Date().toISOString(),
-            financeiroGeradoId: tituloId,
-          }
-        : x
-    );
+    const { error: financeiroError } = await supabase
+      .from("financeiro_titulos")
+      .insert([
+        {
+          empresa_id: empresaId,
+          tipo: "RECEBER",
+          descricao: up(`OS ${item.numero || ""}`),
+          cliente_id: item.cliente_id || null,
+          cliente_nome: up(item.cliente_nome || ""),
+          documento: up(item.numero || ""),
+          categoria: "ORDEM DE SERVICO",
+          valor_original: toMoney(item.total),
+          valor_pago: 0,
+          desconto: 0,
+          juros: 0,
+          multa: 0,
+          data_emissao: hojeISO(),
+          data_vencimento: hojeISO(),
+          status: "ABERTO",
+          observacoes: up(`FATURAMENTO DA OS ${item.numero || ""}`),
+        },
+      ]);
 
-    writeLS(LS_ORDENS, nextOs);
-    setHistorico(nextOs);
-    setProdutos(produtosAtualizados);
-
-    if (editingId === id) {
-      setStatus("ENTREGUE");
+    if (financeiroError) {
+      alert("OS FATURADA, MAS HOUVE ERRO NO FINANCEIRO: " + financeiroError.message);
+      return;
     }
 
-    alert("OS ENTREGUE E FATURADA COM SUCESSO!");
+    alert("OS FATURADA COM SUCESSO!");
+    carregarBase();
+  }
+
+  function imprimirOS(item: OrdemServico) {
+    window.open(`/ordens/imprimir?id=${item.id}`, "_blank");
+  }
+
+  function imprimirTecnico(item: OrdemServico) {
+    window.open(`/ordens/imprimir-tecnico?id=${item.id}`, "_blank");
   }
 
   if (!ready) {
@@ -926,119 +749,73 @@ export default function OrdensPage() {
   }
 
   return (
-    <div className="min-h-screen flex bg-[#F8F9FA]">
+    <div className="min-h-screen flex bg-[#F3F4F6]">
       <Sidebar />
+
       <main className="flex-1 p-6">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-6">
+        <div className="flex justify-between items-start mb-6 gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl font-black text-[#6C757D]">
+            <h1 className="text-[26px] font-black text-[#6C757D]">
               ORDEM DE SERVIÇO
             </h1>
-            <div className="text-sm text-[#6C757D]">
-              NÚMERO: {numeroOs} {editingId ? "• MODO EDIÇÃO" : ""}
-            </div>
+
+            <p className="text-sm text-[#6C757D] mt-1">
+              NÚMERO: {numeroOS}
+            </p>
           </div>
 
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-3 flex-wrap">
             <button
-              onClick={() => imprimirOs(false)}
-              className="border px-4 py-2 rounded-lg hover:bg-white"
+              className="botao"
+              onClick={() => editingId && imprimirOS({ id: editingId } as OrdemServico)}
               type="button"
             >
               IMPRESSÃO DE OS
             </button>
 
             <button
-              onClick={() => imprimirOs(true)}
-              className="border px-4 py-2 rounded-lg hover:bg-white"
+              className="botao"
+              onClick={() => editingId && imprimirTecnico({ id: editingId } as OrdemServico)}
               type="button"
             >
               IMPRESSÃO OS TÉCNICOS
             </button>
 
-            <button
-              onClick={salvarOs}
-              className="bg-[#0A569E] text-white px-4 py-2 rounded-lg"
-              type="button"
-            >
-              {editingId ? "ATUALIZAR OS" : "SALVAR OS"}
+            <button className="botao-azul" onClick={salvarOS} type="button">
+              SALVAR OS
             </button>
 
-            <button
-              onClick={limparOs}
-              className="border px-4 py-2 rounded-lg"
-              type="button"
-            >
+            <button className="botao" onClick={novaOS} type="button">
               NOVA OS
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 2xl:grid-cols-3 gap-6">
-          <section className="2xl:col-span-2 space-y-6">
-            <div className="bg-white rounded-2xl shadow p-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="md:col-span-2" ref={clienteBoxRef}>
-                  <div className="text-xs font-bold text-[#6C757D] mb-1">CLIENTE</div>
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6">
+          <div className="space-y-6">
+            <section className="card">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2 relative">
+                  <label className="label">CLIENTE</label>
                   <input
-                    value={buscaCliente}
-                    onChange={(e) => {
-                      setBuscaCliente(e.target.value);
-                      setOpenClientes(true);
-                    }}
-                    onFocus={() => setOpenClientes(true)}
                     placeholder="DIGITE O NOME, TELEFONE OU DOCUMENTO..."
-                    className="border p-2 rounded w-full"
+                    className="campo"
+                    value={buscaCliente}
+                    onChange={(e) => setBuscaCliente(e.target.value)}
                   />
 
-                  {openClientes && clientesSugestao.length > 0 && (
-                    <div className="border rounded-lg bg-white mt-1 max-h-60 overflow-auto">
-                      {clientesSugestao.map((c) => (
+                  {buscaCliente.trim() && clientesFiltrados.length > 0 && (
+                    <div className="absolute z-20 mt-1 w-full rounded-xl border border-[#D1D5DB] bg-white shadow-lg max-h-[220px] overflow-auto">
+                      {clientesFiltrados.map((c) => (
                         <button
                           key={c.id}
                           type="button"
                           onClick={() => selecionarCliente(c)}
-                          className="w-full text-left px-3 py-2 hover:bg-[#F8F9FA] border-b last:border-b-0"
+                          className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
                         >
-                          <div className="font-bold">{c.nome}</div>
-                          <div className="text-xs text-[#6C757D]">
-                            {c.telefone || "-"}{" "}
-                            {c.cidade ? `— ${c.cidade}/${c.estado || ""}` : ""}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div ref={veiculoBoxRef}>
-                  <div className="text-xs font-bold text-[#6C757D] mb-1">VEÍCULO</div>
-                  <input
-                    value={buscaVeiculo}
-                    onChange={(e) => {
-                      setBuscaVeiculo(e.target.value);
-                      setOpenVeiculos(true);
-                    }}
-                    onFocus={() => setOpenVeiculos(true)}
-                    placeholder="PLACA, MARCA, MODELO..."
-                    className="border p-2 rounded w-full"
-                    disabled={!clienteId}
-                  />
-
-                  {openVeiculos && veiculosSugestao.length > 0 && (
-                    <div className="border rounded-lg bg-white mt-1 max-h-60 overflow-auto">
-                      {veiculosSugestao.map((v) => (
-                        <button
-                          key={v.id}
-                          type="button"
-                          onClick={() => selecionarVeiculo(v)}
-                          className="w-full text-left px-3 py-2 hover:bg-[#F8F9FA] border-b last:border-b-0"
-                        >
-                          <div className="font-bold">
-                            {up(v.marca || "")} {up(v.modelo || "")}
-                          </div>
-                          <div className="text-xs text-[#6C757D]">
-                            {up(v.placa || "-")} {v.ano ? `— ${v.ano}` : ""}
+                          <div className="font-semibold text-[#111827]">{c.nome}</div>
+                          <div className="text-xs text-[#6B7280]">
+                            {c.telefone || c.celular || c.whatsapp || c.cpf_cnpj || "-"}
                           </div>
                         </button>
                       ))}
@@ -1047,492 +824,546 @@ export default function OrdensPage() {
                 </div>
 
                 <div>
-                  <div className="text-xs font-bold text-[#6C757D] mb-1">STATUS</div>
+                  <label className="label">VEÍCULO</label>
                   <select
+                    className="campo"
+                    value={veiculoId}
+                    onChange={(e) => selecionarVeiculo(e.target.value)}
+                    disabled={!clienteId}
+                  >
+                    <option value="">SELECIONE O VEÍCULO</option>
+                    {veiculosCliente.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {montarDescricaoVeiculo(v)} {v.placa ? `- ${v.placa}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label">TÉCNICO / RESPONSÁVEL</label>
+                  <input
+                    placeholder="NOME DO RESPONSÁVEL"
+                    className="campo"
+                    value={tecnico}
+                    onChange={(e) => setTecnico(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="label">PRAZO</label>
+                  <input
+                    type="date"
+                    className="campo"
+                    value={prazoData}
+                    onChange={(e) => setPrazoData(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="label">STATUS</label>
+                  <select
+                    className="campo"
                     value={status}
-                    onChange={(e) =>
-                      setStatus(
-                        e.target.value as
-                          | "ABERTA"
-                          | "EM ANDAMENTO"
-                          | "FINALIZADA"
-                          | "ENTREGUE"
-                      )
-                    }
-                    className="border p-2 rounded w-full bg-white"
+                    onChange={(e) => setStatus(e.target.value)}
                   >
                     <option>ABERTA</option>
                     <option>EM ANDAMENTO</option>
                     <option>FINALIZADA</option>
                     <option>ENTREGUE</option>
+                    <option>CANCELADA</option>
                   </select>
                 </div>
 
                 <div>
-                  <div className="text-xs font-bold text-[#6C757D] mb-1">TÉCNICO / RESPONSÁVEL</div>
+                  <label className="label">GARANTIA</label>
                   <input
-                    value={tecnico}
-                    onChange={(e) => setTecnico(e.target.value)}
-                    className="border p-2 rounded w-full"
-                    placeholder="NOME DO RESPONSÁVEL"
+                    placeholder="NÚMERO"
+                    className="campo"
+                    value={garantiaNumero}
+                    onChange={(e) => setGarantiaNumero(e.target.value)}
                   />
                 </div>
 
                 <div>
-                  <div className="text-xs font-bold text-[#6C757D] mb-1">PRAZO</div>
-                  <input
-                    type="date"
-                    value={prazo}
-                    onChange={(e) => setPrazo(e.target.value)}
-                    className="border p-2 rounded w-full"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <div className="text-xs font-bold text-[#6C757D] mb-1">GARANTIA</div>
-                    <input
-                      value={garantiaNumero}
-                      onChange={(e) => setGarantiaNumero(e.target.value)}
-                      className="border p-2 rounded w-full"
-                      placeholder="NÚMERO"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-[#6C757D] mb-1">TIPO</div>
-                    <select
-                      value={garantiaTipo}
-                      onChange={(e) => setGarantiaTipo(e.target.value as "DIAS" | "MESES")}
-                      className="border p-2 rounded w-full bg-white"
-                    >
-                      <option value="DIAS">DIAS</option>
-                      <option value="MESES">MESES</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-bold text-[#6C757D] mb-1">FORMA DE PAGAMENTO</div>
+                  <label className="label">TIPO</label>
                   <select
+                    className="campo"
+                    value={garantiaTipo}
+                    onChange={(e) => setGarantiaTipo(e.target.value)}
+                  >
+                    <option>DIAS</option>
+                    <option>MESES</option>
+                    <option>ANOS</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label">FORMA DE PAGAMENTO</label>
+                  <select
+                    className="campo"
                     value={formaPagamento}
                     onChange={(e) => setFormaPagamento(e.target.value)}
-                    className="border p-2 rounded w-full bg-white"
                   >
                     <option>DINHEIRO</option>
                     <option>PIX</option>
-                    <option>CARTÃO DE DÉBITO</option>
-                    <option>CARTÃO DE CRÉDITO</option>
+                    <option>CARTÃO</option>
                     <option>BOLETO</option>
-                    <option>TRANSFERÊNCIA</option>
-                    <option>A PRAZO</option>
                   </select>
                 </div>
-              </div>
-            </div>
 
-            <div className="bg-white rounded-2xl shadow p-4" ref={produtoBoxRef}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-bold text-[#6C757D]">PRODUTOS</div>
-                <div className="text-xs text-[#6C757D]">DIGITE 3 LETRAS PARA BUSCAR</div>
-              </div>
-
-              <input
-                value={buscaProduto}
-                onChange={(e) => {
-                  setBuscaProduto(e.target.value);
-                  setOpenProdutos(true);
-                }}
-                onFocus={() => setOpenProdutos(true)}
-                placeholder="BUSCAR PRODUTO POR NOME OU CÓDIGO..."
-                className="border p-2 rounded w-full"
-              />
-
-              {openProdutos && produtosSugestao.length > 0 && (
-                <div className="border rounded-lg bg-white mt-2 max-h-72 overflow-auto">
-                  {produtosSugestao.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => adicionarProduto(p)}
-                      className="w-full text-left px-3 py-2 hover:bg-[#F8F9FA] border-b last:border-b-0"
-                    >
-                      <div className="flex justify-between gap-4">
-                        <div>
-                          <div className="font-bold">{up(p.nome)}</div>
-                          <div className="text-xs text-[#6C757D]">
-                            {up(p.codigoSku || p.sku || "-")}{" "}
-                            {p.controlaEstoque ? `— ESTOQUE: ${toMoney(p.estoqueAtual)}` : ""}
-                          </div>
-                        </div>
-                        <div className="font-bold text-[#0A569E]">
-                          {moneyBR(getPrecoProduto(p))}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                <div>
+                  <label className="label">PLACA</label>
+                  <input
+                    className="campo"
+                    value={placa}
+                    onChange={(e) => setPlaca(e.target.value)}
+                  />
                 </div>
-              )}
 
-              <div className="mt-4 overflow-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-[#F8F9FA]">
+                <div>
+                  <label className="label">KM</label>
+                  <input
+                    className="campo"
+                    value={km}
+                    onChange={(e) => setKm(e.target.value)}
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <label className="label">DEFEITO RELATADO</label>
+                  <textarea
+                    className="campo-textarea"
+                    value={defeitoRelatado}
+                    onChange={(e) => setDefeitoRelatado(e.target.value)}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
+                <h2 className="titulo">PRODUTOS</h2>
+
+                <p className="text-xs text-[#6C757D]">
+                  DIGITE 3 LETRAS PARA BUSCAR
+                </p>
+              </div>
+
+              <div className="relative flex gap-3 mb-3">
+                <input
+                  placeholder="BUSCAR PRODUTO POR NOME OU CÓDIGO..."
+                  className="campo"
+                  value={buscaProduto}
+                  onChange={(e) => setBuscaProduto(e.target.value)}
+                />
+
+                {buscaProduto.trim().length >= 3 && produtosFiltrados.length > 0 && (
+                  <div className="absolute top-[48px] left-0 right-0 z-20 rounded-xl border border-[#D1D5DB] bg-white shadow-lg max-h-[220px] overflow-auto">
+                    {produtosFiltrados.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => adicionarProdutoDoBanco(p)}
+                        className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
+                      >
+                        <div className="font-semibold text-[#111827]">{p.nome}</div>
+                        <div className="text-xs text-[#6B7280]">
+                          {p.codigo_sku || "-"} • {moneyBR(toMoney(p.preco_balcao))}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <table className="tabela">
+                <thead>
+                  <tr>
+                    <th>PRODUTO</th>
+                    <th>CÓDIGO</th>
+                    <th>QTD</th>
+                    <th>V. UNIT.</th>
+                    <th>TOTAL</th>
+                    <th>AÇÃO</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {produtosOS.length === 0 ? (
                     <tr>
-                      <th className="p-2 text-left">PRODUTO</th>
-                      <th className="p-2 text-left">CÓDIGO</th>
-                      <th className="p-2 text-right">QTD</th>
-                      <th className="p-2 text-right">V. UNIT.</th>
-                      <th className="p-2 text-right">TOTAL</th>
-                      <th className="p-2 text-right">AÇÃO</th>
+                      <td colSpan={6} className="text-center py-6 text-[#6C757D]">
+                        NENHUM PRODUTO ADICIONADO.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {produtosItens.length === 0 ? (
-                      <tr>
-                        <td className="p-4 text-[#6C757D]" colSpan={6}>
-                          NENHUM PRODUTO ADICIONADO.
+                  ) : (
+                    produtosOS.map((item) => (
+                      <tr key={item.id}>
+                        <td>
+                          <input
+                            className="campo-tabela"
+                            value={item.produto_nome || ""}
+                            onChange={(e) => atualizarProdutoOS(item.id, "produto_nome", e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="campo-tabela"
+                            value={item.codigo || ""}
+                            onChange={(e) => atualizarProdutoOS(item.id, "codigo", e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="campo-tabela"
+                            type="number"
+                            value={toMoney(item.quantidade)}
+                            onChange={(e) => atualizarProdutoOS(item.id, "quantidade", e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="campo-tabela"
+                            type="number"
+                            value={toMoney(item.valor_unitario)}
+                            onChange={(e) => atualizarProdutoOS(item.id, "valor_unitario", e.target.value)}
+                          />
+                        </td>
+                        <td>{moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}</td>
+                        <td>
+                          <button
+                            className="botao-mini"
+                            onClick={() => removerProdutoOS(item.id)}
+                            type="button"
+                          >
+                            REMOVER
+                          </button>
                         </td>
                       </tr>
-                    ) : (
-                      produtosItens.map((item) => (
-                        <tr key={item.id} className="border-b">
-                          <td className="p-2">
-                            <input
-                              value={item.nome}
-                              onChange={(e) =>
-                                atualizarProdutoItem(item.id, "nome", e.target.value)
-                              }
-                              className="border p-2 rounded w-full"
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input
-                              value={item.codigo || ""}
-                              onChange={(e) =>
-                                atualizarProdutoItem(item.id, "codigo", e.target.value)
-                              }
-                              className="border p-2 rounded w-full"
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.quantidade}
-                              onChange={(e) =>
-                                atualizarProdutoItem(
-                                  item.id,
-                                  "quantidade",
-                                  Number(e.target.value)
-                                )
-                              }
-                              className="border p-2 rounded w-24 text-right"
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={item.valorUnitario}
-                              onChange={(e) =>
-                                atualizarProdutoItem(
-                                  item.id,
-                                  "valorUnitario",
-                                  Number(e.target.value)
-                                )
-                              }
-                              className="border p-2 rounded w-32 text-right"
-                            />
-                          </td>
-                          <td className="p-2 text-right font-bold">
-                            {moneyBR(item.total)}
-                          </td>
-                          <td className="p-2 text-right">
-                            <button
-                              onClick={() => removerProdutoItem(item.id)}
-                              className="border px-3 py-1 rounded"
-                              type="button"
-                            >
-                              REMOVER
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </section>
 
-            <div className="bg-white rounded-2xl shadow p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-bold text-[#6C757D]">MÃO DE OBRA / SERVIÇOS</div>
-                <button
-                  onClick={adicionarServico}
-                  className="border px-4 py-2 rounded-lg"
-                  type="button"
-                >
+            <section className="card">
+              <div className="flex justify-between items-center mb-3">
+                <h2 className="titulo">MÃO DE OBRA / SERVIÇOS</h2>
+
+                <button className="botao" onClick={adicionarServico} type="button">
                   ADICIONAR SERVIÇO
                 </button>
               </div>
 
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-[#F8F9FA]">
+              <table className="tabela">
+                <thead>
+                  <tr>
+                    <th>DESCRIÇÃO</th>
+                    <th>QTD</th>
+                    <th>V. UNIT.</th>
+                    <th>TOTAL</th>
+                    <th>AÇÃO</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {servicosOS.length === 0 ? (
                     <tr>
-                      <th className="p-2 text-left">DESCRIÇÃO</th>
-                      <th className="p-2 text-right">QTD</th>
-                      <th className="p-2 text-right">V. UNIT.</th>
-                      <th className="p-2 text-right">TOTAL</th>
-                      <th className="p-2 text-right">AÇÃO</th>
+                      <td colSpan={5} className="text-center py-6 text-[#6C757D]">
+                        NENHUM SERVIÇO ADICIONADO.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {servicosItens.length === 0 ? (
-                      <tr>
-                        <td className="p-4 text-[#6C757D]" colSpan={5}>
-                          NENHUM SERVIÇO ADICIONADO.
+                  ) : (
+                    servicosOS.map((item) => (
+                      <tr key={item.id}>
+                        <td>
+                          <input
+                            className="campo-tabela"
+                            value={item.descricao || ""}
+                            onChange={(e) => atualizarServicoOS(item.id, "descricao", e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="campo-tabela"
+                            type="number"
+                            value={toMoney(item.quantidade)}
+                            onChange={(e) => atualizarServicoOS(item.id, "quantidade", e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="campo-tabela"
+                            type="number"
+                            value={toMoney(item.valor_unitario)}
+                            onChange={(e) => atualizarServicoOS(item.id, "valor_unitario", e.target.value)}
+                          />
+                        </td>
+                        <td>{moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}</td>
+                        <td>
+                          <button
+                            className="botao-mini"
+                            onClick={() => removerServicoOS(item.id)}
+                            type="button"
+                          >
+                            REMOVER
+                          </button>
                         </td>
                       </tr>
-                    ) : (
-                      servicosItens.map((item) => (
-                        <tr key={item.id} className="border-b">
-                          <td className="p-2">
-                            <input
-                              value={item.descricao}
-                              onChange={(e) =>
-                                atualizarServicoItem(item.id, "descricao", e.target.value)
-                              }
-                              className="border p-2 rounded w-full"
-                              placeholder="EX: TROCA DE ÓLEO, INSTALAÇÃO, DIAGNÓSTICO..."
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.quantidade}
-                              onChange={(e) =>
-                                atualizarServicoItem(
-                                  item.id,
-                                  "quantidade",
-                                  Number(e.target.value)
-                                )
-                              }
-                              className="border p-2 rounded w-24 text-right"
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={item.valorUnitario}
-                              onChange={(e) =>
-                                atualizarServicoItem(
-                                  item.id,
-                                  "valorUnitario",
-                                  Number(e.target.value)
-                                )
-                              }
-                              className="border p-2 rounded w-32 text-right"
-                            />
-                          </td>
-                          <td className="p-2 text-right font-bold">
-                            {moneyBR(item.total)}
-                          </td>
-                          <td className="p-2 text-right">
-                            <button
-                              onClick={() => removerServicoItem(item.id)}
-                              className="border px-3 py-1 rounded"
-                              type="button"
-                            >
-                              REMOVER
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </section>
 
-            <div className="bg-white rounded-2xl shadow p-4">
-              <div className="text-sm font-bold text-[#6C757D] mb-3">
-                HISTÓRICO DE ORDENS DE SERVIÇO
-              </div>
+            <section className="card">
+              <h2 className="titulo mb-3">HISTÓRICO DE ORDENS DE SERVIÇO</h2>
 
               <input
+                placeholder="BUSCAR POR NÚMERO, CLIENTE, VEÍCULO OU STATUS..."
+                className="campo mb-3"
                 value={buscaHistorico}
                 onChange={(e) => setBuscaHistorico(e.target.value)}
-                className="border p-2 rounded w-full mb-4"
-                placeholder="BUSCAR POR NÚMERO, CLIENTE, VEÍCULO OU STATUS..."
               />
 
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-[#F8F9FA]">
+              <table className="tabela">
+                <thead>
+                  <tr>
+                    <th>NÚMERO</th>
+                    <th>DATA</th>
+                    <th>CLIENTE</th>
+                    <th>VEÍCULO</th>
+                    <th>STATUS</th>
+                    <th>FAT.</th>
+                    <th>TOTAL</th>
+                    <th>AÇÕES</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {historicoFiltrado.length === 0 ? (
                     <tr>
-                      <th className="p-2 text-left">NÚMERO</th>
-                      <th className="p-2 text-left">DATA</th>
-                      <th className="p-2 text-left">CLIENTE</th>
-                      <th className="p-2 text-left">VEÍCULO</th>
-                      <th className="p-2 text-left">STATUS</th>
-                      <th className="p-2 text-left">FAT.</th>
-                      <th className="p-2 text-right">TOTAL</th>
-                      <th className="p-2 text-right">AÇÕES</th>
+                      <td colSpan={8} className="text-center py-6 text-[#6C757D]">
+                        NENHUMA ORDEM DE SERVIÇO ENCONTRADA.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {historicoFiltrado.length === 0 ? (
-                      <tr>
-                        <td className="p-4 text-[#6C757D]" colSpan={8}>
-                          NENHUMA ORDEM DE SERVIÇO ENCONTRADA.
+                  ) : (
+                    historicoFiltrado.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.numero || "-"}</td>
+                        <td>{item.created_at ? new Date(item.created_at).toLocaleDateString("pt-BR") : "-"}</td>
+                        <td>{item.cliente_nome || "-"}</td>
+                        <td>{item.veiculo_descricao || "-"}</td>
+                        <td>{item.status || "-"}</td>
+                        <td>{item.faturado ? "SIM" : "NÃO"}</td>
+                        <td>{moneyBR(toMoney(item.total))}</td>
+                        <td>
+                          <div className="flex gap-1 flex-wrap">
+                            <button className="botao-mini" onClick={() => editarOS(item)} type="button">
+                              EDITAR
+                            </button>
+                            <button className="botao-mini" onClick={() => imprimirOS(item)} type="button">
+                              OS
+                            </button>
+                            <button className="botao-mini" onClick={() => imprimirTecnico(item)} type="button">
+                              TÉCNICO
+                            </button>
+                            <button className="botao-mini" onClick={() => faturarOS(item)} type="button">
+                              FATURAR
+                            </button>
+                            <button className="botao-mini" onClick={() => removerOS(item.id)} type="button">
+                              REMOVER
+                            </button>
+                          </div>
                         </td>
                       </tr>
-                    ) : (
-                      historicoFiltrado.map((os) => (
-                        <tr key={os.id} className="border-b">
-                          <td className="p-2 font-bold">{os.numero}</td>
-                          <td className="p-2">
-                            {os.dataISO
-                              ? new Date(os.dataISO).toLocaleString("pt-BR")
-                              : "-"}
-                          </td>
-                          <td className="p-2">{os.clienteNome || "-"}</td>
-                          <td className="p-2">{os.veiculoDescricao || "-"}</td>
-                          <td className="p-2">{os.status || "-"}</td>
-                          <td className="p-2">
-                            {os.faturado ? (
-                              <span className="text-green-700 font-bold">SIM</span>
-                            ) : (
-                              <span className="text-orange-600 font-bold">NÃO</span>
-                            )}
-                          </td>
-                          <td className="p-2 text-right font-bold">
-                            {moneyBR(toMoney(os.total))}
-                          </td>
-                          <td className="p-2 text-right">
-                            <div className="flex justify-end gap-2 flex-wrap">
-                              <button
-                                onClick={() => carregarOs(os)}
-                                className="border px-3 py-1 rounded"
-                                type="button"
-                              >
-                                ABRIR
-                              </button>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </section>
+          </div>
 
-                              <button
-                                onClick={() => imprimirOs(false, os)}
-                                className="border px-3 py-1 rounded"
-                                type="button"
-                              >
-                                IMPRIMIR
-                              </button>
+          <div className="space-y-6">
+            <section className="card">
+              <h2 className="titulo mb-4">RESUMO DA OS</h2>
 
-                              <button
-                                onClick={() => imprimirOs(true, os)}
-                                className="border px-3 py-1 rounded"
-                                type="button"
-                              >
-                                TÉCNICOS
-                              </button>
-
-                              {!os.faturado && (
-                                <button
-                                  onClick={() => faturarOs(os.id)}
-                                  className="border px-3 py-1 rounded bg-[#0A569E] text-white"
-                                  type="button"
-                                >
-                                  ENTREGAR E FATURAR
-                                </button>
-                              )}
-
-                              <button
-                                onClick={() => removerOs(os.id)}
-                                className="border px-3 py-1 rounded"
-                                type="button"
-                              >
-                                REMOVER
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+              <div className="space-y-2 text-sm text-[#1F1F1F]">
+                <p><b>CLIENTE:</b> {clienteNome || "-"}</p>
+                <p><b>VEÍCULO:</b> {veiculo || "-"}</p>
+                <p><b>PLACA:</b> {placa || "-"}</p>
+                <p><b>KM:</b> {km || "-"}</p>
+                <p><b>TÉCNICO:</b> {tecnico || "-"}</p>
+                <p><b>PRAZO:</b> {prazoData || "-"}</p>
+                <p><b>GARANTIA:</b> {garantiaNumero ? `${garantiaNumero} ${garantiaTipo}` : "-"}</p>
+                <p><b>PAGAMENTO:</b> {formaPagamento}</p>
+                <p><b>STATUS:</b> {status}</p>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <aside className="space-y-6">
-            <div className="bg-white rounded-2xl shadow p-4">
-              <div className="text-sm font-bold text-[#6C757D] mb-3">RESUMO DA OS</div>
+            <section className="card">
+              <h2 className="titulo mb-4">TOTAIS</h2>
 
-              <div className="space-y-2 text-sm">
-                <div><b>CLIENTE:</b> {clienteSelecionado?.nome || "-"}</div>
-                <div>
-                  <b>VEÍCULO:</b>{" "}
-                  {veiculoSelecionado
-                    ? up(
-                        `${veiculoSelecionado.marca || ""} ${veiculoSelecionado.modelo || ""} ${
-                          veiculoSelecionado.placa ? `- ${veiculoSelecionado.placa}` : ""
-                        }`
-                      )
-                    : "-"}
-                </div>
-                <div><b>TÉCNICO:</b> {up(tecnico || "-")}</div>
-                <div><b>PRAZO:</b> {prazo || "-"}</div>
-                <div><b>GARANTIA:</b> {garantiaNumero ? `${garantiaNumero} ${garantiaTipo}` : "-"}</div>
-                <div><b>PAGAMENTO:</b> {up(formaPagamento)}</div>
-                <div><b>STATUS:</b> {status}</div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow p-4">
-              <div className="text-sm font-bold text-[#6C757D] mb-3">TOTAIS</div>
-
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <div className="flex justify-between text-sm">
                   <span>PRODUTOS</span>
-                  <b>{moneyBR(subtotalProdutos)}</b>
+                  <span className="font-semibold">{moneyBR(subtotalProdutos)}</span>
                 </div>
 
                 <div className="flex justify-between text-sm">
                   <span>MÃO DE OBRA</span>
-                  <b>{moneyBR(subtotalServicos)}</b>
+                  <span className="font-semibold">{moneyBR(subtotalServicos)}</span>
                 </div>
 
-                <div className="pt-2">
-                  <div className="text-xs font-bold text-[#6C757D] mb-1">DESCONTO</div>
+                <div>
+                  <label className="label">DESCONTO</label>
                   <input
+                    className="campo"
                     type="number"
-                    step="0.01"
                     value={desconto}
                     onChange={(e) => setDesconto(e.target.value)}
-                    className="border p-2 rounded w-full text-right"
                   />
                 </div>
 
-                <div className="flex justify-between text-base pt-3 border-t mt-3">
-                  <span className="font-bold">TOTAL GERAL</span>
-                  <b className="text-[#0A569E]">{moneyBR(totalGeral)}</b>
+                <div>
+                  <label className="label">ACRÉSCIMO</label>
+                  <input
+                    className="campo"
+                    type="number"
+                    value={acrescimo}
+                    onChange={(e) => setAcrescimo(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex justify-between text-[16px] font-black text-[#0456A3]">
+                  <span>TOTAL GERAL</span>
+                  <span>{moneyBR(totalGeral)}</span>
                 </div>
               </div>
-            </div>
+            </section>
 
-            <div className="bg-white rounded-2xl shadow p-4">
-              <div className="text-sm font-bold text-[#6C757D] mb-2">OBSERVAÇÕES</div>
+            <section className="card">
+              <h2 className="titulo mb-3">OBSERVAÇÕES</h2>
+
               <textarea
+                className="campo-textarea"
+                placeholder="DESCREVA O SERVIÇO, DEFEITO, CONDIÇÕES DE ENTRADA, PEÇAS TROCADAS, ETC."
                 value={observacoes}
                 onChange={(e) => setObservacoes(e.target.value)}
-                className="border p-2 rounded w-full min-h-[140px]"
-                placeholder="DESCREVA O SERVIÇO, DEFEITO, CONDIÇÕES DE ENTRADA, PEÇAS TROCADAS, ETC."
               />
-            </div>
-          </aside>
+            </section>
+          </div>
         </div>
       </main>
+
+      <style jsx>{`
+        .card {
+          background: white;
+          border-radius: 20px;
+          padding: 18px;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .titulo {
+          font-weight: 900;
+          font-size: 14px;
+          color: #6c757d;
+        }
+
+        .label {
+          display: block;
+          font-size: 12px;
+          font-weight: 800;
+          color: #6c757d;
+          margin-bottom: 6px;
+          text-transform: uppercase;
+        }
+
+        .campo {
+          height: 44px;
+          border: 1.5px solid #9a9a9a;
+          border-radius: 10px;
+          padding: 0 12px;
+          font-size: 14px;
+          width: 100%;
+          background: white;
+          color: #111827;
+        }
+
+        .campo-textarea {
+          border: 1.5px solid #9a9a9a;
+          border-radius: 10px;
+          padding: 10px;
+          font-size: 14px;
+          width: 100%;
+          min-height: 150px;
+          background: white;
+          color: #111827;
+        }
+
+        .campo-tabela {
+          width: 100%;
+          height: 36px;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          padding: 0 8px;
+          font-size: 13px;
+          color: #111827;
+          background: white;
+        }
+
+        .botao {
+          border: 1px solid #2f2f2f;
+          border-radius: 10px;
+          padding: 10px 16px;
+          font-size: 13px;
+          background: white;
+          color: #1f1f1f;
+          font-weight: 500;
+        }
+
+        .botao-azul {
+          background: #0456a3;
+          color: white;
+          border-radius: 10px;
+          padding: 10px 16px;
+          font-size: 13px;
+          font-weight: 600;
+          border: none;
+        }
+
+        .botao-mini {
+          border: 1px solid #2f2f2f;
+          border-radius: 8px;
+          padding: 6px 10px;
+          font-size: 11px;
+          background: white;
+          color: #1f1f1f;
+          font-weight: 500;
+        }
+
+        .tabela {
+          width: 100%;
+          border-collapse: collapse;
+        }
+
+        .tabela th {
+          text-align: left;
+          font-size: 12px;
+          padding: 12px;
+          border-bottom: 1px solid #e5e7eb;
+          color: #111827;
+          font-weight: 900;
+        }
+
+        .tabela td {
+          font-size: 13px;
+          padding: 12px;
+          border-bottom: 1px solid #e5e7eb;
+          color: #1f2937;
+          vertical-align: middle;
+        }
+      `}</style>
     </div>
   );
 }

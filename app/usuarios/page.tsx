@@ -1,233 +1,138 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter } from "next/navigation";
-import { canAccess, isLogged } from "@/lib/authGuard";
-
-type Role = "ADMIN" | "FUNCIONARIO";
-
-type Privilegio =
-  | "DASHBOARD"
-  | "CLIENTES"
-  | "ORDENS"
-  | "PRODUTOS"
-  | "CATEGORIAS"
-  | "FORNECEDORES"
-  | "VENDAS"
-  | "FINANCEIRO"
-  | "USUARIOS";
+import { getSessionUser } from "@/lib/session";
 
 type Usuario = {
-  id: number;
-  usuario: string;
+  id: string;
+  empresa_id: string;
   nome: string;
-  senha: string;
-  role: Role;
-  status: "ATIVO" | "INATIVO";
-  privilegios?: Privilegio[];
+  email: string;
+  role?: string | null;
+  status?: string | null;
 };
-
-const LS_USUARIOS = "usuarios";
-
-const PRIVILEGIOS_LISTA: Privilegio[] = [
-  "DASHBOARD",
-  "CLIENTES",
-  "ORDENS",
-  "PRODUTOS",
-  "CATEGORIAS",
-  "FORNECEDORES",
-  "VENDAS",
-  "FINANCEIRO",
-  "USUARIOS",
-];
-
-function up(v: any) {
-  return String(v ?? "").toUpperCase();
-}
-
-function readLS<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLS<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-function seedUsuarios() {
-  const lista = readLS<Usuario[]>(LS_USUARIOS, []);
-  if (lista.length > 0) return;
-
-  const admin: Usuario = {
-    id: 1,
-    usuario: "ADMIN",
-    nome: "ADMINISTRADOR",
-    senha: "123456",
-    role: "ADMIN",
-    status: "ATIVO",
-    privilegios: [...PRIVILEGIOS_LISTA],
-  };
-
-  writeLS(LS_USUARIOS, [admin]);
-}
 
 export default function UsuariosPage() {
   const router = useRouter();
 
   const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [empresaId, setEmpresaId] = useState<string | null>(null);
+  const [usuarioLogadoRole, setUsuarioLogadoRole] = useState<string>("");
+
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
 
-  const [busca, setBusca] = useState("");
-
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [usuario, setUsuario] = useState("");
   const [nome, setNome] = useState("");
+  const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [role, setRole] = useState<Role>("FUNCIONARIO");
-  const [status, setStatus] = useState<"ATIVO" | "INATIVO">("ATIVO");
-  const [privilegios, setPrivilegios] = useState<Privilegio[]>(["DASHBOARD"]);
+  const [role, setRole] = useState("FUNCIONARIO");
+  const [status, setStatus] = useState("ATIVO");
+
+  async function carregarUsuarios(empId: string) {
+    setLoading(true);
+
+    const resp = await fetch(`/api/usuarios?empresa_id=${empId}`);
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      alert(data.error || "ERRO AO CARREGAR USUÁRIOS.");
+      setLoading(false);
+      return;
+    }
+
+    setUsuarios(data.usuarios || []);
+    setLoading(false);
+  }
 
   useEffect(() => {
-    if (!isLogged()) {
-      router.push("/login");
-      return;
+    async function init() {
+      const user = await getSessionUser();
+
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      if ((user.role || "").toUpperCase() !== "ADMIN") {
+        alert("APENAS ADMIN PODE GERENCIAR FUNCIONÁRIOS.");
+        router.push("/dashboard");
+        return;
+      }
+
+      setEmpresaId(user.empresa_id);
+      setUsuarioLogadoRole((user.role || "").toUpperCase());
+
+      await carregarUsuarios(user.empresa_id);
+      setReady(true);
     }
 
-    if (!canAccess("USUARIOS")) {
-      alert("ACESSO NEGADO");
-      router.push("/dashboard");
-      return;
-    }
-
-    seedUsuarios();
-    setUsuarios(readLS<Usuario[]>(LS_USUARIOS, []));
-    setReady(true);
+    init();
   }, [router]);
 
-  const filtrados = useMemo(() => {
-    const q = up(busca.trim());
-    if (!q) return usuarios;
+  async function criarFuncionario(e: React.FormEvent) {
+    e.preventDefault();
 
-    return usuarios.filter((u) => {
-      const texto = up(`${u.usuario} ${u.nome} ${u.role} ${u.status}`);
-      return texto.includes(q);
+    if (!empresaId) return;
+
+    if (!nome.trim() || !email.trim() || !senha.trim()) {
+      alert("PREENCHA NOME, EMAIL E SENHA.");
+      return;
+    }
+
+    const resp = await fetch("/api/usuarios", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        empresa_id: empresaId,
+        nome,
+        email,
+        senha,
+        role,
+        status,
+      }),
     });
-  }, [usuarios, busca]);
 
-  function resetForm() {
-    setEditingId(null);
-    setUsuario("");
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      alert(data.error || "ERRO AO CRIAR FUNCIONÁRIO.");
+      return;
+    }
+
+    alert("FUNCIONÁRIO CRIADO COM SUCESSO!");
     setNome("");
+    setEmail("");
     setSenha("");
     setRole("FUNCIONARIO");
     setStatus("ATIVO");
-    setPrivilegios(["DASHBOARD"]);
+    await carregarUsuarios(empresaId);
   }
 
-  function togglePrivilegio(p: Privilegio) {
-    setPrivilegios((prev) =>
-      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
-    );
-  }
+  async function alterarStatus(usuarioId: string, novoStatus: string) {
+    const resp = await fetch("/api/usuarios", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: usuarioId,
+        status: novoStatus,
+        empresa_id: empresaId,
+      }),
+    });
 
-  function salvar() {
-    const u = up(usuario.trim());
-    const n = up(nome.trim());
-    const s = String(senha || "");
+    const data = await resp.json();
 
-    if (!u || !n) {
-      alert("PREENCHA USUÁRIO E NOME.");
+    if (!resp.ok) {
+      alert(data.error || "ERRO AO ALTERAR STATUS.");
       return;
     }
 
-    const lista = [...usuarios];
-
-    const privilegiosFinal =
-      role === "ADMIN" ? [...PRIVILEGIOS_LISTA] : [...privilegios];
-
-    if (editingId) {
-      const idx = lista.findIndex((x) => x.id === editingId);
-      if (idx < 0) {
-        alert("USUÁRIO NÃO ENCONTRADO.");
-        return;
-      }
-
-      const duplicado = lista.some((x) => x.id !== editingId && up(x.usuario) === u);
-      if (duplicado) {
-        alert("JÁ EXISTE UM USUÁRIO COM ESSE LOGIN.");
-        return;
-      }
-
-      lista[idx] = {
-        ...lista[idx],
-        usuario: u,
-        nome: n,
-        senha: s || lista[idx].senha,
-        role,
-        status,
-        privilegios: privilegiosFinal,
-      };
-
-      writeLS(LS_USUARIOS, lista);
-      setUsuarios(lista);
-      resetForm();
-      alert("USUÁRIO ATUALIZADO!");
-      return;
-    }
-
-    const existe = lista.some((x) => up(x.usuario) === u);
-    if (existe) {
-      alert("JÁ EXISTE UM USUÁRIO COM ESSE LOGIN.");
-      return;
-    }
-
-    if (!s) {
-      alert("PREENCHA A SENHA.");
-      return;
-    }
-
-    const novo: Usuario = {
-      id: Date.now(),
-      usuario: u,
-      nome: n,
-      senha: s,
-      role,
-      status,
-      privilegios: privilegiosFinal,
-    };
-
-    const next = [...lista, novo];
-    writeLS(LS_USUARIOS, next);
-    setUsuarios(next);
-    resetForm();
-    alert("USUÁRIO CRIADO!");
-  }
-
-  function editar(u: Usuario) {
-    setEditingId(u.id);
-    setUsuario(u.usuario);
-    setNome(u.nome);
-    setSenha("");
-    setRole(u.role);
-    setStatus(u.status);
-    setPrivilegios(u.privilegios || ["DASHBOARD"]);
-  }
-
-  function remover(id: number) {
-    if (!confirm("REMOVER ESTE USUÁRIO?")) return;
-
-    const next = usuarios.filter((x) => x.id !== id);
-    writeLS(LS_USUARIOS, next);
-    setUsuarios(next);
-    alert("USUÁRIO REMOVIDO!");
+    await carregarUsuarios(empresaId!);
   }
 
   if (!ready) {
@@ -239,176 +144,124 @@ export default function UsuariosPage() {
       <Sidebar />
 
       <main className="flex-1 p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
-          <h1 className="text-2xl font-black text-[#6C757D]">USUÁRIOS</h1>
-
-          <input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="BUSCAR USUÁRIO..."
-            className="border rounded-lg px-3 py-2 w-80 max-w-full"
-          />
+        <div className="mb-6">
+          <h1 className="text-2xl font-black text-[#6C757D]">FUNCIONÁRIOS</h1>
+          <p className="text-sm text-[#6C757D]">
+            CADASTRO DE USUÁRIOS DA EMPRESA
+          </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow p-4 mb-4">
-          <div className="text-sm font-bold text-[#6C757D] mb-3">
-            {editingId ? "EDITAR USUÁRIO" : "NOVO USUÁRIO"}
-          </div>
+        <div className="bg-white rounded-2xl shadow p-5 mb-6">
+          <h2 className="text-sm font-bold text-[#6C757D] mb-4">
+            NOVO FUNCIONÁRIO
+          </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            <div>
-              <div className="text-xs font-bold text-[#6C757D] mb-1">USUÁRIO</div>
-              <input
-                value={usuario}
-                onChange={(e) => setUsuario(up(e.target.value))}
-                className="border rounded-lg px-3 py-2 w-full"
-                placeholder="EX: JOAO"
-              />
-            </div>
+          <form
+            onSubmit={criarFuncionario}
+            className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3"
+          >
+            <input
+              placeholder="NOME"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              className="border p-3 rounded"
+            />
 
-            <div>
-              <div className="text-xs font-bold text-[#6C757D] mb-1">NOME</div>
-              <input
-                value={nome}
-                onChange={(e) => setNome(up(e.target.value))}
-                className="border rounded-lg px-3 py-2 w-full"
-                placeholder="EX: JOÃO SILVA"
-              />
-            </div>
+            <input
+              type="email"
+              placeholder="EMAIL"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="border p-3 rounded"
+            />
 
-            <div>
-              <div className="text-xs font-bold text-[#6C757D] mb-1">
-                {editingId ? "NOVA SENHA (OPCIONAL)" : "SENHA"}
-              </div>
-              <input
-                type="password"
-                value={senha}
-                onChange={(e) => setSenha(e.target.value)}
-                className="border rounded-lg px-3 py-2 w-full"
-                placeholder="DIGITE A SENHA"
-              />
-            </div>
+            <input
+              type="password"
+              placeholder="SENHA"
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              className="border p-3 rounded"
+            />
 
-            <div>
-              <div className="text-xs font-bold text-[#6C757D] mb-1">PERFIL</div>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as Role)}
-                className="border rounded-lg px-3 py-2 w-full bg-white"
-              >
-                <option value="FUNCIONARIO">FUNCIONÁRIO</option>
-                <option value="ADMIN">ADMIN</option>
-              </select>
-            </div>
-
-            <div>
-              <div className="text-xs font-bold text-[#6C757D] mb-1">STATUS</div>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as any)}
-                className="border rounded-lg px-3 py-2 w-full bg-white"
-              >
-                <option value="ATIVO">ATIVO</option>
-                <option value="INATIVO">INATIVO</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <div className="text-xs font-bold text-[#6C757D] mb-2">PRIVILÉGIOS</div>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
-              {PRIVILEGIOS_LISTA.map((p) => (
-                <label
-                  key={p}
-                  className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={role === "ADMIN" ? true : privilegios.includes(p)}
-                    onChange={() => togglePrivilegio(p)}
-                    disabled={role === "ADMIN"}
-                  />
-                  <span>{p}</span>
-                </label>
-              ))}
-            </div>
-
-            {role === "ADMIN" && (
-              <div className="text-xs text-[#6C757D] mt-2">
-                ADMIN RECEBE ACESSO TOTAL AUTOMATICAMENTE.
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2 mt-4">
-            <button
-              type="button"
-              onClick={salvar}
-              className="bg-[#0A569E] text-white rounded-lg px-4 py-2 font-black"
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="border p-3 rounded bg-white"
             >
-              {editingId ? "SALVAR ALTERAÇÕES" : "CRIAR USUÁRIO"}
-            </button>
+              <option value="ADMIN">ADMIN</option>
+              <option value="FINANCEIRO">FINANCEIRO</option>
+              <option value="VENDEDOR">VENDEDOR</option>
+              <option value="TECNICO">TECNICO</option>
+              <option value="FUNCIONARIO">FUNCIONARIO</option>
+            </select>
+
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="border p-3 rounded bg-white"
+            >
+              <option value="ATIVO">ATIVO</option>
+              <option value="INATIVO">INATIVO</option>
+            </select>
 
             <button
-              type="button"
-              onClick={resetForm}
-              className="border rounded-lg px-4 py-2 hover:bg-[#F8F9FA]"
+              type="submit"
+              className="bg-[#0A569E] text-white px-4 py-3 rounded-lg font-bold md:col-span-2 xl:col-span-5"
             >
-              LIMPAR
+              CRIAR FUNCIONÁRIO
             </button>
-          </div>
+          </form>
         </div>
 
         <div className="bg-white rounded-2xl shadow overflow-auto">
           <table className="w-full text-sm">
             <thead className="bg-[#F8F9FA]">
               <tr>
-                <th className="p-3 text-left">USUÁRIO</th>
                 <th className="p-3 text-left">NOME</th>
+                <th className="p-3 text-left">EMAIL</th>
                 <th className="p-3 text-left">PERFIL</th>
                 <th className="p-3 text-left">STATUS</th>
-                <th className="p-3 text-left">PRIVILÉGIOS</th>
-                <th className="p-3 text-right">AÇÕES</th>
+                <th className="p-3 text-right">AÇÃO</th>
               </tr>
             </thead>
             <tbody>
-              {filtrados.length === 0 ? (
+              {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-6 text-center text-[#6C757D]">
-                    NENHUM USUÁRIO ENCONTRADO.
+                  <td colSpan={5} className="p-6 text-center text-[#6C757D]">
+                    CARREGANDO...
+                  </td>
+                </tr>
+              ) : usuarios.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-6 text-center text-[#6C757D]">
+                    NENHUM FUNCIONÁRIO CADASTRADO.
                   </td>
                 </tr>
               ) : (
-                filtrados.map((u) => (
+                usuarios.map((u) => (
                   <tr key={u.id} className="border-b">
-                    <td className="p-3 font-bold">{u.usuario}</td>
-                    <td className="p-3">{u.nome}</td>
-                    <td className="p-3">{u.role}</td>
-                    <td className="p-3">{u.status}</td>
-                    <td className="p-3">
-                      {u.role === "ADMIN"
-                        ? "ACESSO TOTAL"
-                        : (u.privilegios || []).join(", ")}
-                    </td>
+                    <td className="p-3 font-bold">{u.nome}</td>
+                    <td className="p-3">{u.email}</td>
+                    <td className="p-3">{u.role || "-"}</td>
+                    <td className="p-3">{u.status || "-"}</td>
                     <td className="p-3 text-right">
-                      <div className="flex justify-end gap-2">
+                      {u.status === "ATIVO" ? (
                         <button
+                          onClick={() => alterarStatus(u.id, "INATIVO")}
+                          className="border px-3 py-1 rounded"
                           type="button"
-                          onClick={() => editar(u)}
-                          className="border rounded-lg px-3 py-1 hover:bg-[#F8F9FA]"
                         >
-                          EDITAR
+                          INATIVAR
                         </button>
-
+                      ) : (
                         <button
+                          onClick={() => alterarStatus(u.id, "ATIVO")}
+                          className="border px-3 py-1 rounded"
                           type="button"
-                          onClick={() => remover(u.id)}
-                          className="border rounded-lg px-3 py-1 hover:bg-[#F8F9FA]"
                         >
-                          REMOVER
+                          ATIVAR
                         </button>
-                      </div>
+                      )}
                     </td>
                   </tr>
                 ))

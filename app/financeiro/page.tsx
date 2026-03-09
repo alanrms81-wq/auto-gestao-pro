@@ -3,60 +3,38 @@
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter } from "next/navigation";
-import { canAccess, isLogged } from "@/lib/authGuard";
+import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/session";
 
 type FinanceiroTitulo = {
-  id: number;
+  id: string;
+  empresa_id: string;
   tipo: "RECEBER" | "PAGAR";
-  descricao: string;
-  categoria: string;
-  clienteId?: number | null;
-  clienteNome?: string;
-  documento?: string;
-  formaPagamento?: string;
-  valorOriginal: number;
-  valorPago: number;
-  desconto: number;
-  juros: number;
-  multa: number;
-  dataEmissao?: string;
-  dataVencimento?: string;
-  dataPagamento?: string;
-  status: string;
-  observacoes?: string;
-  createdAt: string;
+  descricao?: string | null;
+  cliente_id?: string | null;
+  cliente_nome?: string | null;
+  documento?: string | null;
+  categoria?: string | null;
+  valor_original?: number | null;
+  valor_pago?: number | null;
+  desconto?: number | null;
+  juros?: number | null;
+  multa?: number | null;
+  data_emissao?: string | null;
+  data_vencimento?: string | null;
+  data_pagamento?: string | null;
+  status?: string | null;
+  observacoes?: string | null;
+  created_at?: string | null;
 };
 
-type FluxoLancamento = {
-  id: number;
-  tipo: "ENTRADA" | "SAIDA";
-  descricao: string;
-  categoria: string;
-  valor: number;
-  data: string;
-  origem?: string;
-  observacoes?: string;
+type Cliente = {
+  id: string;
+  nome: string;
 };
-
-const LS_TITULOS = "financeiro_titulos";
-const LS_FLUXO = "financeiro_lancamentos";
 
 function up(v: any) {
   return String(v ?? "").toUpperCase();
-}
-
-function readLS<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLS<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value));
 }
 
 function toMoney(v: any) {
@@ -75,20 +53,20 @@ function hojeISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function valorLiquidoTitulo(t: FinanceiroTitulo) {
+function valorLiquidoTitulo(t: Partial<FinanceiroTitulo>) {
   return (
-    toMoney(t.valorOriginal) +
+    toMoney(t.valor_original) +
     toMoney(t.juros) +
     toMoney(t.multa) -
     toMoney(t.desconto)
   );
 }
 
-function saldoAbertoTitulo(t: FinanceiroTitulo) {
-  return Math.max(0, valorLiquidoTitulo(t) - toMoney(t.valorPago));
+function saldoAbertoTitulo(t: Partial<FinanceiroTitulo>) {
+  return Math.max(0, valorLiquidoTitulo(t) - toMoney(t.valor_pago));
 }
 
-function statusFinanceiro(t: FinanceiroTitulo) {
+function statusFinanceiro(t: Partial<FinanceiroTitulo>) {
   const manual = up(t.status || "");
 
   if (manual === "CANCELADO") return "CANCELADO";
@@ -96,8 +74,8 @@ function statusFinanceiro(t: FinanceiroTitulo) {
   const saldo = saldoAbertoTitulo(t);
 
   if (saldo <= 0) return "PAGO";
-  if (toMoney(t.valorPago) > 0) return "PARCIAL";
-  if (t.dataVencimento && t.dataVencimento < hojeISO()) return "VENCIDO";
+  if (toMoney(t.valor_pago) > 0) return "PARCIAL";
+  if (t.data_vencimento && t.data_vencimento < hojeISO()) return "VENCIDO";
   return "ABERTO";
 }
 
@@ -105,180 +83,305 @@ export default function FinanceiroPage() {
   const router = useRouter();
 
   const [ready, setReady] = useState(false);
-  const [titulos, setTitulos] = useState<FinanceiroTitulo[]>([]);
-  const [fluxo, setFluxo] = useState<FluxoLancamento[]>([]);
-  const [busca, setBusca] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [empresaId, setEmpresaId] = useState<string | null>(null);
 
-  const [recebendoId, setRecebendoId] = useState<number | null>(null);
-  const [valorRecebido, setValorRecebido] = useState("");
-  const [descontoRecebimento, setDescontoRecebimento] = useState("0");
-  const [jurosRecebimento, setJurosRecebimento] = useState("0");
-  const [multaRecebimento, setMultaRecebimento] = useState("0");
-  const [dataRecebimento, setDataRecebimento] = useState(hojeISO());
-  const [observacaoRecebimento, setObservacaoRecebimento] = useState("");
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [titulos, setTitulos] = useState<FinanceiroTitulo[]>([]);
+
+  const [busca, setBusca] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("TODOS");
+  const [filtroStatus, setFiltroStatus] = useState("TODOS");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [tipo, setTipo] = useState<"RECEBER" | "PAGAR">("RECEBER");
+  const [descricao, setDescricao] = useState("");
+  const [clienteId, setClienteId] = useState("");
+  const [clienteNome, setClienteNome] = useState("");
+  const [documento, setDocumento] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [valorOriginal, setValorOriginal] = useState("0");
+  const [valorPago, setValorPago] = useState("0");
+  const [desconto, setDesconto] = useState("0");
+  const [juros, setJuros] = useState("0");
+  const [multa, setMulta] = useState("0");
+  const [dataEmissao, setDataEmissao] = useState(hojeISO());
+  const [dataVencimento, setDataVencimento] = useState(hojeISO());
+  const [dataPagamento, setDataPagamento] = useState("");
+  const [observacoes, setObservacoes] = useState("");
+
+  const [baixaId, setBaixaId] = useState<string | null>(null);
+  const [baixaValor, setBaixaValor] = useState("0");
+  const [baixaData, setBaixaData] = useState(hojeISO());
+  const [baixaObs, setBaixaObs] = useState("");
 
   useEffect(() => {
-    if (!isLogged()) {
-      router.push("/login");
-      return;
+    async function init() {
+      const user = await getSessionUser();
+
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      setEmpresaId(user.empresa_id);
+      await carregarBase(user.empresa_id);
+      setReady(true);
     }
 
-    if (!canAccess("FINANCEIRO")) {
-      alert("ACESSO NEGADO");
-      router.push("/dashboard");
-      return;
-    }
-
-    carregarBase();
-    setReady(true);
+    init();
   }, [router]);
 
-  function carregarBase() {
-    setTitulos(readLS<FinanceiroTitulo[]>(LS_TITULOS, []));
-    setFluxo(readLS<FluxoLancamento[]>(LS_FLUXO, []));
+  async function carregarBase(empId?: string) {
+    const eid = empId || empresaId;
+    if (!eid) return;
+
+    setLoading(true);
+
+    const [clientesResp, titulosResp] = await Promise.all([
+      supabase.from("clientes").select("id,nome").eq("empresa_id", eid).order("nome"),
+      supabase
+        .from("financeiro_titulos")
+        .select("*")
+        .eq("empresa_id", eid)
+        .order("data_vencimento", { ascending: true }),
+    ]);
+
+    if (clientesResp.error) {
+      alert("ERRO CLIENTES: " + clientesResp.error.message);
+    }
+
+    if (titulosResp.error) {
+      alert("ERRO FINANCEIRO: " + titulosResp.error.message);
+    }
+
+    setClientes((clientesResp.data || []) as Cliente[]);
+    setTitulos((titulosResp.data || []) as FinanceiroTitulo[]);
+    setLoading(false);
   }
 
   const titulosFiltrados = useMemo(() => {
     const q = up(busca.trim());
 
-    return [...titulos]
-      .map((t) => ({
-        ...t,
-        statusCalc: statusFinanceiro(t),
-        saldoAberto: saldoAbertoTitulo(t),
-        valorLiquido: valorLiquidoTitulo(t),
-      }))
-      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
-      .filter((t) => {
-        if (!q) return true;
-        const texto = up(
-          `${t.descricao} ${t.clienteNome || ""} ${t.documento || ""} ${t.categoria || ""} ${t.statusCalc}`
-        );
-        return texto.includes(q);
-      });
-  }, [titulos, busca]);
+    return titulos.filter((t) => {
+      const texto = up(
+        `${t.tipo} ${t.descricao || ""} ${t.cliente_nome || ""} ${t.documento || ""} ${t.categoria || ""} ${statusFinanceiro(t)}`
+      );
 
-  const totalReceberAberto = useMemo(() => {
-    return titulos
+      const okBusca = !q || texto.includes(q);
+      const okTipo = filtroTipo === "TODOS" || t.tipo === filtroTipo;
+      const okStatus = filtroStatus === "TODOS" || statusFinanceiro(t) === filtroStatus;
+
+      return okBusca && okTipo && okStatus;
+    });
+  }, [titulos, busca, filtroTipo, filtroStatus]);
+
+  const resumo = useMemo(() => {
+    const receber = titulos
       .filter((t) => t.tipo === "RECEBER")
-      .filter((t) => {
-        const st = statusFinanceiro(t);
-        return st === "ABERTO" || st === "PARCIAL" || st === "VENCIDO";
-      })
+      .filter((t) => ["ABERTO", "PARCIAL", "VENCIDO"].includes(statusFinanceiro(t)))
       .reduce((acc, t) => acc + saldoAbertoTitulo(t), 0);
-  }, [titulos]);
 
-  const totalPagarAberto = useMemo(() => {
-    return titulos
+    const pagar = titulos
       .filter((t) => t.tipo === "PAGAR")
-      .filter((t) => {
-        const st = statusFinanceiro(t);
-        return st === "ABERTO" || st === "PARCIAL" || st === "VENCIDO";
-      })
+      .filter((t) => ["ABERTO", "PARCIAL", "VENCIDO"].includes(statusFinanceiro(t)))
       .reduce((acc, t) => acc + saldoAbertoTitulo(t), 0);
-  }, [titulos]);
 
-  const totalRecebido = useMemo(() => {
-    return titulos
+    const recebido = titulos
       .filter((t) => t.tipo === "RECEBER")
-      .reduce((acc, t) => acc + toMoney(t.valorPago), 0);
-  }, [titulos]);
+      .reduce((acc, t) => acc + toMoney(t.valor_pago), 0);
 
-  const totalVencido = useMemo(() => {
-    return titulos
+    const vencido = titulos
       .filter((t) => t.tipo === "RECEBER")
       .filter((t) => statusFinanceiro(t) === "VENCIDO")
       .reduce((acc, t) => acc + saldoAbertoTitulo(t), 0);
+
+    const saldoCaixa = recebido - pagar;
+
+    return { receber, pagar, recebido, vencido, saldoCaixa };
   }, [titulos]);
 
-  function abrirRecebimento(t: FinanceiroTitulo) {
-    const saldo = saldoAbertoTitulo(t);
-
-    setRecebendoId(t.id);
-    setValorRecebido(String(saldo));
-    setDescontoRecebimento("0");
-    setJurosRecebimento("0");
-    setMultaRecebimento("0");
-    setDataRecebimento(hojeISO());
-    setObservacaoRecebimento("");
-  }
-
-  function cancelarRecebimento() {
-    setRecebendoId(null);
-    setValorRecebido("");
-    setDescontoRecebimento("0");
-    setJurosRecebimento("0");
-    setMultaRecebimento("0");
-    setDataRecebimento(hojeISO());
-    setObservacaoRecebimento("");
-  }
-
-  function receberTitulo() {
-    if (!recebendoId) return;
-
-    const listaTitulos = readLS<FinanceiroTitulo[]>(LS_TITULOS, []);
-    const listaFluxo = readLS<FluxoLancamento[]>(LS_FLUXO, []);
-    const titulo = listaTitulos.find((t) => t.id === recebendoId);
-
-    if (!titulo) {
-      alert("TÍTULO NÃO ENCONTRADO.");
-      return;
-    }
-
-    const valorRec = toMoney(valorRecebido);
-    const desc = toMoney(descontoRecebimento);
-    const juros = toMoney(jurosRecebimento);
-    const multa = toMoney(multaRecebimento);
-
-    if (valorRec <= 0) {
-      alert("INFORME O VALOR RECEBIDO.");
-      return;
-    }
-
-    const novoDesconto = toMoney(titulo.desconto) + desc;
-    const novoJuros = toMoney(titulo.juros) + juros;
-    const novaMulta = toMoney(titulo.multa) + multa;
-    const novoValorPago = toMoney(titulo.valorPago) + valorRec;
-
-    const valorLiquido = toMoney(titulo.valorOriginal) + novoJuros + novaMulta - novoDesconto;
-    const saldoNovo = Math.max(0, valorLiquido - novoValorPago);
-
-    const novoStatus = saldoNovo <= 0 ? "PAGO" : "PARCIAL";
-
-    const titulosAtualizados = listaTitulos.map((t) =>
-      t.id === recebendoId
-        ? {
-            ...t,
-            desconto: novoDesconto,
-            juros: novoJuros,
-            multa: novaMulta,
-            valorPago: novoValorPago,
-            dataPagamento: dataRecebimento,
-            status: novoStatus,
-            observacoes: up(
-              `${t.observacoes || ""} ${observacaoRecebimento || ""}`.trim()
-            ),
-          }
-        : t
+  const valorLiquidoForm = useMemo(() => {
+    return (
+      toMoney(valorOriginal) +
+      toMoney(juros) +
+      toMoney(multa) -
+      toMoney(desconto)
     );
+  }, [valorOriginal, juros, multa, desconto]);
 
-    const fluxoLancamento: FluxoLancamento = {
-      id: Date.now(),
-      tipo: "ENTRADA",
-      descricao: up(`RECEBIMENTO ${titulo.descricao}`),
-      categoria: titulo.categoria || "FINANCEIRO",
-      valor: valorRec,
-      data: dataRecebimento,
-      origem: "FINANCEIRO",
-      observacoes: up(observacaoRecebimento || titulo.clienteNome || ""),
+  const saldoForm = useMemo(() => {
+    return Math.max(0, valorLiquidoForm - toMoney(valorPago));
+  }, [valorLiquidoForm, valorPago]);
+
+  function resetForm() {
+    setEditingId(null);
+    setTipo("RECEBER");
+    setDescricao("");
+    setClienteId("");
+    setClienteNome("");
+    setDocumento("");
+    setCategoria("");
+    setValorOriginal("0");
+    setValorPago("0");
+    setDesconto("0");
+    setJuros("0");
+    setMulta("0");
+    setDataEmissao(hojeISO());
+    setDataVencimento(hojeISO());
+    setDataPagamento("");
+    setObservacoes("");
+  }
+
+  function resetBaixa() {
+    setBaixaId(null);
+    setBaixaValor("0");
+    setBaixaData(hojeISO());
+    setBaixaObs("");
+  }
+
+  async function salvarTitulo() {
+    if (!empresaId) return;
+
+    if (!descricao.trim()) {
+      alert("PREENCHA A DESCRIÇÃO.");
+      return;
+    }
+
+    const payload = {
+      empresa_id: empresaId,
+      tipo,
+      descricao: up(descricao),
+      cliente_id: clienteId || null,
+      cliente_nome: up(clienteNome),
+      documento: up(documento),
+      categoria: up(categoria),
+      valor_original: toMoney(valorOriginal),
+      valor_pago: toMoney(valorPago),
+      desconto: toMoney(desconto),
+      juros: toMoney(juros),
+      multa: toMoney(multa),
+      data_emissao: dataEmissao || null,
+      data_vencimento: dataVencimento || null,
+      data_pagamento: dataPagamento || null,
+      status:
+        saldoForm <= 0
+          ? "PAGO"
+          : toMoney(valorPago) > 0
+          ? "PARCIAL"
+          : "ABERTO",
+      observacoes: up(observacoes),
     };
 
-    writeLS(LS_TITULOS, titulosAtualizados);
-    writeLS(LS_FLUXO, [...listaFluxo, fluxoLancamento]);
+    if (editingId) {
+      const { error } = await supabase
+        .from("financeiro_titulos")
+        .update(payload)
+        .eq("empresa_id", empresaId)
+        .eq("id", editingId);
 
+      if (error) {
+        alert("ERRO AO ATUALIZAR TÍTULO: " + error.message);
+        return;
+      }
+
+      alert("TÍTULO ATUALIZADO!");
+      resetForm();
+      carregarBase();
+      return;
+    }
+
+    const { error } = await supabase.from("financeiro_titulos").insert([payload]);
+
+    if (error) {
+      alert("ERRO AO CRIAR TÍTULO: " + error.message);
+      return;
+    }
+
+    alert("TÍTULO CRIADO!");
+    resetForm();
     carregarBase();
-    cancelarRecebimento();
-    alert("RECEBIMENTO LANÇADO COM SUCESSO!");
+  }
+
+  function editarTitulo(t: FinanceiroTitulo) {
+    setEditingId(t.id);
+    setTipo(t.tipo);
+    setDescricao(t.descricao || "");
+    setClienteId(t.cliente_id || "");
+    setClienteNome(t.cliente_nome || "");
+    setDocumento(t.documento || "");
+    setCategoria(t.categoria || "");
+    setValorOriginal(String(toMoney(t.valor_original)));
+    setValorPago(String(toMoney(t.valor_pago)));
+    setDesconto(String(toMoney(t.desconto)));
+    setJuros(String(toMoney(t.juros)));
+    setMulta(String(toMoney(t.multa)));
+    setDataEmissao(t.data_emissao || hojeISO());
+    setDataVencimento(t.data_vencimento || hojeISO());
+    setDataPagamento(t.data_pagamento || "");
+    setObservacoes(t.observacoes || "");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function removerTitulo(id: string) {
+    if (!empresaId) return;
+    if (!confirm("REMOVER ESTE TÍTULO?")) return;
+
+    const { error } = await supabase
+      .from("financeiro_titulos")
+      .delete()
+      .eq("empresa_id", empresaId)
+      .eq("id", id);
+
+    if (error) {
+      alert("ERRO AO REMOVER TÍTULO: " + error.message);
+      return;
+    }
+
+    alert("TÍTULO REMOVIDO!");
+    if (editingId === id) resetForm();
+    if (baixaId === id) resetBaixa();
+    carregarBase();
+  }
+
+  function abrirBaixa(t: FinanceiroTitulo) {
+    setBaixaId(t.id);
+    setBaixaValor(String(saldoAbertoTitulo(t)));
+    setBaixaData(hojeISO());
+    setBaixaObs("");
+  }
+
+  async function registrarBaixa() {
+    if (!empresaId || !baixaId) return;
+
+    const titulo = titulos.find((t) => t.id === baixaId);
+    if (!titulo) return;
+
+    const novoValorPago = toMoney(titulo.valor_pago) + toMoney(baixaValor);
+    const saldoRestante = Math.max(0, valorLiquidoTitulo(titulo) - novoValorPago);
+
+    const { error } = await supabase
+      .from("financeiro_titulos")
+      .update({
+        valor_pago: novoValorPago,
+        data_pagamento: baixaData,
+        status: saldoRestante <= 0 ? "PAGO" : "PARCIAL",
+        observacoes: up(
+          `${titulo.observacoes || ""}\nBAIXA: ${baixaValor} EM ${baixaData} ${baixaObs || ""}`
+        ),
+      })
+      .eq("empresa_id", empresaId)
+      .eq("id", baixaId);
+
+    if (error) {
+      alert("ERRO AO BAIXAR TÍTULO: " + error.message);
+      return;
+    }
+
+    alert("BAIXA REGISTRADA!");
+    resetBaixa();
+    carregarBase();
   }
 
   if (!ready) {
@@ -286,190 +389,477 @@ export default function FinanceiroPage() {
   }
 
   return (
-    <div className="min-h-screen flex bg-[#F8F9FA]">
+    <div className="min-h-screen flex bg-[#F3F4F6]">
       <Sidebar />
 
       <main className="flex-1 p-6">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-6">
+        <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-black text-[#6C757D]">FINANCEIRO ERP</h1>
-            <div className="text-sm text-[#6C757D]">
-              CONTAS, RECEBIMENTOS, PARCIAIS, JUROS, MULTA E DESCONTO
-            </div>
+            <h1 className="text-[26px] font-black text-[#6C757D] leading-none">
+              FINANCEIRO
+            </h1>
+            <p className="text-[14px] text-[#6C757D] mt-2">
+              CONTAS A RECEBER, A PAGAR, BAIXAS E CONTROLE DE SALDOS
+            </p>
           </div>
 
-          <input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="BUSCAR TÍTULO..."
-            className="border p-2 rounded-lg w-80 max-w-full"
-          />
+          <div className="flex gap-3 flex-wrap">
+            <input
+              placeholder="BUSCAR TÍTULO..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="h-[54px] w-[280px] xl:w-[360px] max-w-full rounded-2xl border border-[#2F2F2F] bg-white px-5 text-[18px] outline-none"
+            />
+
+            <select
+              value={filtroTipo}
+              onChange={(e) => setFiltroTipo(e.target.value)}
+              className="h-[54px] rounded-2xl border border-[#2F2F2F] bg-white px-5 text-[16px] outline-none"
+            >
+              <option value="TODOS">TODOS</option>
+              <option value="RECEBER">RECEBER</option>
+              <option value="PAGAR">PAGAR</option>
+            </select>
+
+            <select
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value)}
+              className="h-[54px] rounded-2xl border border-[#2F2F2F] bg-white px-5 text-[16px] outline-none"
+            >
+              <option value="TODOS">TODOS OS STATUS</option>
+              <option value="ABERTO">ABERTO</option>
+              <option value="PARCIAL">PARCIAL</option>
+              <option value="PAGO">PAGO</option>
+              <option value="VENCIDO">VENCIDO</option>
+            </select>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">A RECEBER</div>
-            <div className="text-2xl font-black mt-2">{moneyBR(totalReceberAberto)}</div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">A PAGAR</div>
-            <div className="text-2xl font-black mt-2">{moneyBR(totalPagarAberto)}</div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">RECEBIDO</div>
-            <div className="text-2xl font-black mt-2">{moneyBR(totalRecebido)}</div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">VENCIDO</div>
-            <div className="text-2xl font-black mt-2">{moneyBR(totalVencido)}</div>
-          </div>
+        <div className="grid grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+          <CardKpi titulo="A RECEBER" valor={moneyBR(resumo.receber)} />
+          <CardKpi titulo="A PAGAR" valor={moneyBR(resumo.pagar)} />
+          <CardKpi titulo="RECEBIDO" valor={moneyBR(resumo.recebido)} />
+          <CardKpi titulo="VENCIDO" valor={moneyBR(resumo.vencido)} />
+          <CardKpi titulo="SALDO CAIXA" valor={moneyBR(resumo.saldoCaixa)} />
         </div>
 
-        {recebendoId && (
-          <div className="bg-white rounded-2xl shadow p-4 mb-6">
-            <div className="text-sm font-bold text-[#6C757D] mb-3">
-              BAIXA FINANCEIRA / RECEBIMENTO
-            </div>
+        <div className="grid grid-cols-1 2xl:grid-cols-[1.3fr_0.7fr] gap-6 mb-6">
+          <section className="card">
+            <h2 className="titulo mb-4">
+              {editingId ? "EDITAR TÍTULO" : "NOVO LANÇAMENTO"}
+            </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <select
+                value={tipo}
+                onChange={(e) => setTipo(e.target.value as "RECEBER" | "PAGAR")}
+                className="campo"
+              >
+                <option value="RECEBER">RECEBER</option>
+                <option value="PAGAR">PAGAR</option>
+              </select>
+
               <input
-                value={valorRecebido}
-                onChange={(e) => setValorRecebido(e.target.value)}
-                placeholder="VALOR RECEBIDO"
-                className="border p-2 rounded"
+                placeholder="DESCRIÇÃO"
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+                className="campo md:col-span-2"
               />
 
               <input
-                value={descontoRecebimento}
-                onChange={(e) => setDescontoRecebimento(e.target.value)}
+                placeholder="DOCUMENTO"
+                value={documento}
+                onChange={(e) => setDocumento(e.target.value)}
+                className="campo"
+              />
+
+              <select
+                value={clienteId}
+                onChange={(e) => {
+                  setClienteId(e.target.value);
+                  const c = clientes.find((x) => x.id === e.target.value);
+                  setClienteNome(c?.nome || "");
+                }}
+                className="campo md:col-span-2"
+              >
+                <option value="">SELECIONE O CLIENTE</option>
+                {clientes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                placeholder="CLIENTE / FORNECEDOR"
+                value={clienteNome}
+                onChange={(e) => setClienteNome(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="CATEGORIA"
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="VALOR ORIGINAL"
+                type="number"
+                value={valorOriginal}
+                onChange={(e) => setValorOriginal(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="VALOR PAGO"
+                type="number"
+                value={valorPago}
+                onChange={(e) => setValorPago(e.target.value)}
+                className="campo"
+              />
+
+              <input
                 placeholder="DESCONTO"
-                className="border p-2 rounded"
+                type="number"
+                value={desconto}
+                onChange={(e) => setDesconto(e.target.value)}
+                className="campo"
               />
 
               <input
-                value={jurosRecebimento}
-                onChange={(e) => setJurosRecebimento(e.target.value)}
                 placeholder="JUROS"
-                className="border p-2 rounded"
+                type="number"
+                value={juros}
+                onChange={(e) => setJuros(e.target.value)}
+                className="campo"
               />
 
               <input
-                value={multaRecebimento}
-                onChange={(e) => setMultaRecebimento(e.target.value)}
                 placeholder="MULTA"
-                className="border p-2 rounded"
+                type="number"
+                value={multa}
+                onChange={(e) => setMulta(e.target.value)}
+                className="campo"
               />
 
-              <input
-                type="date"
-                value={dataRecebimento}
-                onChange={(e) => setDataRecebimento(e.target.value)}
-                className="border p-2 rounded"
-              />
+              <div>
+                <label className="label">EMISSÃO</label>
+                <input
+                  type="date"
+                  value={dataEmissao}
+                  onChange={(e) => setDataEmissao(e.target.value)}
+                  className="campo"
+                />
+              </div>
 
-              <input
-                value={observacaoRecebimento}
-                onChange={(e) => setObservacaoRecebimento(e.target.value)}
-                placeholder="OBSERVAÇÃO"
-                className="border p-2 rounded"
+              <div>
+                <label className="label">VENCIMENTO</label>
+                <input
+                  type="date"
+                  value={dataVencimento}
+                  onChange={(e) => setDataVencimento(e.target.value)}
+                  className="campo"
+                />
+              </div>
+
+              <div>
+                <label className="label">PAGAMENTO</label>
+                <input
+                  type="date"
+                  value={dataPagamento}
+                  onChange={(e) => setDataPagamento(e.target.value)}
+                  className="campo"
+                />
+              </div>
+
+              <textarea
+                placeholder="OBSERVAÇÕES"
+                value={observacoes}
+                onChange={(e) => setObservacoes(e.target.value)}
+                className="campo-textarea md:col-span-4"
               />
             </div>
 
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={receberTitulo}
-                className="bg-[#0A569E] text-white px-4 py-2 rounded-lg"
-                type="button"
-              >
-                CONFIRMAR RECEBIMENTO
+            <div className="grid grid-cols-3 gap-4 mt-5">
+              <ResumoMini label="VALOR LÍQUIDO" value={moneyBR(valorLiquidoForm)} />
+              <ResumoMini label="VALOR PAGO" value={moneyBR(toMoney(valorPago))} />
+              <ResumoMini label="SALDO" value={moneyBR(saldoForm)} destaque />
+            </div>
+
+            <div className="flex gap-3 mt-5 flex-wrap">
+              <button onClick={salvarTitulo} className="botao-azul" type="button">
+                {editingId ? "ATUALIZAR TÍTULO" : "SALVAR TÍTULO"}
               </button>
 
-              <button
-                onClick={cancelarRecebimento}
-                className="border px-4 py-2 rounded-lg"
-                type="button"
-              >
-                CANCELAR
+              <button onClick={resetForm} className="botao" type="button">
+                LIMPAR
               </button>
             </div>
-          </div>
-        )}
+          </section>
 
-        <div className="bg-white rounded-2xl shadow overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#F8F9FA]">
-              <tr>
-                <th className="p-3 text-left">TIPO</th>
-                <th className="p-3 text-left">DESCRIÇÃO</th>
-                <th className="p-3 text-left">CLIENTE</th>
-                <th className="p-3 text-left">VENCIMENTO</th>
-                <th className="p-3 text-left">STATUS</th>
-                <th className="p-3 text-right">VALOR</th>
-                <th className="p-3 text-right">PAGO</th>
-                <th className="p-3 text-right">SALDO</th>
-                <th className="p-3 text-right">AÇÕES</th>
-              </tr>
-            </thead>
-            <tbody>
-              {titulosFiltrados.length === 0 ? (
+          <section className="card">
+            <h2 className="titulo mb-4">BAIXA / PAGAMENTO</h2>
+
+            {baixaId ? (
+              <>
+                <div className="space-y-4">
+                  <div>
+                    <label className="label">VALOR DA BAIXA</label>
+                    <input
+                      className="campo"
+                      type="number"
+                      value={baixaValor}
+                      onChange={(e) => setBaixaValor(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">DATA DA BAIXA</label>
+                    <input
+                      className="campo"
+                      type="date"
+                      value={baixaData}
+                      onChange={(e) => setBaixaData(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">OBSERVAÇÃO</label>
+                    <textarea
+                      className="campo-textarea"
+                      value={baixaObs}
+                      onChange={(e) => setBaixaObs(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 mt-5 flex-wrap">
+                  <button onClick={registrarBaixa} className="botao-azul" type="button">
+                    REGISTRAR BAIXA
+                  </button>
+
+                  <button onClick={resetBaixa} className="botao" type="button">
+                    CANCELAR
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-[#6C757D]">
+                SELECIONE UM TÍTULO NA TABELA E CLIQUE EM <b>BAIXAR</b>.
+              </div>
+            )}
+          </section>
+        </div>
+
+        <section className="card">
+          <h2 className="titulo mb-4">TÍTULOS FINANCEIROS</h2>
+
+          <div className="overflow-auto">
+            <table className="tabela min-w-[1500px]">
+              <thead>
                 <tr>
-                  <td colSpan={9} className="p-6 text-center text-[#6C757D]">
-                    NENHUM TÍTULO ENCONTRADO.
-                  </td>
+                  <th>TIPO</th>
+                  <th>DESCRIÇÃO</th>
+                  <th>CLIENTE</th>
+                  <th>DOC</th>
+                  <th>VENCIMENTO</th>
+                  <th>STATUS</th>
+                  <th>VALOR</th>
+                  <th>PAGO</th>
+                  <th>SALDO</th>
+                  <th>AÇÕES</th>
                 </tr>
-              ) : (
-                titulosFiltrados.map((t) => (
-                  <tr key={t.id} className="border-b">
-                    <td className="p-3">{t.tipo}</td>
-                    <td className="p-3">
-                      <div className="font-bold">{t.descricao}</div>
-                      <div className="text-xs text-[#6C757D]">
-                        {t.documento || "-"} • {t.categoria || "-"}
-                      </div>
-                    </td>
-                    <td className="p-3">{t.clienteNome || "-"}</td>
-                    <td className="p-3">{t.dataVencimento || "-"}</td>
-                    <td className="p-3">
-                      <span
-                        className={
-                          t.statusCalc === "PAGO"
-                            ? "font-bold text-green-700"
-                            : t.statusCalc === "VENCIDO"
-                            ? "font-bold text-red-600"
-                            : t.statusCalc === "PARCIAL"
-                            ? "font-bold text-orange-600"
-                            : "font-bold text-[#0A569E]"
-                        }
-                      >
-                        {t.statusCalc}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right">{moneyBR(t.valorLiquido)}</td>
-                    <td className="p-3 text-right">{moneyBR(toMoney(t.valorPago))}</td>
-                    <td className="p-3 text-right font-bold">{moneyBR(t.saldoAberto)}</td>
-                    <td className="p-3 text-right">
-                      {t.tipo === "RECEBER" && t.statusCalc !== "PAGO" && t.statusCalc !== "CANCELADO" ? (
-                        <button
-                          onClick={() => abrirRecebimento(t)}
-                          className="border px-3 py-1 rounded"
-                          type="button"
-                        >
-                          RECEBER
-                        </button>
-                      ) : (
-                        <span className="text-xs text-[#6C757D]">-</span>
-                      )}
+              </thead>
+
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={10} className="text-center py-6 text-[#6C757D]">
+                      CARREGANDO...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : titulosFiltrados.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="text-center py-6 text-[#6C757D]">
+                      NENHUM TÍTULO ENCONTRADO.
+                    </td>
+                  </tr>
+                ) : (
+                  titulosFiltrados.map((t) => (
+                    <tr key={t.id}>
+                      <td>{t.tipo}</td>
+                      <td>{t.descricao || "-"}</td>
+                      <td>{t.cliente_nome || "-"}</td>
+                      <td>{t.documento || "-"}</td>
+                      <td>{t.data_vencimento || "-"}</td>
+                      <td>{statusFinanceiro(t)}</td>
+                      <td>{moneyBR(valorLiquidoTitulo(t))}</td>
+                      <td>{moneyBR(toMoney(t.valor_pago))}</td>
+                      <td>{moneyBR(saldoAbertoTitulo(t))}</td>
+                      <td>
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => editarTitulo(t)}
+                            className="botao-mini"
+                            type="button"
+                          >
+                            EDITAR
+                          </button>
+
+                          <button
+                            onClick={() => abrirBaixa(t)}
+                            className="botao-mini"
+                            type="button"
+                          >
+                            BAIXAR
+                          </button>
+
+                          <button
+                            onClick={() => removerTitulo(t.id)}
+                            className="botao-mini"
+                            type="button"
+                          >
+                            REMOVER
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </main>
+
+      <style jsx>{`
+        .card {
+          background: white;
+          border-radius: 20px;
+          padding: 18px;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .titulo {
+          font-weight: 900;
+          font-size: 14px;
+          color: #6c757d;
+        }
+
+        .label {
+          display: block;
+          font-size: 12px;
+          font-weight: 800;
+          color: #6c757d;
+          margin-bottom: 6px;
+          text-transform: uppercase;
+        }
+
+        .campo {
+          height: 44px;
+          border: 1.5px solid #9a9a9a;
+          border-radius: 10px;
+          padding: 0 12px;
+          font-size: 14px;
+          width: 100%;
+          background: white;
+          color: #111827;
+        }
+
+        .campo-textarea {
+          border: 1.5px solid #9a9a9a;
+          border-radius: 10px;
+          padding: 10px;
+          font-size: 14px;
+          width: 100%;
+          min-height: 120px;
+          background: white;
+          color: #111827;
+          resize: vertical;
+        }
+
+        .botao {
+          border: 1px solid #2f2f2f;
+          border-radius: 10px;
+          padding: 10px 16px;
+          font-size: 13px;
+          background: white;
+          color: #1f1f1f;
+          font-weight: 500;
+        }
+
+        .botao-azul {
+          background: #0456a3;
+          color: white;
+          border-radius: 10px;
+          padding: 10px 16px;
+          font-size: 13px;
+          font-weight: 600;
+          border: none;
+        }
+
+        .botao-mini {
+          border: 1px solid #2f2f2f;
+          border-radius: 8px;
+          padding: 6px 10px;
+          font-size: 11px;
+          background: white;
+          color: #1f1f1f;
+          font-weight: 500;
+        }
+
+        .tabela {
+          width: 100%;
+          border-collapse: collapse;
+        }
+
+        .tabela th {
+          text-align: left;
+          font-size: 12px;
+          padding: 12px;
+          border-bottom: 1px solid #e5e7eb;
+          color: #111827;
+          font-weight: 900;
+        }
+
+        .tabela td {
+          font-size: 13px;
+          padding: 12px;
+          border-bottom: 1px solid #e5e7eb;
+          color: #1f2937;
+          vertical-align: middle;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function CardKpi({ titulo, valor }: { titulo: string; valor: string }) {
+  return (
+    <div className="bg-white rounded-[22px] shadow-sm p-5 min-h-[110px]">
+      <div className="text-[14px] font-bold text-[#6C757D]">{titulo}</div>
+      <div className="mt-3 text-[24px] font-black text-[#111] break-words">{valor}</div>
+    </div>
+  );
+}
+
+function ResumoMini({
+  label,
+  value,
+  destaque = false,
+}: {
+  label: string;
+  value: string;
+  destaque?: boolean;
+}) {
+  return (
+    <div className={`rounded-[16px] p-4 ${destaque ? "bg-[#EEF6FF]" : "bg-[#F8F9FB]"}`}>
+      <div className="text-[12px] font-bold text-[#6C757D]">{label}</div>
+      <div className={`mt-2 text-[18px] font-black ${destaque ? "text-[#0456A3]" : "text-[#111]"}`}>
+        {value}
+      </div>
     </div>
   );
 }

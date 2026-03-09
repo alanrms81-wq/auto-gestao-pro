@@ -2,119 +2,103 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-
-type Role = "ADMIN" | "FUNCIONARIO";
-
-type Privilegio =
-  | "DASHBOARD"
-  | "CLIENTES"
-  | "ORDENS"
-  | "PRODUTOS"
-  | "CATEGORIAS"
-  | "FORNECEDORES"
-  | "VENDAS"
-  | "FINANCEIRO"
-  | "USUARIOS";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/session";
 
 type SessionUser = {
-  ok: true;
-  id: number;
-  usuario: string;
-  nome: string;
-  role: Role;
-  privilegios?: Privilegio[];
+  nome?: string | null;
+  role?: string | null;
 };
-
-const MENU = [
-  { label: "DASHBOARD", href: "/dashboard", privilegio: "DASHBOARD" as Privilegio },
-  { label: "CLIENTES", href: "/clientes", privilegio: "CLIENTES" as Privilegio },
-  { label: "ORDEM DE SERVIÇO", href: "/ordens", privilegio: "ORDENS" as Privilegio },
-  { label: "PRODUTOS", href: "/produtos", privilegio: "PRODUTOS" as Privilegio },
-  { label: "CATEGORIAS", href: "/categorias", privilegio: "CATEGORIAS" as Privilegio },
-  { label: "FORNECEDORES", href: "/fornecedores", privilegio: "FORNECEDORES" as Privilegio },
-  { label: "VENDAS", href: "/vendas", privilegio: "VENDAS" as Privilegio },
-  { label: "FINANCEIRO", href: "/financeiro", privilegio: "FINANCEIRO" as Privilegio },
-  { label: "USUÁRIOS", href: "/usuarios", privilegio: "USUARIOS" as Privilegio },
-];
-
-function getSessionUser(): SessionUser | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const raw = localStorage.getItem("sessionUser");
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function canAccess(user: SessionUser | null, privilegio: Privilegio) {
-  if (!user) return false;
-  if (user.role === "ADMIN") return true;
-
-  const privs = user.privilegios || [];
-  return privs.includes(privilegio);
-}
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [user, setUser] = useState<SessionUser | null>(null);
 
-  const session = getSessionUser();
+  useEffect(() => {
+    async function loadUser() {
+      const sessionUser = await getSessionUser();
+      setUser(sessionUser);
+    }
+    loadUser();
+  }, []);
 
-  const menuVisivel = MENU.filter((item) =>
-    canAccess(session, item.privilegio)
-  );
+  const menu = [
+    { nome: "DASHBOARD", rota: "/dashboard" },
+    { nome: "CLIENTES", rota: "/clientes" },
+    { nome: "AGENDAMENTOS", rota: "/agendamentos" },
+    { nome: "ORDEM DE SERVIÇO", rota: "/ordens" },
+    { nome: "PRODUTOS", rota: "/produtos" },
+    { nome: "CATEGORIAS", rota: "/categorias" },
+    { nome: "FORNECEDORES", rota: "/fornecedores" },
+    { nome: "VENDAS", rota: "/vendas" },
+    { nome: "FINANCEIRO", rota: "/financeiro" },
+    { nome: "USUÁRIOS", rota: "/usuarios" },
+    { nome: "CONFIGURAÇÕES", rota: "/configuracoes" },
+    { nome: "BACKUP", rota: "/configuracoes/backup" },
+  ];
 
-  function sair() {
-    localStorage.removeItem("sessionUser");
-    localStorage.removeItem("agp_auth");
+  function isActive(rota: string) {
+    return pathname === rota || pathname.startsWith(`${rota}/`);
+  }
+
+  async function sair() {
+    await supabase.auth.signOut();
     router.push("/login");
+    router.refresh();
   }
 
   return (
-    <aside className="w-64 min-h-screen bg-[#0A569E] text-white p-4 flex flex-col">
-      <div className="text-xl font-black mb-2">AUTO GESTÃO PRÓ</div>
+    <aside className="w-[260px] min-h-screen bg-[#0456A3] text-white flex flex-col justify-between shrink-0">
+      <div>
+        <div className="px-6 pt-8 pb-4">
+          <h1 className="text-[28px] font-black leading-[30px] text-white">
+            AUTO GESTÃO <br /> PRÓ
+          </h1>
 
-      <div className="text-xs opacity-85 mb-6">
-        <div>{session?.nome || "SEM SESSÃO"}</div>
-        <div className="opacity-70">{session?.role || "-"}</div>
+          <div className="mt-8">
+            <p className="text-[14px] font-semibold text-white">
+              {String(user?.nome || "USUÁRIO").toUpperCase()}
+            </p>
+            <p className="text-[14px] text-white/90 mt-1">
+              {String(user?.role || "").toUpperCase() || "ADMIN"}
+            </p>
+          </div>
+        </div>
+
+        <nav className="px-4 mt-6 flex flex-col gap-2">
+          {menu.map((item) => {
+            const ativo = isActive(item.rota);
+
+            return (
+              <Link
+                key={item.rota}
+                href={item.rota}
+                className={[
+                  "block rounded-[22px] px-6 py-3 text-[16px] font-bold transition-colors duration-150",
+                  ativo
+                    ? "!bg-white !text-[#0456A3] shadow-sm"
+                    : "!text-white hover:bg-white/10",
+                ].join(" ")}
+              >
+                <span className={ativo ? "!text-[#0456A3]" : "!text-white"}>
+                  {item.nome}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
       </div>
 
-      <nav className="flex flex-col gap-2 flex-1">
-        {menuVisivel.map((item) => {
-          const active =
-            pathname === item.href || pathname.startsWith(item.href + "/");
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={[
-                "px-4 py-2 rounded-lg font-semibold transition",
-                active
-                  ? "bg-white text-[#0A569E]"
-                  : "hover:bg-white/15 text-white",
-              ].join(" ")}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <button
-        type="button"
-        onClick={sair}
-        className="mt-4 w-full bg-white text-[#0A569E] font-black rounded-lg px-4 py-2 hover:opacity-95"
-      >
-        SAIR
-      </button>
-
-      <div className="mt-3 text-[11px] opacity-80">
-        <div>VERSÃO PREMIUM</div>
-        <div>LOCALSTORAGE</div>
+      <div className="p-4">
+        <button
+          onClick={sair}
+          className="w-full rounded-xl bg-white py-3 font-bold text-[#0456A3] transition hover:opacity-90"
+          type="button"
+        >
+          SAIR
+        </button>
       </div>
     </aside>
   );
