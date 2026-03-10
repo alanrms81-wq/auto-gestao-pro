@@ -209,18 +209,35 @@ export default function ClientesPage() {
 
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("*")
-      .eq("empresa_id", eid)
-      .order("created_at", { ascending: false });
+    const pageSize = 1000;
+    let from = 0;
+    let todos: Cliente[] = [];
+    let continua = true;
 
-    if (error) {
-      alert("ERRO AO CARREGAR CLIENTES: " + error.message);
-    } else {
-      setClientes((data || []) as Cliente[]);
+    while (continua) {
+      const { data, error } = await supabase
+        .from("clientes")
+        .select("*")
+        .eq("empresa_id", eid)
+        .order("created_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        alert("ERRO AO CARREGAR CLIENTES: " + error.message);
+        break;
+      }
+
+      const lote = (data || []) as Cliente[];
+      todos = [...todos, ...lote];
+
+      if (lote.length < pageSize) {
+        continua = false;
+      } else {
+        from += pageSize;
+      }
     }
 
+    setClientes(todos);
     setLoading(false);
   }
 
