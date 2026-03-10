@@ -1,17 +1,33 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="p-6">CARREGANDO...</div>}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function fazerLogin(e: React.FormEvent) {
+  useEffect(() => {
+    const emailParam = searchParams.get("email") || "";
+    if (emailParam) {
+      setEmail(emailParam);
+    }
+  }, [searchParams]);
+
+  async function fazerLogin(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
 
@@ -37,12 +53,13 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] px-4">
-      <div className="bg-white p-8 rounded-2xl shadow w-full max-w-[380px]">
-        <h1 className="text-2xl font-black text-center mb-2 text-[#0A569E]">
-          AUTO GESTÃO PRO
+      <div className="bg-white p-8 rounded-2xl shadow w-full max-w-[420px]">
+        <h1 className="text-3xl font-black text-center mb-2 text-[#0A569E]">
+          AUTO GESTÃO PRÓ
         </h1>
+
         <p className="text-sm text-center text-[#6C757D] mb-6">
-          Login com Supabase
+          ENTRE COM SUA CONTA
         </p>
 
         <form onSubmit={fazerLogin} className="space-y-4">
@@ -72,6 +89,16 @@ export default function LoginPage() {
             {loading ? "ENTRANDO..." : "ENTRAR"}
           </button>
         </form>
+
+        <div className="mt-5 flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={() => router.push("/registro")}
+            className="border border-[#2F2F2F] text-[#1F1F1F] w-full p-3 rounded-lg font-semibold bg-white"
+          >
+            CRIAR CONTA
+          </button>
+        </div>
       </div>
     </div>
   );
