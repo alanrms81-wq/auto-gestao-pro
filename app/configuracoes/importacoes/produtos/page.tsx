@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Papa from "papaparse";
+import Papa, { ParseError, ParseResult } from "papaparse";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/app/components/Sidebar";
 import { supabase } from "@/lib/supabase";
@@ -181,12 +181,12 @@ export default function ImportacaoProdutosPage() {
       header: true,
       skipEmptyLines: "greedy",
       delimiter,
-      transformHeader: (header) =>
+      transformHeader: (header: string) =>
         String(header ?? "")
           .replace(/^\uFEFF/, "")
           .replace(/\t/g, "")
           .trim(),
-      complete: (result) => {
+      complete: (result: ParseResult<Record<string, unknown>>) => {
         const dadosOriginais = (result.data || []).filter((row) =>
           Object.values(row || {}).some((v) => String(v ?? "").trim() !== "")
         );
@@ -204,7 +204,7 @@ export default function ImportacaoProdutosPage() {
         console.log("PRIMEIRA LINHA:", dadosNormalizados[0]);
         console.log("PRODUTOS CONVERTIDOS:", produtosConvertidos.slice(0, 3));
       },
-      error: (error) => {
+      error: (error: ParseError) => {
         alert("ERRO AO LER CSV: " + error.message);
       },
     });
