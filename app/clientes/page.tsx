@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
+import Pagination from "@/app/components/Pagination";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
@@ -154,6 +155,10 @@ export default function ClientesPage() {
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [busca, setBusca] = useState("");
 
+  const [page, setPage] = useState(1);
+  const [totalRegistros, setTotalRegistros] = useState(0);
+  const pageSize = 50;
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [clienteSelecionadoId, setClienteSelecionadoId] = useState<string | null>(null);
   const [clienteSelecionadoNome, setClienteSelecionadoNome] = useState<string>("");
@@ -196,12 +201,16 @@ export default function ClientesPage() {
       }
 
       setEmpresaId(user.empresa_id);
-      await carregarClientes(user.empresa_id);
       setReady(true);
     }
 
     init();
   }, [router]);
+
+  useEffect(() => {
+    if (!empresaId) return;
+    carregarClientes(empresaId);
+  }, [empresaId, page]);
 
   async function carregarClientes(empId?: string) {
     const eid = empId || empresaId;
@@ -209,35 +218,34 @@ export default function ClientesPage() {
 
     setLoading(true);
 
-    const pageSize = 1000;
-    let from = 0;
-    let todos: Cliente[] = [];
-    let continua = true;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
 
-    while (continua) {
-      const { data, error } = await supabase
-        .from("clientes")
-        .select("*")
-        .eq("empresa_id", eid)
-        .order("created_at", { ascending: false })
-        .range(from, from + pageSize - 1);
+    const { count, error: countError } = await supabase
+      .from("clientes")
+      .select("*", { count: "exact", head: true })
+      .eq("empresa_id", eid);
 
-      if (error) {
-        alert("ERRO AO CARREGAR CLIENTES: " + error.message);
-        break;
-      }
-
-      const lote = (data || []) as Cliente[];
-      todos = [...todos, ...lote];
-
-      if (lote.length < pageSize) {
-        continua = false;
-      } else {
-        from += pageSize;
-      }
+    if (countError) {
+      alert("ERRO AO CONTAR CLIENTES: " + countError.message);
+      setLoading(false);
+      return;
     }
 
-    setClientes(todos);
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("*")
+      .eq("empresa_id", eid)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      alert("ERRO AO CARREGAR CLIENTES: " + error.message);
+    } else {
+      setClientes((data || []) as Cliente[]);
+      setTotalRegistros(count || 0);
+    }
+
     setLoading(false);
   }
 
@@ -271,12 +279,18 @@ export default function ClientesPage() {
     });
   }, [clientes, busca]);
 
-  const total = useMemo(() => clientes.length, [clientes]);
+  const total = totalRegistros;
+
   const ativos = useMemo(
     () => clientes.filter((c) => (c.status || "ATIVO") !== "INATIVO").length,
     [clientes]
   );
-  const inativos = useMemo(() => total - ativos, [total, ativos]);
+
+  const inativos = useMemo(
+    () => Math.max(0, totalRegistros - ativos),
+    [totalRegistros, ativos]
+  );
+
   const totalVeiculos = useMemo(() => veiculos.length, [veiculos]);
 
   function resetForm() {
@@ -394,6 +408,8 @@ export default function ClientesPage() {
 
     alert("CLIENTE CRIADO!");
     resetForm();
+
+    setPage(1);
     await carregarClientes();
 
     if (data?.id) {
@@ -632,6 +648,7 @@ export default function ClientesPage() {
     }
 
     alert(`IMPORTAÇÃO CONCLUÍDA!\nCRIADOS: ${created}\nATUALIZADOS: ${updated}`);
+    setPage(1);
     await carregarClientes();
   }
 
@@ -816,19 +833,11 @@ export default function ClientesPage() {
           </div>
 
           <div className="flex gap-3 mt-5">
-            <button
-              onClick={salvarCliente}
-              className="botao-azul"
-              type="button"
-            >
+            <button onClick={salvarCliente} className="botao-azul" type="button">
               SALVAR CLIENTE
             </button>
 
-            <button
-              onClick={resetForm}
-              className="botao"
-              type="button"
-            >
+            <button onClick={resetForm} className="botao" type="button">
               LIMPAR
             </button>
           </div>
@@ -931,11 +940,7 @@ export default function ClientesPage() {
               {editingVeiculoId ? "SALVAR VEÍCULO" : "ADICIONAR VEÍCULO"}
             </button>
 
-            <button
-              onClick={resetVeiculoForm}
-              className="botao"
-              type="button"
-            >
+            <button onClick={resetVeiculoForm} className="botao" type="button">
               LIMPAR
             </button>
           </div>
@@ -1095,6 +1100,13 @@ export default function ClientesPage() {
               </tbody>
             </table>
           </div>
+
+          <Pagination
+            page={page}
+            setPage={setPage}
+            total={totalRegistros}
+            pageSize={pageSize}
+          />
         </section>
       </main>
 
