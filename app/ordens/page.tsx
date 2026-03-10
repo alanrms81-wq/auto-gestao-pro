@@ -17,7 +17,7 @@ type Servico = {
   valor: number;
 };
 
-type ItemProduto = {
+type ProdutoOS = {
   id: string;
   nome: string;
   codigo: string;
@@ -25,7 +25,7 @@ type ItemProduto = {
   valor: number;
 };
 
-type ItemServico = {
+type ServicoOS = {
   id: string;
   descricao: string;
   quantidade: number;
@@ -40,8 +40,8 @@ export default function OrdensPage() {
   const [buscaProduto, setBuscaProduto] = useState("");
   const [buscaServico, setBuscaServico] = useState("");
 
-  const [produtosOS, setProdutosOS] = useState<ItemProduto[]>([]);
-  const [servicosOS, setServicosOS] = useState<ItemServico[]>([]);
+  const [produtosOS, setProdutosOS] = useState<ProdutoOS[]>([]);
+  const [servicosOS, setServicosOS] = useState<ServicoOS[]>([]);
 
   function makeId() {
     return Math.random().toString(36).substring(2, 9);
@@ -69,21 +69,22 @@ export default function OrdensPage() {
 
   const produtosFiltrados = useMemo(() => {
     if (buscaProduto.length < 2) return [];
-    return produtos
-      .filter(p =>
-        (p.nome || "").toLowerCase().includes(buscaProduto.toLowerCase()) ||
-        (p.codigo_sku || "").toLowerCase().includes(buscaProduto.toLowerCase())
-      )
-      .slice(0, 6);
+
+    return produtos.filter(p =>
+      p.nome.toLowerCase().includes(buscaProduto.toLowerCase()) ||
+      p.codigo_sku.toLowerCase().includes(buscaProduto.toLowerCase())
+    ).slice(0, 6);
+
   }, [buscaProduto, produtos]);
 
   const servicosFiltrados = useMemo(() => {
+
     if (buscaServico.length < 2) return [];
-    return servicos
-      .filter(s =>
-        (s.nome || "").toLowerCase().includes(buscaServico.toLowerCase())
-      )
-      .slice(0, 6);
+
+    return servicos.filter(s =>
+      s.nome.toLowerCase().includes(buscaServico.toLowerCase())
+    ).slice(0, 6);
+
   }, [buscaServico, servicos]);
 
   function adicionarProduto(p: Produto) {
@@ -117,7 +118,7 @@ export default function OrdensPage() {
     setBuscaServico("");
   }
 
-  function atualizarProduto(id: string, campo: string, valor: any) {
+  function atualizarProduto(id: string, campo: string, valor: number) {
 
     setProdutosOS(prev =>
       prev.map(p =>
@@ -126,7 +127,7 @@ export default function OrdensPage() {
     );
   }
 
-  function atualizarServico(id: string, campo: string, valor: any) {
+  function atualizarServico(id: string, campo: string, valor: number) {
 
     setServicosOS(prev =>
       prev.map(s =>
@@ -144,29 +145,29 @@ export default function OrdensPage() {
   }
 
   function totalProdutos() {
-    return produtosOS.reduce((acc, p) => acc + p.quantidade * p.valor, 0);
+    return produtosOS.reduce((t, p) => t + p.quantidade * p.valor, 0);
   }
 
   function totalServicos() {
-    return servicosOS.reduce((acc, s) => acc + s.quantidade * s.valor, 0);
+    return servicosOS.reduce((t, s) => t + s.quantidade * s.valor, 0);
   }
 
   return (
-    <div className="flex min-h-screen bg-[#EEF2F7]">
+    <div className="flex min-h-screen">
 
       <Sidebar />
 
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-6 space-y-6">
 
         {/* PRODUTOS */}
 
         <section className="card">
 
-          <div className="flex justify-between mb-4">
+          <div className="flex justify-between items-center mb-3">
 
             <h2 className="titulo">PRODUTOS</h2>
 
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-[#6C757D]">
               DIGITE 3 LETRAS PARA BUSCAR
             </span>
 
@@ -181,14 +182,14 @@ export default function OrdensPage() {
 
           {produtosFiltrados.length > 0 && (
 
-            <div className="lista-busca">
+            <div className="border rounded-lg mb-4">
 
               {produtosFiltrados.map(p => (
 
                 <button
                   key={p.id}
                   onClick={() => adicionarProduto(p)}
-                  className="item-busca"
+                  className="block w-full text-left px-3 py-2 hover:bg-gray-100"
                 >
                   {p.nome} • {p.codigo_sku}
                 </button>
@@ -225,6 +226,7 @@ export default function OrdensPage() {
                   <td>
                     <input
                       type="number"
+                      className="campo-tabela"
                       value={p.quantidade}
                       onChange={(e) =>
                         atualizarProduto(p.id, "quantidade", Number(e.target.value))
@@ -235,6 +237,7 @@ export default function OrdensPage() {
                   <td>
                     <input
                       type="number"
+                      className="campo-tabela"
                       value={p.valor}
                       onChange={(e) =>
                         atualizarProduto(p.id, "valor", Number(e.target.value))
@@ -242,12 +245,13 @@ export default function OrdensPage() {
                     />
                   </td>
 
-                  <td>
-                    R$ {(p.quantidade * p.valor).toFixed(2)}
-                  </td>
+                  <td>R$ {(p.quantidade * p.valor).toFixed(2)}</td>
 
                   <td>
-                    <button onClick={() => removerProduto(p.id)}>
+                    <button
+                      className="botao-mini"
+                      onClick={() => removerProduto(p.id)}
+                    >
                       REMOVER
                     </button>
                   </td>
@@ -265,13 +269,9 @@ export default function OrdensPage() {
 
         {/* SERVIÇOS */}
 
-        <section className="card mt-6">
+        <section className="card">
 
-          <div className="flex justify-between mb-4">
-
-            <h2 className="titulo">MÃO DE OBRA / SERVIÇOS</h2>
-
-          </div>
+          <h2 className="titulo mb-3">MÃO DE OBRA / SERVIÇOS</h2>
 
           <input
             placeholder="BUSCAR SERVIÇO..."
@@ -282,14 +282,14 @@ export default function OrdensPage() {
 
           {servicosFiltrados.length > 0 && (
 
-            <div className="lista-busca">
+            <div className="border rounded-lg mb-4">
 
               {servicosFiltrados.map(s => (
 
                 <button
                   key={s.id}
                   onClick={() => adicionarServico(s)}
-                  className="item-busca"
+                  className="block w-full text-left px-3 py-2 hover:bg-gray-100"
                 >
                   {s.nome}
                 </button>
@@ -323,6 +323,7 @@ export default function OrdensPage() {
                   <td>
                     <input
                       type="number"
+                      className="campo-tabela"
                       value={s.quantidade}
                       onChange={(e) =>
                         atualizarServico(s.id, "quantidade", Number(e.target.value))
@@ -333,6 +334,7 @@ export default function OrdensPage() {
                   <td>
                     <input
                       type="number"
+                      className="campo-tabela"
                       value={s.valor}
                       onChange={(e) =>
                         atualizarServico(s.id, "valor", Number(e.target.value))
@@ -340,12 +342,13 @@ export default function OrdensPage() {
                     />
                   </td>
 
-                  <td>
-                    R$ {(s.quantidade * s.valor).toFixed(2)}
-                  </td>
+                  <td>R$ {(s.quantidade * s.valor).toFixed(2)}</td>
 
                   <td>
-                    <button onClick={() => removerServico(s.id)}>
+                    <button
+                      className="botao-mini"
+                      onClick={() => removerServico(s.id)}
+                    >
                       REMOVER
                     </button>
                   </td>
@@ -360,13 +363,15 @@ export default function OrdensPage() {
 
         </section>
 
+
         {/* TOTAL */}
 
-        <section className="card mt-6">
+        <section className="card">
 
-          <h2 className="titulo mb-3">TOTAL DA ORDEM</h2>
+          <h2 className="titulo mb-2">TOTAL DA ORDEM</h2>
 
           <p>Produtos: R$ {totalProdutos().toFixed(2)}</p>
+
           <p>Serviços: R$ {totalServicos().toFixed(2)}</p>
 
           <h3 className="mt-2 font-bold text-lg">
