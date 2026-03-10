@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #eef2f7;
+  --foreground: #111827;
 }
 
 @theme inline {
@@ -12,30 +12,19 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
+  max-width: 100%;
+  overflow-x: hidden;
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
-html,
-body {
-  background: #eef2f7;
-  color: #111827;
+
+* {
+  box-sizing: border-box;
 }
 
-/* Fundo geral do sistema */
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-/* Textos padrão mais escuros */
 h1,
 h2,
 h3,
@@ -45,93 +34,12 @@ h6 {
   color: #1f2937;
 }
 
-p,
-span,
-label,
-small,
-div {
-  color: inherit;
-}
-
-/* Inputs, selects e textareas com contraste melhor */
 input,
 select,
 textarea {
-  color: #111827 !important;
-  background: #ffffff !important;
-  border: 2px solid #6b7280 !important;
-  border-radius: 12px;
+  font: inherit;
 }
 
-input::placeholder,
-textarea::placeholder {
-  color: #4b5563 !important;
-  opacity: 1;
-}
-
-/* Foco mais visível */
-input:focus,
-select:focus,
-textarea:focus {
-  outline: none !important;
-  border-color: #0456a3 !important;
-  box-shadow: 0 0 0 2px rgba(4, 86, 163, 0.12);
-}
-
-/* Cards e blocos brancos */
-.bg-white {
-  background: #ffffff !important;
-}
-
-/* Sombras mais visíveis */
-.shadow-sm,
-.shadow {
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08) !important;
-}
-
-/* Títulos e textos que estavam claros demais */
-.text-\[\#6C757D\] {
-  color: #374151 !important;
-}
-
-.text-\[\#1F1F1F\] {
-  color: #111827 !important;
-}
-
-.text-\[\#212529\] {
-  color: #111827 !important;
-}
-
-.text-\[\#7B848C\] {
-  color: #4b5563 !important;
-}
-
-.text-\[\#8B929A\] {
-  color: #4b5563 !important;
-}
-
-/* Fundos muito claros */
-.bg-\[\#F6F7F9\] {
-  background: #eef2f7 !important;
-}
-
-.bg-\[\#F3F4F6\] {
-  background: #e5e7eb !important;
-}
-
-.bg-\[\#EEF2F7\] {
-  background: #dfe6ee !important;
-}
-
-/* Bordas claras demais */
-.border-\[\#9A9A9A\],
-.border-\[\#B7B7B7\],
-.border-\[\#E5E7EB\],
-.border-\[\#EFF1F4\] {
-  border-color: #9ca3af !important;
-}
-
-/* Botões com contraste melhor */
 button {
   transition: 0.2s ease;
 }
@@ -140,16 +48,14 @@ button:hover {
   filter: brightness(0.98);
 }
 
-/* Tabelas mais legíveis */
 table th {
-  color: #111827 !important;
+  color: #111827;
 }
 
 table td {
-  color: #1f2937 !important;
+  color: #1f2937;
 }
 
-/* Sidebar continua forte */
 aside {
   color: white;
 }
