@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -102,11 +102,11 @@ type OsServico = {
   subtotal?: number | null;
 };
 
-function up(v: any) {
+function up(v: unknown) {
   return String(v ?? "").toUpperCase();
 }
 
-function toMoney(v: any) {
+function toMoney(v: unknown) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
@@ -142,7 +142,7 @@ function montarDescricaoVeiculo(v: Veiculo) {
   return [v.marca, v.modelo, v.ano].filter(Boolean).join(" / ");
 }
 
-export default function OrdensPage() {
+function OrdensPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -218,34 +218,43 @@ export default function OrdensPage() {
 
     setLoading(true);
 
-    const [clientesResp, produtosResp, servicosResp, historicoResp] = await Promise.all([
-      supabase
-        .from("clientes")
-        .select("id,nome,telefone,celular,whatsapp,cpf_cnpj")
-        .eq("empresa_id", emp)
-        .order("nome"),
-      supabase
-        .from("produtos")
-        .select("id,nome,codigo_sku,preco_balcao,controla_estoque,estoque_atual")
-        .eq("empresa_id", emp)
-        .order("nome"),
-      supabase
-        .from("servicos")
-        .select("id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status")
-        .eq("empresa_id", emp)
-        .eq("status", "ATIVO")
-        .order("nome"),
-      supabase
-        .from("ordens_servico")
-        .select("*")
-        .eq("empresa_id", emp)
-        .order("created_at", { ascending: false }),
-    ]);
+    const [clientesResp, produtosResp, servicosResp, historicoResp] =
+      await Promise.all([
+        supabase
+          .from("clientes")
+          .select("id,nome,telefone,celular,whatsapp,cpf_cnpj")
+          .eq("empresa_id", emp)
+          .order("nome"),
+        supabase
+          .from("produtos")
+          .select(
+            "id,nome,codigo_sku,preco_balcao,controla_estoque,estoque_atual"
+          )
+          .eq("empresa_id", emp)
+          .order("nome"),
+        supabase
+          .from("servicos")
+          .select(
+            "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
+          )
+          .eq("empresa_id", emp)
+          .eq("status", "ATIVO")
+          .order("nome"),
+        supabase
+          .from("ordens_servico")
+          .select("*")
+          .eq("empresa_id", emp)
+          .order("created_at", { ascending: false }),
+      ]);
 
-    if (clientesResp.error) alert("ERRO CLIENTES: " + clientesResp.error.message);
-    if (produtosResp.error) alert("ERRO PRODUTOS: " + produtosResp.error.message);
-    if (servicosResp.error) alert("ERRO SERVIÇOS: " + servicosResp.error.message);
-    if (historicoResp.error) alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
+    if (clientesResp.error)
+      alert("ERRO CLIENTES: " + clientesResp.error.message);
+    if (produtosResp.error)
+      alert("ERRO PRODUTOS: " + produtosResp.error.message);
+    if (servicosResp.error)
+      alert("ERRO SERVIÇOS: " + servicosResp.error.message);
+    if (historicoResp.error)
+      alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
 
     setClientes((clientesResp.data || []) as Cliente[]);
     setProdutosBase((produtosResp.data || []) as Produto[]);
@@ -332,7 +341,11 @@ export default function OrdensPage() {
 
     return clientes
       .filter((c) =>
-        up(`${c.nome} ${c.telefone || ""} ${c.celular || ""} ${c.whatsapp || ""} ${c.cpf_cnpj || ""}`).includes(q)
+        up(
+          `${c.nome} ${c.telefone || ""} ${c.celular || ""} ${
+            c.whatsapp || ""
+          } ${c.cpf_cnpj || ""}`
+        ).includes(q)
       )
       .slice(0, 8);
   }, [clientes, buscaCliente]);
@@ -352,7 +365,11 @@ export default function OrdensPage() {
 
     return servicosBase
       .filter((s) =>
-        up(`${s.nome || ""} ${s.descricao || ""} ${s.categoria || ""} ${s.tempo_estimado || ""}`).includes(q)
+        up(
+          `${s.nome || ""} ${s.descricao || ""} ${s.categoria || ""} ${
+            s.tempo_estimado || ""
+          }`
+        ).includes(q)
       )
       .slice(0, 8);
   }, [servicosBase, buscaServico]);
@@ -363,21 +380,36 @@ export default function OrdensPage() {
 
     return historico.filter((item) =>
       up(
-        `${item.numero || ""} ${item.cliente_nome || ""} ${item.veiculo_descricao || ""} ${item.status || ""} ${item.placa || ""}`
+        `${item.numero || ""} ${item.cliente_nome || ""} ${
+          item.veiculo_descricao || ""
+        } ${item.status || ""} ${item.placa || ""}`
       ).includes(q)
     );
   }, [historico, buscaHistorico]);
 
   const subtotalProdutos = useMemo(() => {
-    return produtosOS.reduce((acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario), 0);
+    return produtosOS.reduce(
+      (acc, item) =>
+        acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      0
+    );
   }, [produtosOS]);
 
   const subtotalServicos = useMemo(() => {
-    return servicosOS.reduce((acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario), 0);
+    return servicosOS.reduce(
+      (acc, item) =>
+        acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      0
+    );
   }, [servicosOS]);
 
   const totalGeral = useMemo(() => {
-    return subtotalProdutos + subtotalServicos - toMoney(desconto) + toMoney(acrescimo);
+    return (
+      subtotalProdutos +
+      subtotalServicos -
+      toMoney(desconto) +
+      toMoney(acrescimo)
+    );
   }, [subtotalProdutos, subtotalServicos, desconto, acrescimo]);
 
   function novaOS() {
@@ -461,7 +493,11 @@ export default function OrdensPage() {
     setBuscaServico("");
   }
 
-  function atualizarProdutoOS(id: string | undefined, campo: keyof OsProduto, valor: any) {
+  function atualizarProdutoOS(
+    id: string | undefined,
+    campo: keyof OsProduto,
+    valor: unknown
+  ) {
     setProdutosOS((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
@@ -499,7 +535,11 @@ export default function OrdensPage() {
     ]);
   }
 
-  function atualizarServicoOS(id: string | undefined, campo: keyof OsServico, valor: any) {
+  function atualizarServicoOS(
+    id: string | undefined,
+    campo: keyof OsServico,
+    valor: unknown
+  ) {
     setServicosOS((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
@@ -620,7 +660,9 @@ export default function OrdensPage() {
       }));
 
     if (produtosPayload.length > 0) {
-      const { error } = await supabase.from("ordens_servico_produtos").insert(produtosPayload);
+      const { error } = await supabase
+        .from("ordens_servico_produtos")
+        .insert(produtosPayload);
       if (error) {
         alert("ERRO AO SALVAR PRODUTOS DA OS: " + error.message);
         return;
@@ -628,7 +670,9 @@ export default function OrdensPage() {
     }
 
     if (servicosPayload.length > 0) {
-      const { error } = await supabase.from("ordens_servico_servicos").insert(servicosPayload);
+      const { error } = await supabase
+        .from("ordens_servico_servicos")
+        .insert(servicosPayload);
       if (error) {
         alert("ERRO AO SALVAR SERVIÇOS DA OS: " + error.message);
         return;
@@ -692,8 +736,12 @@ export default function OrdensPage() {
         .eq("ordem_servico_id", item.id),
     ]);
 
-    setProdutosOS((prodResp.data || []).map((p: any) => ({ ...p, id: p.id || makeLocalId() })));
-    setServicosOS((servResp.data || []).map((s: any) => ({ ...s, id: s.id || makeLocalId() })));
+    setProdutosOS(
+      (prodResp.data || []).map((p: any) => ({ ...p, id: p.id || makeLocalId() }))
+    );
+    setServicosOS(
+      (servResp.data || []).map((s: any) => ({ ...s, id: s.id || makeLocalId() }))
+    );
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -775,7 +823,9 @@ export default function OrdensPage() {
       ]);
 
     if (financeiroError) {
-      alert("OS FATURADA, MAS HOUVE ERRO NO FINANCEIRO: " + financeiroError.message);
+      alert(
+        "OS FATURADA, MAS HOUVE ERRO NO FINANCEIRO: " + financeiroError.message
+      );
       return;
     }
 
@@ -806,15 +856,15 @@ export default function OrdensPage() {
               ORDEM DE SERVIÇO
             </h1>
 
-            <p className="text-sm text-[#6C757D] mt-1">
-              NÚMERO: {numeroOS}
-            </p>
+            <p className="text-sm text-[#6C757D] mt-1">NÚMERO: {numeroOS}</p>
           </div>
 
           <div className="flex gap-3 flex-wrap">
             <button
               className="botao"
-              onClick={() => editingId && imprimirOS({ id: editingId } as OrdemServico)}
+              onClick={() =>
+                editingId && imprimirOS({ id: editingId } as OrdemServico)
+              }
               type="button"
             >
               IMPRESSÃO DE OS
@@ -822,7 +872,10 @@ export default function OrdensPage() {
 
             <button
               className="botao"
-              onClick={() => editingId && imprimirTecnico({ id: editingId } as OrdemServico)}
+              onClick={() =>
+                editingId &&
+                imprimirTecnico({ id: editingId } as OrdemServico)
+              }
               type="button"
             >
               IMPRESSÃO OS TÉCNICOS
@@ -860,9 +913,15 @@ export default function OrdensPage() {
                           onClick={() => selecionarCliente(c)}
                           className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
                         >
-                          <div className="font-semibold text-[#111827]">{c.nome}</div>
+                          <div className="font-semibold text-[#111827]">
+                            {c.nome}
+                          </div>
                           <div className="text-xs text-[#6B7280]">
-                            {c.telefone || c.celular || c.whatsapp || c.cpf_cnpj || "-"}
+                            {c.telefone ||
+                              c.celular ||
+                              c.whatsapp ||
+                              c.cpf_cnpj ||
+                              "-"}
                           </div>
                         </button>
                       ))}
@@ -881,7 +940,8 @@ export default function OrdensPage() {
                     <option value="">SELECIONE O VEÍCULO</option>
                     {veiculosCliente.map((v) => (
                       <option key={v.id} value={v.id}>
-                        {montarDescricaoVeiculo(v)} {v.placa ? `- ${v.placa}` : ""}
+                        {montarDescricaoVeiculo(v)}{" "}
+                        {v.placa ? `- ${v.placa}` : ""}
                       </option>
                     ))}
                   </select>
@@ -1005,23 +1065,27 @@ export default function OrdensPage() {
                   onChange={(e) => setBuscaProduto(e.target.value)}
                 />
 
-                {buscaProduto.trim().length >= 3 && produtosFiltrados.length > 0 && (
-                  <div className="absolute top-[48px] left-0 right-0 z-20 rounded-xl border border-[#D1D5DB] bg-white shadow-lg max-h-[220px] overflow-auto">
-                    {produtosFiltrados.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => adicionarProdutoDoBanco(p)}
-                        className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
-                      >
-                        <div className="font-semibold text-[#111827]">{p.nome}</div>
-                        <div className="text-xs text-[#6B7280]">
-                          {p.codigo_sku || "-"} • {moneyBR(toMoney(p.preco_balcao))}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {buscaProduto.trim().length >= 3 &&
+                  produtosFiltrados.length > 0 && (
+                    <div className="absolute top-[48px] left-0 right-0 z-20 rounded-xl border border-[#D1D5DB] bg-white shadow-lg max-h-[220px] overflow-auto">
+                      {produtosFiltrados.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => adicionarProdutoDoBanco(p)}
+                          className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
+                        >
+                          <div className="font-semibold text-[#111827]">
+                            {p.nome}
+                          </div>
+                          <div className="text-xs text-[#6B7280]">
+                            {p.codigo_sku || "-"} •{" "}
+                            {moneyBR(toMoney(p.preco_balcao))}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
 
               <table className="tabela">
@@ -1039,7 +1103,10 @@ export default function OrdensPage() {
                 <tbody>
                   {produtosOS.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-6 text-[#6C757D]">
+                      <td
+                        colSpan={6}
+                        className="text-center py-6 text-[#6C757D]"
+                      >
                         NENHUM PRODUTO ADICIONADO.
                       </td>
                     </tr>
@@ -1050,14 +1117,26 @@ export default function OrdensPage() {
                           <input
                             className="campo-tabela"
                             value={item.produto_nome || ""}
-                            onChange={(e) => atualizarProdutoOS(item.id, "produto_nome", e.target.value)}
+                            onChange={(e) =>
+                              atualizarProdutoOS(
+                                item.id,
+                                "produto_nome",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             value={item.codigo || ""}
-                            onChange={(e) => atualizarProdutoOS(item.id, "codigo", e.target.value)}
+                            onChange={(e) =>
+                              atualizarProdutoOS(
+                                item.id,
+                                "codigo",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td>
@@ -1065,7 +1144,13 @@ export default function OrdensPage() {
                             className="campo-tabela"
                             type="number"
                             value={toMoney(item.quantidade)}
-                            onChange={(e) => atualizarProdutoOS(item.id, "quantidade", e.target.value)}
+                            onChange={(e) =>
+                              atualizarProdutoOS(
+                                item.id,
+                                "quantidade",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td>
@@ -1073,10 +1158,21 @@ export default function OrdensPage() {
                             className="campo-tabela"
                             type="number"
                             value={toMoney(item.valor_unitario)}
-                            onChange={(e) => atualizarProdutoOS(item.id, "valor_unitario", e.target.value)}
+                            onChange={(e) =>
+                              atualizarProdutoOS(
+                                item.id,
+                                "valor_unitario",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
-                        <td>{moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}</td>
+                        <td>
+                          {moneyBR(
+                            toMoney(item.quantidade) *
+                              toMoney(item.valor_unitario)
+                          )}
+                        </td>
                         <td>
                           <button
                             className="botao-mini"
@@ -1110,24 +1206,27 @@ export default function OrdensPage() {
                   onChange={(e) => setBuscaServico(e.target.value)}
                 />
 
-                {buscaServico.trim().length >= 2 && servicosFiltrados.length > 0 && (
-                  <div className="absolute top-[48px] left-0 right-0 z-20 rounded-xl border border-[#D1D5DB] bg-white shadow-lg max-h-[220px] overflow-auto">
-                    {servicosFiltrados.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => adicionarServicoDoCadastro(s)}
-                        className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
-                      >
-                        <div className="font-semibold text-[#111827]">{s.nome}</div>
-                        <div className="text-xs text-[#6B7280]">
-                          {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
-                          {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {buscaServico.trim().length >= 2 &&
+                  servicosFiltrados.length > 0 && (
+                    <div className="absolute top-[48px] left-0 right-0 z-20 rounded-xl border border-[#D1D5DB] bg-white shadow-lg max-h-[220px] overflow-auto">
+                      {servicosFiltrados.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => adicionarServicoDoCadastro(s)}
+                          className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
+                        >
+                          <div className="font-semibold text-[#111827]">
+                            {s.nome}
+                          </div>
+                          <div className="text-xs text-[#6B7280]">
+                            {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
+                            {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
 
               <table className="tabela">
@@ -1144,7 +1243,10 @@ export default function OrdensPage() {
                 <tbody>
                   {servicosOS.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center py-6 text-[#6C757D]">
+                      <td
+                        colSpan={5}
+                        className="text-center py-6 text-[#6C757D]"
+                      >
                         NENHUM SERVIÇO ADICIONADO.
                       </td>
                     </tr>
@@ -1155,7 +1257,13 @@ export default function OrdensPage() {
                           <input
                             className="campo-tabela"
                             value={item.descricao || ""}
-                            onChange={(e) => atualizarServicoOS(item.id, "descricao", e.target.value)}
+                            onChange={(e) =>
+                              atualizarServicoOS(
+                                item.id,
+                                "descricao",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td>
@@ -1163,7 +1271,13 @@ export default function OrdensPage() {
                             className="campo-tabela"
                             type="number"
                             value={toMoney(item.quantidade)}
-                            onChange={(e) => atualizarServicoOS(item.id, "quantidade", e.target.value)}
+                            onChange={(e) =>
+                              atualizarServicoOS(
+                                item.id,
+                                "quantidade",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td>
@@ -1171,10 +1285,21 @@ export default function OrdensPage() {
                             className="campo-tabela"
                             type="number"
                             value={toMoney(item.valor_unitario)}
-                            onChange={(e) => atualizarServicoOS(item.id, "valor_unitario", e.target.value)}
+                            onChange={(e) =>
+                              atualizarServicoOS(
+                                item.id,
+                                "valor_unitario",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
-                        <td>{moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}</td>
+                        <td>
+                          {moneyBR(
+                            toMoney(item.quantidade) *
+                              toMoney(item.valor_unitario)
+                          )}
+                        </td>
                         <td>
                           <button
                             className="botao-mini"
@@ -1218,7 +1343,10 @@ export default function OrdensPage() {
                 <tbody>
                   {historicoFiltrado.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-6 text-[#6C757D]">
+                      <td
+                        colSpan={8}
+                        className="text-center py-6 text-[#6C757D]"
+                      >
                         NENHUMA ORDEM DE SERVIÇO ENCONTRADA.
                       </td>
                     </tr>
@@ -1226,27 +1354,53 @@ export default function OrdensPage() {
                     historicoFiltrado.map((item) => (
                       <tr key={item.id}>
                         <td>{item.numero || "-"}</td>
-                        <td>{item.created_at ? new Date(item.created_at).toLocaleDateString("pt-BR") : "-"}</td>
+                        <td>
+                          {item.created_at
+                            ? new Date(item.created_at).toLocaleDateString(
+                                "pt-BR"
+                              )
+                            : "-"}
+                        </td>
                         <td>{item.cliente_nome || "-"}</td>
                         <td>{item.veiculo_descricao || "-"}</td>
                         <td>{item.status || "-"}</td>
                         <td>{item.faturado ? "SIM" : "NÃO"}</td>
-                        <td>{moneyBR(toMoney(item.total))}</td>
+                        <td>{moneyBR(toMoney(item.total || 0))}</td>
                         <td>
                           <div className="flex gap-1 flex-wrap">
-                            <button className="botao-mini" onClick={() => editarOS(item)} type="button">
+                            <button
+                              className="botao-mini"
+                              onClick={() => editarOS(item)}
+                              type="button"
+                            >
                               EDITAR
                             </button>
-                            <button className="botao-mini" onClick={() => imprimirOS(item)} type="button">
+                            <button
+                              className="botao-mini"
+                              onClick={() => imprimirOS(item)}
+                              type="button"
+                            >
                               OS
                             </button>
-                            <button className="botao-mini" onClick={() => imprimirTecnico(item)} type="button">
+                            <button
+                              className="botao-mini"
+                              onClick={() => imprimirTecnico(item)}
+                              type="button"
+                            >
                               TÉCNICO
                             </button>
-                            <button className="botao-mini" onClick={() => faturarOS(item)} type="button">
+                            <button
+                              className="botao-mini"
+                              onClick={() => faturarOS(item)}
+                              type="button"
+                            >
                               FATURAR
                             </button>
-                            <button className="botao-mini" onClick={() => removerOS(item.id)} type="button">
+                            <button
+                              className="botao-mini"
+                              onClick={() => removerOS(item.id)}
+                              type="button"
+                            >
                               REMOVER
                             </button>
                           </div>
@@ -1264,15 +1418,34 @@ export default function OrdensPage() {
               <h2 className="titulo mb-4">RESUMO DA OS</h2>
 
               <div className="space-y-2 text-sm text-[#1F1F1F]">
-                <p><b>CLIENTE:</b> {clienteNome || "-"}</p>
-                <p><b>VEÍCULO:</b> {veiculo || "-"}</p>
-                <p><b>PLACA:</b> {placa || "-"}</p>
-                <p><b>KM:</b> {km || "-"}</p>
-                <p><b>TÉCNICO:</b> {tecnico || "-"}</p>
-                <p><b>PRAZO:</b> {prazoData || "-"}</p>
-                <p><b>GARANTIA:</b> {garantiaNumero ? `${garantiaNumero} ${garantiaTipo}` : "-"}</p>
-                <p><b>PAGAMENTO:</b> {formaPagamento}</p>
-                <p><b>STATUS:</b> {status}</p>
+                <p>
+                  <b>CLIENTE:</b> {clienteNome || "-"}
+                </p>
+                <p>
+                  <b>VEÍCULO:</b> {veiculo || "-"}
+                </p>
+                <p>
+                  <b>PLACA:</b> {placa || "-"}
+                </p>
+                <p>
+                  <b>KM:</b> {km || "-"}
+                </p>
+                <p>
+                  <b>TÉCNICO:</b> {tecnico || "-"}
+                </p>
+                <p>
+                  <b>PRAZO:</b> {prazoData || "-"}
+                </p>
+                <p>
+                  <b>GARANTIA:</b>{" "}
+                  {garantiaNumero ? `${garantiaNumero} ${garantiaTipo}` : "-"}
+                </p>
+                <p>
+                  <b>PAGAMENTO:</b> {formaPagamento}
+                </p>
+                <p>
+                  <b>STATUS:</b> {status}
+                </p>
               </div>
             </section>
 
@@ -1282,12 +1455,16 @@ export default function OrdensPage() {
               <div className="space-y-4">
                 <div className="flex justify-between text-sm">
                   <span>PRODUTOS</span>
-                  <span className="font-semibold">{moneyBR(subtotalProdutos)}</span>
+                  <span className="font-semibold">
+                    {moneyBR(subtotalProdutos)}
+                  </span>
                 </div>
 
                 <div className="flex justify-between text-sm">
                   <span>MÃO DE OBRA</span>
-                  <span className="font-semibold">{moneyBR(subtotalServicos)}</span>
+                  <span className="font-semibold">
+                    {moneyBR(subtotalServicos)}
+                  </span>
                 </div>
 
                 <div>
@@ -1440,5 +1617,13 @@ export default function OrdensPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function OrdensPage() {
+  return (
+    <Suspense fallback={<div className="p-6">CARREGANDO...</div>}>
+      <OrdensPageContent />
+    </Suspense>
   );
 }
