@@ -8,6 +8,8 @@ type RegistroResponse = {
   ok?: boolean;
   error?: string;
   message?: string;
+  detalhe?: string;
+  etapa?: string;
 };
 
 export default function RegistroPage() {
@@ -74,7 +76,7 @@ export default function RegistroPage() {
       const res = await fetch("/api/registro", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           nomeEmpresa,
@@ -82,20 +84,24 @@ export default function RegistroPage() {
           telefoneEmpresa,
           nomeUsuario,
           email,
-          senha
-        })
+          senha,
+        }),
       });
 
       const json: RegistroResponse = await res.json();
 
       if (!res.ok) {
-        alert(json.error || "ERRO AO CRIAR CONTA.");
+        alert(
+          `${json.error || "ERRO AO CRIAR CONTA."}${
+            json.detalhe ? "\n\nDETALHE: " + json.detalhe : ""
+          }${json.etapa ? "\nETAPA: " + json.etapa : ""}`
+        );
         return;
       }
 
       const loginResult = await supabase.auth.signInWithPassword({
         email,
-        password: senha
+        password: senha,
       });
 
       if (loginResult.error) {
