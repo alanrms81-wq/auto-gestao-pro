@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -132,6 +132,14 @@ function montarDescricaoVeiculo(v: Veiculo) {
 }
 
 export default function OrdensPage() {
+  return (
+    <Suspense fallback={<div className="p-6">CARREGANDO...</div>}>
+      <OrdensPageContent />
+    </Suspense>
+  );
+}
+
+function OrdensPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -311,7 +319,9 @@ export default function OrdensPage() {
 
     return clientes
       .filter((c) =>
-        up(`${c.nome} ${c.telefone || ""} ${c.celular || ""} ${c.whatsapp || ""} ${c.cpf_cnpj || ""}`).includes(q)
+        up(
+          `${c.nome} ${c.telefone || ""} ${c.celular || ""} ${c.whatsapp || ""} ${c.cpf_cnpj || ""}`
+        ).includes(q)
       )
       .slice(0, 8);
   }, [clientes, buscaCliente]);
@@ -337,11 +347,17 @@ export default function OrdensPage() {
   }, [historico, buscaHistorico]);
 
   const subtotalProdutos = useMemo(() => {
-    return produtosOS.reduce((acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario), 0);
+    return produtosOS.reduce(
+      (acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      0
+    );
   }, [produtosOS]);
 
   const subtotalServicos = useMemo(() => {
-    return servicosOS.reduce((acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario), 0);
+    return servicosOS.reduce(
+      (acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      0
+    );
   }, [servicosOS]);
 
   const totalGeral = useMemo(() => {
@@ -573,7 +589,9 @@ export default function OrdensPage() {
       }));
 
     if (produtosPayload.length > 0) {
-      const { error } = await supabase.from("ordens_servico_produtos").insert(produtosPayload);
+      const { error } = await supabase
+        .from("ordens_servico_produtos")
+        .insert(produtosPayload);
       if (error) {
         alert("ERRO AO SALVAR PRODUTOS DA OS: " + error.message);
         return;
@@ -581,7 +599,9 @@ export default function OrdensPage() {
     }
 
     if (servicosPayload.length > 0) {
-      const { error } = await supabase.from("ordens_servico_servicos").insert(servicosPayload);
+      const { error } = await supabase
+        .from("ordens_servico_servicos")
+        .insert(servicosPayload);
       if (error) {
         alert("ERRO AO SALVAR SERVIÇOS DA OS: " + error.message);
         return;
