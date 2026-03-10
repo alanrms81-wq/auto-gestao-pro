@@ -392,7 +392,7 @@ export default function FinanceiroPage() {
     <div className="min-h-screen flex bg-[#F3F4F6]">
       <Sidebar />
 
-      <main className="flex-1 p-6">
+      <main className="flex-1 min-w-0 p-6">
         <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-[26px] font-black text-[#6C757D] leading-none">
