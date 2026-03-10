@@ -170,18 +170,35 @@ export default function ProdutosPage() {
 
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("produtos")
-      .select("*")
-      .eq("empresa_id", empId)
-      .order("created_at", { ascending: false });
+    const pageSize = 1000;
+    let from = 0;
+    let todos: Produto[] = [];
+    let continua = true;
 
-    if (error) {
-      alert("ERRO AO CARREGAR PRODUTOS: " + error.message);
-    } else {
-      setProdutos((data || []) as Produto[]);
+    while (continua) {
+      const { data, error } = await supabase
+        .from("produtos")
+        .select("*")
+        .eq("empresa_id", empId)
+        .order("created_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        alert("ERRO AO CARREGAR PRODUTOS: " + error.message);
+        break;
+      }
+
+      const lote = (data || []) as Produto[];
+      todos = [...todos, ...lote];
+
+      if (lote.length < pageSize) {
+        continua = false;
+      } else {
+        from += pageSize;
+      }
     }
 
+    setProdutos(todos);
     setLoading(false);
   }
 
