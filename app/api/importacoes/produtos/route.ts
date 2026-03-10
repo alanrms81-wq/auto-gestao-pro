@@ -13,7 +13,6 @@ type SessionUser = {
 
 type ProdutoPayload = {
   empresa_id: string;
-  tipo: string;
   nome: string;
   codigo_sku: string | null;
   codigo_barras: string | null;
@@ -122,7 +121,6 @@ export async function POST(request: NextRequest) {
     const payload: ProdutoPayload[] = produtos
       .map((item: any): ProdutoPayload => ({
         empresa_id: caller.empresa_id,
-        tipo: "PRODUTO",
         nome: up(item?.nome),
         codigo_sku: up(item?.codigo_sku) || null,
         codigo_barras: digits(item?.codigo_barras) || null,
