@@ -11,6 +11,27 @@ type SessionUser = {
   status?: string | null;
 };
 
+type ProdutoPayload = {
+  empresa_id: string;
+  tipo: string;
+  nome: string;
+  codigo_sku: string | null;
+  codigo_barras: string | null;
+  ncm: string | null;
+  marca: string | null;
+  fornecedor: string | null;
+  categoria: string | null;
+  unidade: string;
+  origem: string | null;
+  preco_balcao: number;
+  preco_custo: number;
+  controla_estoque: boolean;
+  estoque_atual: number;
+  localizacao: string | null;
+  observacoes: string | null;
+  status: string;
+};
+
 function getAdminClient() {
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -28,6 +49,7 @@ function getUserClient(jwt: string) {
 
 async function getCaller(request: NextRequest): Promise<SessionUser | null> {
   const authHeader = request.headers.get("authorization") || "";
+
   if (!authHeader.startsWith("Bearer ")) return null;
 
   const jwt = authHeader.replace("Bearer ", "").trim();
@@ -49,6 +71,7 @@ async function getCaller(request: NextRequest): Promise<SessionUser | null> {
     .single();
 
   if (usuarioError || !usuario) return null;
+
   if ((usuario.status || "ATIVO") !== "ATIVO") return null;
 
   return usuario as SessionUser;
@@ -77,10 +100,14 @@ export async function POST(request: NextRequest) {
     const caller = await getCaller(request);
 
     if (!caller?.empresa_id) {
-      return NextResponse.json({ error: "NÃO AUTORIZADO." }, { status: 401 });
+      return NextResponse.json(
+        { error: "NÃO AUTORIZADO." },
+        { status: 401 }
+      );
     }
 
     const body = await request.json();
+
     const produtos = Array.isArray(body?.produtos) ? body.produtos : [];
 
     if (!produtos.length) {
@@ -92,8 +119,8 @@ export async function POST(request: NextRequest) {
 
     const admin = getAdminClient();
 
-    const payload = produtos
-      .map((item: any) => ({
+    const payload: ProdutoPayload[] = produtos
+      .map((item: any): ProdutoPayload => ({
         empresa_id: caller.empresa_id,
         tipo: "PRODUTO",
         nome: up(item?.nome),
@@ -113,7 +140,7 @@ export async function POST(request: NextRequest) {
         observacoes: up(item?.observacoes) || null,
         status: up(item?.status) || "ATIVO",
       }))
-      .filter((item) => item.nome);
+      .filter((item: ProdutoPayload) => item.nome);
 
     if (!payload.length) {
       return NextResponse.json(
