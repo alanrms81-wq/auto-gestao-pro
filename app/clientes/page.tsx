@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import Pagination from "@/app/components/Pagination";
 import { useRouter } from "next/navigation";
@@ -146,6 +146,7 @@ function getCell(row: string[], map: Record<string, number>, keys: string[]) {
 export default function ClientesPage() {
   const router = useRouter();
   const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const buscaTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -154,6 +155,7 @@ export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [busca, setBusca] = useState("");
+  const [buscaAplicada, setBuscaAplicada] = useState("");
 
   const [page, setPage] = useState(1);
   const [totalRegistros, setTotalRegistros] = useState(0);
@@ -209,22 +211,64 @@ export default function ClientesPage() {
 
   useEffect(() => {
     if (!empresaId) return;
-    carregarClientes(empresaId);
-  }, [empresaId, page]);
+    carregarClientes(empresaId, buscaAplicada, page);
+  }, [empresaId, page, buscaAplicada]);
 
-  async function carregarClientes(empId?: string) {
+  useEffect(() => {
+    if (buscaTimeoutRef.current) {
+      clearTimeout(buscaTimeoutRef.current);
+    }
+
+    buscaTimeoutRef.current = setTimeout(() => {
+      setPage(1);
+      setBuscaAplicada(busca.trim());
+    }, 350);
+
+    return () => {
+      if (buscaTimeoutRef.current) {
+        clearTimeout(buscaTimeoutRef.current);
+      }
+    };
+  }, [busca]);
+
+  async function carregarClientes(empId?: string, buscaAtual?: string, paginaAtual?: number) {
     const eid = empId || empresaId;
     if (!eid) return;
 
     setLoading(true);
 
-    const from = (page - 1) * pageSize;
+    const pageNumber = paginaAtual || page;
+    const termoBusca = (buscaAtual ?? buscaAplicada).trim();
+    const from = (pageNumber - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    const { count, error: countError } = await supabase
+    let queryCount = supabase
       .from("clientes")
       .select("*", { count: "exact", head: true })
       .eq("empresa_id", eid);
+
+    let queryData = supabase
+      .from("clientes")
+      .select("*")
+      .eq("empresa_id", eid);
+
+    if (termoBusca) {
+      const filtro = [
+        `nome.ilike.%${termoBusca}%`,
+        `telefone.ilike.%${termoBusca}%`,
+        `celular.ilike.%${termoBusca}%`,
+        `whatsapp.ilike.%${termoBusca}%`,
+        `email.ilike.%${termoBusca}%`,
+        `cpf_cnpj.ilike.%${termoBusca}%`,
+        `cidade.ilike.%${termoBusca}%`,
+        `estado.ilike.%${termoBusca}%`,
+      ].join(",");
+
+      queryCount = queryCount.or(filtro);
+      queryData = queryData.or(filtro);
+    }
+
+    const { count, error: countError } = await queryCount;
 
     if (countError) {
       alert("ERRO AO CONTAR CLIENTES: " + countError.message);
@@ -232,10 +276,7 @@ export default function ClientesPage() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("*")
-      .eq("empresa_id", eid)
+    const { data, error } = await queryData
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -267,31 +308,11 @@ export default function ClientesPage() {
     setVeiculos((data || []) as Veiculo[]);
   }
 
-  const clientesFiltrados = useMemo(() => {
-    const q = up(busca.trim());
-    if (!q) return clientes;
-
-    return clientes.filter((c) => {
-      const texto = up(
-        `${c.nome} ${c.telefone || ""} ${c.celular || ""} ${c.whatsapp || ""} ${c.email || ""} ${c.cpf_cnpj || ""} ${c.cidade || ""} ${c.estado || ""}`
-      );
-      return texto.includes(q);
-    });
-  }, [clientes, busca]);
-
   const total = totalRegistros;
 
-  const ativos = useMemo(
-    () => clientes.filter((c) => (c.status || "ATIVO") !== "INATIVO").length,
-    [clientes]
-  );
-
-  const inativos = useMemo(
-    () => Math.max(0, totalRegistros - ativos),
-    [totalRegistros, ativos]
-  );
-
-  const totalVeiculos = useMemo(() => veiculos.length, [veiculos]);
+  const ativos = clientes.filter((c) => (c.status || "ATIVO") !== "INATIVO").length;
+  const inativos = Math.max(0, totalRegistros - ativos);
+  const totalVeiculos = veiculos.length;
 
   function resetForm() {
     setEditingId(null);
@@ -408,9 +429,10 @@ export default function ClientesPage() {
 
     alert("CLIENTE CRIADO!");
     resetForm();
-
     setPage(1);
-    await carregarClientes();
+    setBusca("");
+    setBuscaAplicada("");
+    await carregarClientes(empresaId, "", 1);
 
     if (data?.id) {
       setClienteSelecionadoId(data.id);
@@ -466,6 +488,7 @@ export default function ClientesPage() {
       setVeiculos([]);
       resetVeiculoForm();
     }
+
     await carregarClientes();
   }
 
@@ -649,7 +672,9 @@ export default function ClientesPage() {
 
     alert(`IMPORTAÇÃO CONCLUÍDA!\nCRIADOS: ${created}\nATUALIZADOS: ${updated}`);
     setPage(1);
-    await carregarClientes();
+    setBusca("");
+    setBuscaAplicada("");
+    await carregarClientes(empresaId, "", 1);
   }
 
   if (!ready) {
@@ -1033,14 +1058,14 @@ export default function ClientesPage() {
                       CARREGANDO...
                     </td>
                   </tr>
-                ) : clientesFiltrados.length === 0 ? (
+                ) : clientes.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="text-center py-6 text-[#6C757D]">
                       NENHUM CLIENTE ENCONTRADO.
                     </td>
                   </tr>
                 ) : (
-                  clientesFiltrados.map((c) => (
+                  clientes.map((c) => (
                     <tr key={c.id}>
                       <td>
                         <div className="font-bold text-[#111]">{c.nome}</div>
