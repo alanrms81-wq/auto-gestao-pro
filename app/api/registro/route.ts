@@ -26,19 +26,10 @@ export async function POST(req: Request) {
 
     if (!nomeEmpresa || !nomeUsuario || !email || !senha) {
       return NextResponse.json(
-        { error: "PREENCHA OS CAMPOS OBRIGATÓRIOS." },
-        { status: 400 }
-      );
-    }
-
-    const { data: existeAuth } = await adminSupabase.auth.admin.listUsers();
-    const jaExiste = existeAuth?.users?.some(
-      (u) => (u.email || "").toLowerCase() === email
-    );
-
-    if (jaExiste) {
-      return NextResponse.json(
-        { error: "JÁ EXISTE UM USUÁRIO AUTH COM ESSE E-MAIL." },
+        {
+          error: "PREENCHA OS CAMPOS OBRIGATÓRIOS.",
+          etapa: "VALIDACAO_INICIAL",
+        },
         { status: 400 }
       );
     }
@@ -51,8 +42,14 @@ export async function POST(req: Request) {
       });
 
     if (authError || !authData.user) {
+      console.error("ERRO AUTH CREATE USER:", authError);
+
       return NextResponse.json(
-        { error: "ERRO AO CRIAR USUÁRIO AUTH: " + (authError?.message || "") },
+        {
+          error: "ERRO AO CRIAR USUÁRIO AUTH.",
+          detalhe: authError?.message || "SEM DETALHE",
+          etapa: "CRIAR_USUARIO_AUTH",
+        },
         { status: 400 }
       );
     }
@@ -71,10 +68,16 @@ export async function POST(req: Request) {
       .single();
 
     if (empresaError || !empresa) {
+      console.error("ERRO CRIAR EMPRESA:", empresaError);
+
       await adminSupabase.auth.admin.deleteUser(authData.user.id);
 
       return NextResponse.json(
-        { error: "ERRO AO CRIAR EMPRESA: " + (empresaError?.message || "") },
+        {
+          error: "ERRO AO CRIAR EMPRESA.",
+          detalhe: empresaError?.message || "SEM DETALHE",
+          etapa: "CRIAR_EMPRESA",
+        },
         { status: 400 }
       );
     }
@@ -91,11 +94,17 @@ export async function POST(req: Request) {
     ]);
 
     if (usuarioError) {
+      console.error("ERRO CRIAR USUARIO ERP:", usuarioError);
+
       await adminSupabase.auth.admin.deleteUser(authData.user.id);
       await adminSupabase.from("empresas").delete().eq("id", empresa.id);
 
       return NextResponse.json(
-        { error: "ERRO AO CRIAR USUÁRIO ERP: " + usuarioError.message },
+        {
+          error: "ERRO AO CRIAR USUÁRIO ERP.",
+          detalhe: usuarioError.message,
+          etapa: "CRIAR_USUARIO_ERP",
+        },
         { status: 400 }
       );
     }
@@ -105,8 +114,14 @@ export async function POST(req: Request) {
       message: "CONTA CRIADA COM SUCESSO.",
     });
   } catch (error: any) {
+    console.error("ERRO INTERNO REGISTRO:", error);
+
     return NextResponse.json(
-      { error: error?.message || "ERRO INTERNO." },
+      {
+        error: "ERRO INTERNO.",
+        detalhe: error?.message || "SEM DETALHE",
+        etapa: "CATCH_GERAL",
+      },
       { status: 500 }
     );
   }
