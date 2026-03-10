@@ -1,30 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Papa from "papaparse";
+import Papa, { ParseResult } from "papaparse";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/app/components/Sidebar";
 import { supabase } from "@/lib/supabase";
-
-type Linha = Record<string, string>;
-
-type ProdutoImportado = {
-  nome: string;
-  codigo_sku: string;
-  codigo_barras: string;
-  ncm: string;
-  marca: string;
-  fornecedor: string;
-  categoria: string;
-  unidade: string;
-  origem: string;
-  preco_balcao: number;
-  preco_custo: number;
-  estoque_atual: number;
-  localizacao: string;
-  observacoes: string;
-  status: string;
-};
 
 type ApiResponse = {
   ok?: boolean;
@@ -32,6 +12,33 @@ type ApiResponse = {
   error?: string;
   detalhe?: string;
 };
+
+type ClienteImportado = {
+  nome: string;
+  telefone: string;
+  celular: string;
+  whatsapp: string;
+  cpf_cnpj: string;
+  email: string;
+  endereco: string;
+  numero: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  cep: string;
+  observacoes: string;
+  status: string;
+};
+
+function normalizarTexto(v: unknown) {
+  return String(v ?? "")
+    .replace(/^\uFEFF/, "")
+    .replace(/\t/g, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
 
 function up(v: unknown) {
   return String(v ?? "").trim().toUpperCase();
@@ -41,178 +48,113 @@ function digits(v: unknown) {
   return String(v ?? "").replace(/\D/g, "");
 }
 
-function toMoney(v: unknown) {
-  const texto = String(v ?? "")
-    .trim()
-    .replace(/\s/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .replace(/[^\d.-]/g, "");
-  const n = Number(texto);
-  return Number.isFinite(n) ? n : 0;
+function detectarDelimitador(texto: string) {
+  const primeiraLinha = texto.split(/\r?\n/)[0] || "";
+  const qtdPontoVirgula = (primeiraLinha.match(/;/g) || []).length;
+  const qtdVirgula = (primeiraLinha.match(/,/g) || []).length;
+  return qtdPontoVirgula >= qtdVirgula ? ";" : ",";
 }
 
-function toInt(v: unknown) {
-  const texto = String(v ?? "").replace(/[^\d.-]/g, "");
-  const n = Number(texto);
-  return Number.isFinite(n) ? n : 0;
+function normalizarRow(row: Record<string, unknown>) {
+  const novo: Record<string, string> = {};
+
+  for (const [chave, valor] of Object.entries(row || {})) {
+    novo[normalizarTexto(chave)] = String(valor ?? "").trim();
+  }
+
+  return novo;
 }
 
-export default function ImportacaoProdutosPage() {
+function pick(row: Record<string, string>, aliases: string[]) {
+  for (const alias of aliases) {
+    const chave = normalizarTexto(alias);
+    if (row[chave] !== undefined && row[chave] !== "") {
+      return row[chave];
+    }
+  }
+  return "";
+}
+
+function converterClientes(rows: Record<string, string>[]) {
+  return rows
+    .map((row) => ({
+      nome: up(
+        pick(row, [
+          "nome",
+          "cliente",
+          "nome do cliente",
+          "razao social",
+          "razão social",
+        ])
+      ),
+      telefone: digits(pick(row, ["telefone", "fone", "tel"])),
+      celular: digits(pick(row, ["celular", "cel"])),
+      whatsapp: digits(pick(row, ["whatsapp", "whats", "zap"])),
+      cpf_cnpj: digits(
+        pick(row, ["cpf_cnpj", "cpf/cnpj", "cpf", "cnpj", "documento"])
+      ),
+      email: String(
+        pick(row, ["email", "e-mail", "correio eletronico", "correio eletrônico"])
+      )
+        .trim()
+        .toLowerCase(),
+      endereco: up(pick(row, ["endereco", "endereço", "logradouro", "rua"])),
+      numero: up(pick(row, ["numero", "número", "num"])),
+      bairro: up(pick(row, ["bairro"])),
+      cidade: up(pick(row, ["cidade", "municipio", "município"])),
+      uf: up(pick(row, ["uf", "estado"])),
+      cep: digits(pick(row, ["cep"])),
+      observacoes: up(
+        pick(row, ["observacoes", "observação", "obs", "observacoes gerais"])
+      ),
+      status: "ATIVO",
+    }))
+    .filter((item) => item.nome);
+}
+
+export default function ImportacaoClientesPage() {
   const router = useRouter();
 
   const [arquivo, setArquivo] = useState("");
-  const [linhas, setLinhas] = useState<Linha[]>([]);
-  const [produtos, setProdutos] = useState<ProdutoImportado[]>([]);
+  const [linhasLidas, setLinhasLidas] = useState(0);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [clientes, setClientes] = useState<ClienteImportado[]>([]);
   const [loading, setLoading] = useState(false);
 
-  function processarArquivo(file: File) {
+  async function processarArquivo(file: File) {
     setArquivo(file.name);
 
-    Papa.parse<Linha>(file, {
+    const texto = await file.text();
+    const delimiter = detectarDelimitador(texto);
+
+    Papa.parse<Record<string, unknown>>(texto, {
       header: true,
-      skipEmptyLines: true,
-      delimiter: ";",
-      complete: (result) => {
-        const dados = (result.data || []).filter((row) =>
-          Object.values(row || {}).some((v) => String(v || "").trim() !== "")
+      skipEmptyLines: "greedy",
+      delimiter,
+      transformHeader: (header: string) =>
+        String(header ?? "").replace(/^\uFEFF/, "").replace(/\t/g, "").trim(),
+      complete: (result: ParseResult<Record<string, unknown>>) => {
+        const dadosOriginais = (result.data || []).filter((row) =>
+          Object.values(row || {}).some((v) => String(v ?? "").trim() !== "")
         );
 
-        setLinhas(dados);
+        const dadosNormalizados = dadosOriginais.map((row) => normalizarRow(row));
 
-        const produtosConvertidos: ProdutoImportado[] = dados
-          .map((row) => ({
-            nome: up(
-              row["Descrição"] ||
-                row["DESCRIÇÃO"] ||
-                row["descricao"] ||
-                row["Descrição do produto"] ||
-                row["Nome"] ||
-                row["nome"] ||
-                row["Produto"] ||
-                row["produto"] ||
-                ""
-            ),
+        setLinhasLidas(dadosNormalizados.length);
+        setHeaders(Object.keys(dadosNormalizados[0] || {}));
 
-            codigo_sku: up(
-              row["Código"] ||
-                row["CÓDIGO"] ||
-                row["codigo"] ||
-                row["SKU"] ||
-                row["sku"] ||
-                ""
-            ),
-
-            codigo_barras: digits(
-              row["GTIN"] ||
-                row["EAN"] ||
-                row["Código de barras"] ||
-                row["CÓDIGO DE BARRAS"] ||
-                row["codigo_barras"] ||
-                ""
-            ),
-
-            ncm: digits(
-              row["NCM"] ||
-                row["ncm"] ||
-                ""
-            ),
-
-            marca: up(
-              row["Marca"] ||
-                row["marca"] ||
-                ""
-            ),
-
-            fornecedor: up(
-              row["Fornecedor"] ||
-                row["fornecedor"] ||
-                row["Fabricante principal"] ||
-                ""
-            ),
-
-            categoria: up(
-              row["Categoria do produto"] ||
-                row["CATEGORIA DO PRODUTO"] ||
-                row["Grupo de produtos"] ||
-                row["GRUPO DE PRODUTOS"] ||
-                row["Categoria"] ||
-                row["categoria"] ||
-                ""
-            ),
-
-            unidade: up(
-              row["Unidade"] ||
-                row["unidade"] ||
-                "UN"
-            ),
-
-            origem: up(
-              row["Origem"] ||
-                row["origem"] ||
-                ""
-            ),
-
-            preco_balcao: toMoney(
-              row["Preço"] ||
-                row["PREÇO"] ||
-                row["Preco"] ||
-                row["preco"] ||
-                row["Preço de venda"] ||
-                row["preco_venda"] ||
-                0
-            ),
-
-            preco_custo: toMoney(
-              row["Preço de custo"] ||
-                row["PREÇO DE CUSTO"] ||
-                row["Custo"] ||
-                row["custo"] ||
-                row["preco_custo"] ||
-                0
-            ),
-
-            estoque_atual: toInt(
-              row["Estoque"] ||
-                row["ESTOQUE"] ||
-                row["estoque"] ||
-                row["Quantidade"] ||
-                row["quantidade"] ||
-                0
-            ),
-
-            localizacao: up(
-              row["Localização"] ||
-                row["LOCALIZAÇÃO"] ||
-                row["localizacao"] ||
-                row["Localização no estoque"] ||
-                ""
-            ),
-
-            observacoes: up(
-              row["Observações"] ||
-                row["OBSERVAÇÕES"] ||
-                row["observacoes"] ||
-                row["Observacao"] ||
-                row["observacao"] ||
-                ""
-            ),
-
-            status: "ATIVO",
-          }))
-          .filter((item) => item.nome);
-
-        setProdutos(produtosConvertidos);
+        const clientesConvertidos = converterClientes(dadosNormalizados);
+        setClientes(clientesConvertidos);
       },
-      error: (error) => {
+      error: (error: Error) => {
         alert("ERRO AO LER CSV: " + error.message);
       },
     });
   }
 
   async function importar() {
-    if (!produtos.length) {
-      alert("NENHUM PRODUTO PARA IMPORTAR.");
+    if (!clientes.length) {
+      alert("NENHUM CLIENTE PARA IMPORTAR.");
       return;
     }
 
@@ -222,36 +164,30 @@ export default function ImportacaoProdutosPage() {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token || "";
 
-      if (!token) {
-        alert("SESSÃO INVÁLIDA. FAÇA LOGIN NOVAMENTE.");
-        router.push("/login");
-        return;
-      }
-
-      const res = await fetch("/api/importacoes/produtos", {
+      const res = await fetch("/api/importacoes/clientes", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ produtos }),
+        body: JSON.stringify({ clientes }),
       });
 
       const json: ApiResponse = await res.json();
 
       if (!res.ok) {
         alert(
-          `${json.error || "ERRO AO IMPORTAR PRODUTOS."}${
+          `${json.error || "ERRO AO IMPORTAR CLIENTES."}${
             json.detalhe ? "\n\nDETALHE: " + json.detalhe : ""
           }`
         );
         return;
       }
 
-      alert(`PRODUTOS IMPORTADOS: ${json.total || produtos.length}`);
+      alert(`CLIENTES IMPORTADOS: ${json.total || clientes.length}`);
     } catch (error) {
       console.error(error);
-      alert("ERRO AO IMPORTAR PRODUTOS.");
+      alert("ERRO AO IMPORTAR CLIENTES.");
     } finally {
       setLoading(false);
     }
@@ -259,14 +195,14 @@ export default function ImportacaoProdutosPage() {
 
   function baixarModelo() {
     const csv =
-      "Código;Descrição;Preço;Estoque;Fornecedor;Marca;Categoria do produto;NCM;GTIN;Unidade\n" +
-      "FO123;FILTRO DE OLEO;25,90;10;AUTO PECAS BRASIL;BOSCH;MOTOR;84212300;7890000000011;UN\n";
+      "Nome;Telefone;Celular;WhatsApp;CPF/CNPJ;Email;Endereco;Numero;Bairro;Cidade;UF;CEP;Observacoes\n" +
+      "JOAO DA SILVA;1133334444;11999998888;11999998888;12345678900;joao@email.com;RUA A;100;CENTRO;SAO PAULO;SP;01001000;CLIENTE VIP\n";
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "modelo-produtos-bling.csv";
+    a.download = "modelo-clientes.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -274,27 +210,17 @@ export default function ImportacaoProdutosPage() {
   return (
     <div className="min-h-screen flex bg-[#F3F4F6]">
       <Sidebar />
-
       <main className="flex-1 min-w-0 p-3 md:p-6">
         <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-[26px] font-black text-[#6C757D]">
-              IMPORTAÇÃO DE PRODUTOS
-            </h1>
-            <p className="text-sm text-[#6C757D] mt-1">
-              IMPORTE PRODUTOS VIA CSV DO BLING, EXCEL OU OUTRO SISTEMA
-            </p>
+            <h1 className="text-[26px] font-black text-[#6C757D]">IMPORTAÇÃO DE CLIENTES</h1>
+            <p className="text-sm text-[#6C757D] mt-1">IMPORTE CLIENTES VIA CSV</p>
           </div>
 
           <div className="flex gap-3 flex-wrap">
-            <button
-              className="botao"
-              onClick={() => router.push("/configuracoes/importacoes")}
-              type="button"
-            >
+            <button className="botao" onClick={() => router.push("/configuracoes/importacoes")} type="button">
               VOLTAR
             </button>
-
             <button className="botao" onClick={baixarModelo} type="button">
               BAIXAR MODELO
             </button>
@@ -305,160 +231,74 @@ export default function ImportacaoProdutosPage() {
           <input
             type="file"
             accept=".csv"
-            onChange={(e) =>
-              e.target.files?.[0] && processarArquivo(e.target.files[0])
-            }
+            onChange={(e) => e.target.files?.[0] && processarArquivo(e.target.files[0])}
             className="campo"
           />
 
           {arquivo ? (
-            <p className="mt-3 text-sm text-[#374151]">
-              ARQUIVO: <b>{arquivo}</b>
-            </p>
+            <p className="mt-3 text-sm text-[#374151]">ARQUIVO: <b>{arquivo}</b></p>
           ) : null}
 
-          {linhas.length > 0 ? (
-            <p className="mt-2 text-sm text-[#374151]">
-              LINHAS LIDAS: <b>{linhas.length}</b> | PRODUTOS VÁLIDOS: <b>{produtos.length}</b>
-            </p>
+          {linhasLidas > 0 ? (
+            <div className="mt-2 text-sm text-[#374151] space-y-1">
+              <p>LINHAS LIDAS: <b>{linhasLidas}</b></p>
+              <p>CLIENTES VÁLIDOS: <b>{clientes.length}</b></p>
+              <p className="break-all">HEADERS DETECTADOS: <b>{headers.join(" | ")}</b></p>
+            </div>
           ) : null}
         </section>
 
-        {produtos.length > 0 && (
+        {clientes.length > 0 && (
           <section className="card">
             <div className="flex justify-between items-center mb-4 gap-4 flex-wrap">
               <h2 className="titulo">PREVIEW DA IMPORTAÇÃO</h2>
-
-              <button
-                className="botao-azul"
-                onClick={importar}
-                disabled={loading}
-                type="button"
-              >
-                {loading ? "IMPORTANDO..." : "IMPORTAR PRODUTOS"}
+              <button className="botao-azul" onClick={importar} disabled={loading} type="button">
+                {loading ? "IMPORTANDO..." : "IMPORTAR CLIENTES"}
               </button>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="tabela min-w-[1500px]">
+              <table className="tabela min-w-[1200px]">
                 <thead>
                   <tr>
                     <th>NOME</th>
-                    <th>CÓDIGO</th>
-                    <th>GTIN/EAN</th>
-                    <th>NCM</th>
-                    <th>MARCA</th>
-                    <th>FORNECEDOR</th>
-                    <th>CATEGORIA</th>
-                    <th>UNIDADE</th>
-                    <th>PREÇO VENDA</th>
-                    <th>PREÇO CUSTO</th>
-                    <th>ESTOQUE</th>
+                    <th>TELEFONE</th>
+                    <th>CELULAR</th>
+                    <th>WHATSAPP</th>
+                    <th>CPF/CNPJ</th>
+                    <th>EMAIL</th>
+                    <th>CIDADE</th>
+                    <th>UF</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {produtos.slice(0, 100).map((item, i) => (
-                    <tr key={`${item.codigo_sku}-${i}`}>
+                  {clientes.slice(0, 100).map((item, i) => (
+                    <tr key={`${item.cpf_cnpj}-${i}`}>
                       <td>{item.nome || "-"}</td>
-                      <td>{item.codigo_sku || "-"}</td>
-                      <td>{item.codigo_barras || "-"}</td>
-                      <td>{item.ncm || "-"}</td>
-                      <td>{item.marca || "-"}</td>
-                      <td>{item.fornecedor || "-"}</td>
-                      <td>{item.categoria || "-"}</td>
-                      <td>{item.unidade || "-"}</td>
-                      <td>
-                        {item.preco_balcao.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })}
-                      </td>
-                      <td>
-                        {item.preco_custo.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })}
-                      </td>
-                      <td>{item.estoque_atual}</td>
+                      <td>{item.telefone || "-"}</td>
+                      <td>{item.celular || "-"}</td>
+                      <td>{item.whatsapp || "-"}</td>
+                      <td>{item.cpf_cnpj || "-"}</td>
+                      <td>{item.email || "-"}</td>
+                      <td>{item.cidade || "-"}</td>
+                      <td>{item.uf || "-"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-
-            {produtos.length > 100 ? (
-              <p className="text-xs text-[#6C757D] mt-3">
-                MOSTRANDO OS PRIMEIROS 100 ITENS DE {produtos.length}.
-              </p>
-            ) : null}
           </section>
         )}
 
         <style jsx>{`
-          .card {
-            background: white;
-            border-radius: 20px;
-            padding: 18px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-          }
-
-          .titulo {
-            font-weight: 900;
-            font-size: 14px;
-            color: #6c757d;
-          }
-
-          .campo {
-            height: 44px;
-            border: 1.5px solid #9a9a9a;
-            border-radius: 10px;
-            padding: 0 12px;
-            font-size: 14px;
-            width: 100%;
-            background: white;
-            color: #111827;
-          }
-
-          .botao {
-            border: 1px solid #2f2f2f;
-            border-radius: 10px;
-            padding: 10px 16px;
-            font-size: 13px;
-            background: white;
-            color: #1f1f1f;
-            font-weight: 500;
-          }
-
-          .botao-azul {
-            background: #0456a3;
-            color: white;
-            border-radius: 10px;
-            padding: 10px 16px;
-            font-size: 13px;
-            font-weight: 600;
-            border: none;
-          }
-
-          .tabela {
-            width: 100%;
-            border-collapse: collapse;
-          }
-
-          .tabela th {
-            text-align: left;
-            font-size: 12px;
-            padding: 12px;
-            border-bottom: 1px solid #e5e7eb;
-            color: #111827;
-            font-weight: 900;
-          }
-
-          .tabela td {
-            font-size: 13px;
-            padding: 12px;
-            border-bottom: 1px solid #e5e7eb;
-            color: #1f2937;
-          }
+          .card { background: white; border-radius: 20px; padding: 18px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+          .titulo { font-weight: 900; font-size: 14px; color: #6c757d; }
+          .campo { height: 44px; border: 1.5px solid #9a9a9a; border-radius: 10px; padding: 0 12px; font-size: 14px; width: 100%; background: white; color: #111827; }
+          .botao { border: 1px solid #2f2f2f; border-radius: 10px; padding: 10px 16px; font-size: 13px; background: white; color: #1f1f1f; font-weight: 500; }
+          .botao-azul { background: #0456a3; color: white; border-radius: 10px; padding: 10px 16px; font-size: 13px; font-weight: 600; border: none; }
+          .tabela { width: 100%; border-collapse: collapse; }
+          .tabela th { text-align: left; font-size: 12px; padding: 12px; border-bottom: 1px solid #e5e7eb; color: #111827; font-weight: 900; }
+          .tabela td { font-size: 13px; padding: 12px; border-bottom: 1px solid #e5e7eb; color: #1f2937; }
         `}</style>
       </main>
     </div>
