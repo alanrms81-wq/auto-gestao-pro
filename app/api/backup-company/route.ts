@@ -27,6 +27,15 @@ type SessionUser = {
   status?: string | null;
 };
 
+type StorageListItem = {
+  name: string;
+  id?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+  last_accessed_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 function getAdminClient() {
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: {
@@ -52,6 +61,7 @@ function getUserClient(jwt: string) {
 
 async function getCaller(request: NextRequest): Promise<SessionUser | null> {
   const authHeader = request.headers.get("authorization") || "";
+
   if (!authHeader.startsWith("Bearer ")) return null;
 
   const jwt = authHeader.replace("Bearer ", "").trim();
@@ -80,7 +90,7 @@ async function getCaller(request: NextRequest): Promise<SessionUser | null> {
 
 async function buildCompanyBackup(empresaId: string) {
   const admin = getAdminClient();
-  const tables: Record<string, any[]> = {};
+  const tables: Record<string, unknown[]> = {};
 
   for (const table of TABLES) {
     const { data, error } = await admin
@@ -117,15 +127,41 @@ async function saveBackupToStorage(empresaId: string, payload: unknown) {
   const path = `${folder}/${backupFileName()}`;
   const body = Buffer.from(JSON.stringify(payload, null, 2), "utf8");
 
-  const { error } = await admin.storage
-    .from("backups")
-    .upload(path, body, {
-      contentType: "application/json",
-      upsert: false,
-    });
+  const { error } = await admin.storage.from("backups").upload(path, body, {
+    contentType: "application/json",
+    upsert: false,
+  });
 
   if (error) {
     throw new Error(`Erro ao salvar backup: ${error.message}`);
+  }
+
+  const { data: files, error: listError } = await admin.storage
+    .from("backups")
+    .list(folder, {
+      limit: 200,
+    });
+
+  if (listError) {
+    throw new Error(`Erro ao listar backups para limpeza: ${listError.message}`);
+  }
+
+  const jsonFiles = ((files || []) as StorageListItem[])
+    .filter((item) => item.name.endsWith(".json"))
+    .sort((a, b) => b.name.localeCompare(a.name));
+
+  const filesToDelete = jsonFiles.slice(30);
+
+  if (filesToDelete.length > 0) {
+    const pathsToDelete = filesToDelete.map((item) => `${folder}/${item.name}`);
+
+    const { error: deleteError } = await admin.storage
+      .from("backups")
+      .remove(pathsToDelete);
+
+    if (deleteError) {
+      throw new Error(`Erro ao apagar backups antigos: ${deleteError.message}`);
+    }
   }
 
   return path;
@@ -135,17 +171,15 @@ async function listCompanyBackups(empresaId: string) {
   const admin = getAdminClient();
   const folder = companyFolder(empresaId);
 
-  const { data, error } = await admin.storage
-    .from("backups")
-    .list(folder, {
-      limit: 100,
-    });
+  const { data, error } = await admin.storage.from("backups").list(folder, {
+    limit: 100,
+  });
 
   if (error) {
     throw new Error(`Erro ao listar backups: ${error.message}`);
   }
 
-  return (data || [])
+  return ((data || []) as StorageListItem[])
     .filter((item) => item.name.endsWith(".json"))
     .sort((a, b) => b.name.localeCompare(a.name))
     .map((item) => ({
@@ -162,9 +196,9 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const mode = url.searchParams.get("mode");
 
-    // LISTAGEM MANUAL
     if (mode === "list") {
       const caller = await getCaller(request);
+
       if (!caller?.empresa_id) {
         return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
       }
@@ -173,14 +207,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ backups });
     }
 
-    // DOWNLOAD MANUAL
     if (mode === "download") {
       const caller = await getCaller(request);
+
       if (!caller?.empresa_id) {
         return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
       }
 
       const path = url.searchParams.get("path") || "";
+
       if (!path.startsWith(companyFolder(caller.empresa_id) + "/")) {
         return NextResponse.json({ error: "Arquivo inválido." }, { status: 400 });
       }
@@ -206,13 +241,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // CRON AUTOMÁTICO
     const authHeader = request.headers.get("authorization");
+
     if (authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
     }
 
     const admin = getAdminClient();
+
     const { data: empresasRows, error: empresasError } = await admin
       .from("usuarios")
       .select("empresa_id")
@@ -226,21 +262,38 @@ export async function GET(request: NextRequest) {
     }
 
     const empresaIds = Array.from(
-      new Set((empresasRows || []).map((r: any) => r.empresa_id).filter(Boolean))
-    );
+      new Set(
+        (empresasRows || [])
+          .map((r: { empresa_id: string | null }) => r.empresa_id)
+          .filter(Boolean)
+      )
+    ) as string[];
 
-    const result: Array<{ empresa_id: string; ok: boolean; path?: string; error?: string }> = [];
+    const result: Array<{
+      empresa_id: string;
+      ok: boolean;
+      path?: string;
+      error?: string;
+    }> = [];
 
     for (const empresaId of empresaIds) {
       try {
         const payload = await buildCompanyBackup(empresaId);
         const path = await saveBackupToStorage(empresaId, payload);
-        result.push({ empresa_id: empresaId, ok: true, path });
-      } catch (err: any) {
+
+        result.push({
+          empresa_id: empresaId,
+          ok: true,
+          path,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Erro desconhecido";
+
         result.push({
           empresa_id: empresaId,
           ok: false,
-          error: err?.message || "Erro desconhecido",
+          error: message,
         });
       }
     }
@@ -250,17 +303,17 @@ export async function GET(request: NextRequest) {
       total_empresas: empresaIds.length,
       result,
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message || "Erro interno." },
-      { status: 500 }
-    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erro interno.";
+
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const caller = await getCaller(request);
+
     if (!caller?.empresa_id) {
       return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
     }
@@ -273,10 +326,9 @@ export async function POST(request: NextRequest) {
       empresa_id: caller.empresa_id,
       path,
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message || "Erro interno." },
-      { status: 500 }
-    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erro interno.";
+
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
