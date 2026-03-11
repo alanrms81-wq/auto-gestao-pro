@@ -16,7 +16,6 @@ type Fornecedor = {
   celular?: string;
   whatsapp?: string;
   email?: string;
-
   cep?: string;
   rua?: string;
   numero?: string;
@@ -24,7 +23,6 @@ type Fornecedor = {
   bairro?: string;
   cidade?: string;
   estado?: string;
-
   observacoes?: string;
   status: "ATIVO" | "INATIVO";
   createdAt: string;
@@ -165,6 +163,10 @@ async function buscarFornecedorPorCnpj(cnpj: string) {
   };
 }
 
+function statusClass(status: string) {
+  return up(status) === "INATIVO" ? "status-inativo" : "status-ativo";
+}
+
 export default function FornecedoresPage() {
   const router = useRouter();
   const csvInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,7 +174,6 @@ export default function FornecedoresPage() {
   const [ready, setReady] = useState(false);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [busca, setBusca] = useState("");
-
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const [razaoSocial, setRazaoSocial] = useState("");
@@ -184,7 +185,6 @@ export default function FornecedoresPage() {
   const [celular, setCelular] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
-
   const [cep, setCep] = useState("");
   const [rua, setRua] = useState("");
   const [numero, setNumero] = useState("");
@@ -192,10 +192,8 @@ export default function FornecedoresPage() {
   const [bairro, setBairro] = useState("");
   const [cidade, setCidade] = useState("");
   const [estado, setEstado] = useState("");
-
   const [observacoes, setObservacoes] = useState("");
   const [status, setStatus] = useState<"ATIVO" | "INATIVO">("ATIVO");
-
   const [consultandoCnpj, setConsultandoCnpj] = useState(false);
 
   useEffect(() => {
@@ -220,11 +218,28 @@ export default function FornecedoresPage() {
 
     return fornecedores.filter((f) => {
       const texto = up(
-        `${f.razaoSocial} ${f.nomeFantasia || ""} ${f.cnpj} ${f.contato || ""} ${f.telefone || ""} ${f.email || ""} ${f.cidade || ""} ${f.estado || ""}`
+        `${f.razaoSocial} ${f.nomeFantasia || ""} ${f.cnpj} ${f.contato || ""} ${f.telefone || ""} ${f.celular || ""} ${f.whatsapp || ""} ${f.email || ""} ${f.cidade || ""} ${f.estado || ""}`
       );
       return texto.includes(q);
     });
   }, [fornecedores, busca]);
+
+  const total = fornecedores.length;
+  const totalAtivos = useMemo(
+    () => fornecedores.filter((f) => f.status === "ATIVO").length,
+    [fornecedores]
+  );
+  const totalInativos = total - totalAtivos;
+
+  const ultimoCadastro = useMemo(() => {
+    if (!fornecedores.length) return "-";
+
+    const ordenados = [...fornecedores].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return ordenados[0]?.razaoSocial || "-";
+  }, [fornecedores]);
 
   function resetForm() {
     setEditingId(null);
@@ -391,6 +406,7 @@ export default function FornecedoresPage() {
     setEstado(f.estado || "");
     setObservacoes(f.observacoes || "");
     setStatus(f.status || "ATIVO");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function removerFornecedor(id: number) {
@@ -513,9 +529,7 @@ export default function FornecedoresPage() {
         writeLS(LS_FORNECEDORES, next);
         setFornecedores(next);
 
-        alert(
-          `IMPORTAÇÃO CONCLUÍDA!\nCRIADOS: ${created}\nATUALIZADOS: ${updated}`
-        );
+        alert(`IMPORTAÇÃO CONCLUÍDA!\nCRIADOS: ${created}\nATUALIZADOS: ${updated}`);
       } catch {
         alert("ERRO AO IMPORTAR CSV.");
       }
@@ -524,315 +538,638 @@ export default function FornecedoresPage() {
     reader.readAsText(file, "utf-8");
   }
 
-  const totalAtivos = useMemo(() => {
-    return fornecedores.filter((f) => f.status === "ATIVO").length;
-  }, [fornecedores]);
-
   if (!ready) {
     return <div className="p-6">CARREGANDO...</div>;
   }
 
   return (
-    <div className="min-h-screen flex bg-[#F8F9FA]">
+    <div className="min-h-screen flex bg-[#F4F6F8]">
       <Sidebar />
 
-      <main className="flex-1 p-6">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-6">
-          <div>
-            <h1 className="text-2xl font-black text-[#6C757D]">FORNECEDORES</h1>
-            <div className="text-sm text-[#6C757D]">
-              CADASTRO COMPLETO COM CONSULTA AUTOMÁTICA POR CNPJ
+      <main className="flex-1 min-w-0 p-4 md:p-6">
+        <div className="mb-6 rounded-[26px] bg-gradient-to-r from-[#0456A3] to-[#0A6FD6] p-5 md:p-6 text-white shadow-lg">
+          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+            <div>
+              <p className="text-[12px] font-bold tracking-[0.2em] opacity-80">
+                AUTO GESTÃO PRO
+              </p>
+              <h1 className="mt-2 text-[28px] md:text-[34px] font-black leading-none">
+                FORNECEDORES
+              </h1>
+              <p className="mt-3 text-sm text-white/85 max-w-[760px]">
+                Cadastro completo de fornecedores com consulta automática por CNPJ, importação em CSV e controle de status.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
+              <KpiMini titulo="TOTAL" valor={String(total)} />
+              <KpiMini titulo="ATIVOS" valor={String(totalAtivos)} />
+              <KpiMini titulo="INATIVOS" valor={String(totalInativos)} />
+              <KpiMini titulo="ÚLTIMO" valor={ultimoCadastro} destaque />
             </div>
           </div>
 
-          <div className="flex gap-2 flex-wrap">
+          <div className="mt-5 flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">
+            <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={() => csvInputRef.current?.click()}
+                className="botao-header"
+                type="button"
+              >
+                IMPORTAR CSV
+              </button>
+
+              <button
+                onClick={resetForm}
+                className="botao-header"
+                type="button"
+              >
+                NOVO FORNECEDOR
+              </button>
+
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) importarCSV(file);
+                  e.currentTarget.value = "";
+                }}
+              />
+            </div>
+
             <input
-              placeholder="BUSCAR..."
+              placeholder="BUSCAR FORNECEDOR..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="border p-2 rounded-lg w-80 max-w-full"
-            />
-
-            <button
-              onClick={() => csvInputRef.current?.click()}
-              className="border px-4 py-2 rounded-lg bg-white"
-              type="button"
-            >
-              IMPORTAR CSV
-            </button>
-
-            <input
-              ref={csvInputRef}
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) importarCSV(file);
-                e.currentTarget.value = "";
-              }}
+              className="header-search"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">TOTAL</div>
-            <div className="text-3xl font-black mt-2">{fornecedores.length}</div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">ATIVOS</div>
-            <div className="text-3xl font-black mt-2">{totalAtivos}</div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow p-5">
-            <div className="text-xs font-bold text-[#6C757D]">INATIVOS</div>
-            <div className="text-3xl font-black mt-2">
-              {fornecedores.length - totalAtivos}
+        <section className="card mb-6">
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">
+                {editingId ? "EDITAR FORNECEDOR" : "NOVO FORNECEDOR"}
+              </h2>
+              <p className="section-subtitle">
+                Mantenha os dados comerciais, fiscais e de endereço organizados.
+              </p>
             </div>
-          </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-2xl shadow mb-6">
-          <div className="text-sm font-bold text-[#6C757D] mb-3">
-            {editingId ? "EDITAR FORNECEDOR" : "NOVO FORNECEDOR"}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <input
-              placeholder="RAZÃO SOCIAL"
-              value={razaoSocial}
-              onChange={(e) => setRazaoSocial(e.target.value)}
-              className="border p-2 rounded md:col-span-2"
-            />
-
-            <input
-              placeholder="NOME FANTASIA"
-              value={nomeFantasia}
-              onChange={(e) => setNomeFantasia(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <div className="flex gap-2">
-              <input
-                placeholder="CNPJ"
-                value={cnpj}
-                onChange={(e) => setCnpj(maskCnpj(e.target.value))}
-                onBlur={(e) => preencherCnpjAutomatico(e.target.value)}
-                className="border p-2 rounded w-full"
-              />
+            <div className="flex gap-3 flex-wrap">
               <button
+                onClick={salvarFornecedor}
+                className="botao-azul"
                 type="button"
-                onClick={() => preencherCnpjAutomatico(cnpj)}
-                className="border px-3 rounded whitespace-nowrap"
               >
-                {consultandoCnpj ? "..." : "BUSCAR"}
+                {editingId ? "SALVAR ALTERAÇÕES" : "SALVAR FORNECEDOR"}
+              </button>
+
+              <button onClick={resetForm} className="botao" type="button">
+                LIMPAR
               </button>
             </div>
-
-            <input
-              placeholder="INSCRIÇÃO ESTADUAL"
-              value={inscricaoEstadual}
-              onChange={(e) => setInscricaoEstadual(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="CONTATO"
-              value={contato}
-              onChange={(e) => setContato(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="TELEFONE"
-              value={telefone}
-              onChange={(e) => setTelefone(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="CELULAR"
-              value={celular}
-              onChange={(e) => setCelular(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="WHATSAPP"
-              value={whatsapp}
-              onChange={(e) => setWhatsapp(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="EMAIL"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="border p-2 rounded md:col-span-2"
-            />
-
-            <input
-              placeholder="CEP"
-              value={cep}
-              onChange={(e) => setCep(maskCep(e.target.value))}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="RUA"
-              value={rua}
-              onChange={(e) => setRua(e.target.value)}
-              className="border p-2 rounded md:col-span-2"
-            />
-
-            <input
-              placeholder="NÚMERO"
-              value={numero}
-              onChange={(e) => setNumero(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="COMPLEMENTO"
-              value={complemento}
-              onChange={(e) => setComplemento(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="BAIRRO"
-              value={bairro}
-              onChange={(e) => setBairro(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="CIDADE"
-              value={cidade}
-              onChange={(e) => setCidade(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <input
-              placeholder="ESTADO"
-              value={estado}
-              onChange={(e) => setEstado(e.target.value)}
-              className="border p-2 rounded"
-            />
-
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as "ATIVO" | "INATIVO")}
-              className="border p-2 rounded bg-white"
-            >
-              <option value="ATIVO">ATIVO</option>
-              <option value="INATIVO">INATIVO</option>
-            </select>
-
-            <textarea
-              placeholder="OBSERVAÇÕES"
-              value={observacoes}
-              onChange={(e) => setObservacoes(e.target.value)}
-              className="border p-2 rounded md:col-span-4 min-h-[90px]"
-            />
           </div>
 
-          <div className="flex gap-2 mt-4">
-            <button
-              onClick={salvarFornecedor}
-              className="bg-[#0A569E] text-white px-4 py-2 rounded-lg"
-              type="button"
-            >
-              {editingId ? "SALVAR ALTERAÇÕES" : "SALVAR"}
-            </button>
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <input
+                placeholder="RAZÃO SOCIAL"
+                value={razaoSocial}
+                onChange={(e) => setRazaoSocial(e.target.value)}
+                className="campo md:col-span-2"
+              />
 
-            <button
-              onClick={resetForm}
-              className="border px-4 py-2 rounded-lg"
-              type="button"
-            >
-              LIMPAR
-            </button>
+              <input
+                placeholder="NOME FANTASIA"
+                value={nomeFantasia}
+                onChange={(e) => setNomeFantasia(e.target.value)}
+                className="campo"
+              />
+
+              <div className="flex gap-2">
+                <input
+                  placeholder="CNPJ"
+                  value={cnpj}
+                  onChange={(e) => setCnpj(maskCnpj(e.target.value))}
+                  onBlur={(e) => preencherCnpjAutomatico(e.target.value)}
+                  className="campo flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => preencherCnpjAutomatico(cnpj)}
+                  className="botao h-[46px] whitespace-nowrap"
+                >
+                  {consultandoCnpj ? "..." : "BUSCAR"}
+                </button>
+              </div>
+
+              <input
+                placeholder="INSCRIÇÃO ESTADUAL"
+                value={inscricaoEstadual}
+                onChange={(e) => setInscricaoEstadual(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="CONTATO"
+                value={contato}
+                onChange={(e) => setContato(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="TELEFONE"
+                value={telefone}
+                onChange={(e) => setTelefone(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="CELULAR"
+                value={celular}
+                onChange={(e) => setCelular(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="WHATSAPP"
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="EMAIL"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="campo md:col-span-2"
+              />
+
+              <input
+                placeholder="CEP"
+                value={cep}
+                onChange={(e) => setCep(maskCep(e.target.value))}
+                className="campo"
+              />
+
+              <input
+                placeholder="RUA"
+                value={rua}
+                onChange={(e) => setRua(e.target.value)}
+                className="campo md:col-span-2"
+              />
+
+              <input
+                placeholder="NÚMERO"
+                value={numero}
+                onChange={(e) => setNumero(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="COMPLEMENTO"
+                value={complemento}
+                onChange={(e) => setComplemento(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="BAIRRO"
+                value={bairro}
+                onChange={(e) => setBairro(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="CIDADE"
+                value={cidade}
+                onChange={(e) => setCidade(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="ESTADO"
+                value={estado}
+                onChange={(e) => setEstado(e.target.value)}
+                className="campo"
+              />
+
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as "ATIVO" | "INATIVO")}
+                className="campo"
+              >
+                <option value="ATIVO">ATIVO</option>
+                <option value="INATIVO">INATIVO</option>
+              </select>
+
+              <textarea
+                placeholder="OBSERVAÇÕES"
+                value={observacoes}
+                onChange={(e) => setObservacoes(e.target.value)}
+                className="campo-textarea md:col-span-4"
+              />
+            </div>
+
+            <div className="side-box">
+              <div className="side-title">RESUMO DO CADASTRO</div>
+
+              <div className="resumo-box">
+                <div className="resumo-linha">
+                  <span>RAZÃO SOCIAL</span>
+                  <strong>{razaoSocial || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>FANTASIA</span>
+                  <strong>{nomeFantasia || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>CNPJ</span>
+                  <strong>{cnpj || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>CONTATO</span>
+                  <strong>{contato || telefone || celular || whatsapp || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>CIDADE</span>
+                  <strong>
+                    {cidade || "-"} {estado ? `/ ${estado}` : ""}
+                  </strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>STATUS</span>
+                  <strong>{status}</strong>
+                </div>
+              </div>
+
+              <div className="mt-4 modelo-box">
+                <div className="modelo-title">MODELO DE CSV</div>
+                <div className="modelo-text">
+                  razaosocial,nomefantasia,cnpj,inscricaoestadual,contato,telefone,celular,whatsapp,email,cep,rua,numero,complemento,bairro,cidade,estado,observacoes,status
+                  {"\n"}
+                  FORNECEDOR EXEMPLO LTDA,EXEMPLO,11222333000181,123456789,JOÃO,14999999999,14999999999,14999999999,contato@exemplo.com,01001000,RUA X,100,SALA 1,CENTRO,SÃO PAULO,SP,FORNECEDOR PADRÃO,ATIVO
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div className="bg-white rounded-2xl shadow overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#F8F9FA]">
-              <tr>
-                <th className="p-3 text-left">RAZÃO SOCIAL</th>
-                <th className="p-3 text-left">CNPJ</th>
-                <th className="p-3 text-left">CONTATO</th>
-                <th className="p-3 text-left">EMAIL</th>
-                <th className="p-3 text-left">CIDADE</th>
-                <th className="p-3 text-left">STATUS</th>
-                <th className="p-3 text-right">AÇÕES</th>
-              </tr>
-            </thead>
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">LISTA DE FORNECEDORES</h2>
+              <p className="section-subtitle">
+                Consulte, edite e organize seus fornecedores por status e localização.
+              </p>
+            </div>
+          </div>
 
-            <tbody>
-              {fornecedoresFiltrados.length === 0 ? (
+          <div className="overflow-auto">
+            <table className="tabela min-w-[1150px]">
+              <thead>
                 <tr>
-                  <td colSpan={7} className="p-6 text-center text-[#6C757D]">
-                    NENHUM FORNECEDOR ENCONTRADO.
-                  </td>
+                  <th>RAZÃO SOCIAL</th>
+                  <th>CNPJ</th>
+                  <th>CONTATO</th>
+                  <th>EMAIL</th>
+                  <th>CIDADE</th>
+                  <th>STATUS</th>
+                  <th>AÇÕES</th>
                 </tr>
-              ) : (
-                fornecedoresFiltrados.map((f) => (
-                  <tr key={f.id} className="border-b">
-                    <td className="p-3">
-                      <div className="font-bold">{f.razaoSocial}</div>
-                      <div className="text-xs text-[#6C757D]">
-                        {f.nomeFantasia || "-"}
-                      </div>
-                    </td>
-                    <td className="p-3">{f.cnpj}</td>
-                    <td className="p-3">
-                      {f.contato || "-"}
-                      <div className="text-xs text-[#6C757D]">{f.telefone || "-"}</div>
-                    </td>
-                    <td className="p-3">{f.email || "-"}</td>
-                    <td className="p-3">
-                      {f.cidade || "-"} {f.estado ? `/ ${f.estado}` : ""}
-                    </td>
-                    <td className="p-3">{f.status}</td>
-                    <td className="p-3 text-right">
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          onClick={() => editarFornecedor(f)}
-                          className="border px-3 py-1 rounded"
-                          type="button"
-                        >
-                          EDITAR
-                        </button>
+              </thead>
 
-                        <button
-                          onClick={() => removerFornecedor(f.id)}
-                          className="border px-3 py-1 rounded"
-                          type="button"
-                        >
-                          REMOVER
-                        </button>
-                      </div>
+              <tbody>
+                {fornecedoresFiltrados.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="empty-state">
+                      NENHUM FORNECEDOR ENCONTRADO.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  fornecedoresFiltrados.map((f) => (
+                    <tr key={f.id}>
+                      <td>
+                        <div className="font-bold text-[#0F172A]">{f.razaoSocial}</div>
+                        <div className="text-xs text-[#64748B]">
+                          {f.nomeFantasia || "-"}
+                        </div>
+                      </td>
 
-        <div className="mt-4 bg-white rounded-2xl shadow p-4">
-          <div className="text-sm font-bold text-[#6C757D] mb-2">MODELO DE CSV</div>
-          <div className="text-xs text-[#6C757D] whitespace-pre-wrap">
-            razaosocial,nomefantasia,cnpj,inscricaoestadual,contato,telefone,celular,whatsapp,email,cep,rua,numero,complemento,bairro,cidade,estado,observacoes,status
-            {"\n"}
-            FORNECEDOR EXEMPLO LTDA,EXEMPLO,11222333000181,123456789,JOÃO,14999999999,14999999999,14999999999,contato@exemplo.com,01001000,RUA X,100,SALA 1,CENTRO,SÃO PAULO,SP,FORNECEDOR PADRÃO,ATIVO
+                      <td>{f.cnpj}</td>
+
+                      <td>
+                        <div>{f.contato || "-"}</div>
+                        <div className="text-xs text-[#64748B]">
+                          {f.telefone || f.celular || f.whatsapp || "-"}
+                        </div>
+                      </td>
+
+                      <td>{f.email || "-"}</td>
+
+                      <td>
+                        {f.cidade || "-"} {f.estado ? `/ ${f.estado}` : ""}
+                      </td>
+
+                      <td>
+                        <span className={`status-chip ${statusClass(f.status)}`}>
+                          {f.status}
+                        </span>
+                      </td>
+
+                      <td>
+                        <div className="flex gap-2 justify-end flex-wrap">
+                          <button
+                            onClick={() => editarFornecedor(f)}
+                            className="botao-mini"
+                            type="button"
+                          >
+                            EDITAR
+                          </button>
+
+                          <button
+                            onClick={() => removerFornecedor(f.id)}
+                            className="botao-mini danger"
+                            type="button"
+                          >
+                            REMOVER
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </section>
       </main>
+
+      <style jsx>{`
+        .card {
+          background: white;
+          border-radius: 24px;
+          padding: 20px;
+          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+          border: 1px solid #eef2f7;
+        }
+
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 18px;
+          flex-wrap: wrap;
+        }
+
+        .section-title {
+          font-weight: 900;
+          font-size: 15px;
+          color: #334155;
+        }
+
+        .section-subtitle {
+          margin-top: 4px;
+          font-size: 12px;
+          color: #64748b;
+        }
+
+        .campo {
+          height: 46px;
+          width: 100%;
+          border-radius: 12px;
+          border: 1.5px solid #cbd5e1;
+          background: #ffffff;
+          padding: 0 12px;
+          font-size: 14px;
+          color: #0f172a;
+          outline: none;
+          transition: 0.2s;
+        }
+
+        .campo:focus,
+        .campo-textarea:focus {
+          border-color: #0a6fd6;
+          box-shadow: 0 0 0 4px rgba(10, 111, 214, 0.08);
+        }
+
+        .campo::placeholder,
+        .campo-textarea::placeholder {
+          color: #94a3b8;
+        }
+
+        .campo-textarea {
+          border: 1.5px solid #cbd5e1;
+          border-radius: 12px;
+          padding: 12px;
+          font-size: 14px;
+          width: 100%;
+          min-height: 110px;
+          background: white;
+          color: #0f172a;
+          resize: vertical;
+          outline: none;
+        }
+
+        .botao {
+          border: 1px solid #cbd5e1;
+          border-radius: 12px;
+          padding: 10px 16px;
+          font-size: 13px;
+          background: white;
+          color: #1e293b;
+          font-weight: 700;
+        }
+
+        .botao-azul {
+          background: #0456a3;
+          color: white;
+          border-radius: 12px;
+          padding: 10px 16px;
+          font-size: 13px;
+          font-weight: 700;
+          border: none;
+        }
+
+        .botao-mini {
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
+          padding: 6px 10px;
+          font-size: 11px;
+          background: white;
+          color: #1e293b;
+          font-weight: 700;
+        }
+
+        .botao-mini.danger {
+          border-color: #fecaca;
+          background: #fef2f2;
+          color: #b91c1c;
+        }
+
+        .botao-header {
+          border: 1px solid rgba(255, 255, 255, 0.45);
+          background: rgba(255, 255, 255, 0.12);
+          color: white;
+          font-weight: 800;
+          border-radius: 14px;
+          padding: 11px 16px;
+          font-size: 13px;
+          backdrop-filter: blur(10px);
+        }
+
+        .header-search {
+          height: 48px;
+          width: 100%;
+          max-width: 420px;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          background: rgba(255, 255, 255, 0.12);
+          padding: 0 18px;
+          font-size: 15px;
+          color: white;
+          outline: none;
+          backdrop-filter: blur(10px);
+        }
+
+        .header-search::placeholder {
+          color: rgba(255, 255, 255, 0.72);
+        }
+
+        .side-box {
+          border: 1px solid #e2e8f0;
+          border-radius: 22px;
+          padding: 16px;
+          background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+        }
+
+        .side-title {
+          font-size: 13px;
+          font-weight: 900;
+          color: #475569;
+          margin-bottom: 12px;
+        }
+
+        .resumo-box {
+          border: 1px solid #e2e8f0;
+          background: white;
+          border-radius: 18px;
+          padding: 14px;
+        }
+
+        .resumo-linha {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 8px 0;
+          border-bottom: 1px solid #e2e8f0;
+          font-size: 13px;
+          color: #334155;
+        }
+
+        .resumo-linha:last-child {
+          border-bottom: none;
+        }
+
+        .modelo-box {
+          border: 1px dashed #cbd5e1;
+          border-radius: 16px;
+          padding: 12px;
+          background: #f8fafc;
+        }
+
+        .modelo-title {
+          font-size: 12px;
+          font-weight: 900;
+          color: #475569;
+          margin-bottom: 8px;
+        }
+
+        .modelo-text {
+          font-size: 11px;
+          color: #64748b;
+          white-space: pre-wrap;
+          line-height: 1.5;
+        }
+
+        .tabela {
+          width: 100%;
+          border-collapse: collapse;
+        }
+
+        .tabela th {
+          text-align: left;
+          font-size: 12px;
+          padding: 13px 12px;
+          border-bottom: 1px solid #e2e8f0;
+          color: #334155;
+          font-weight: 900;
+          background: #f8fafc;
+        }
+
+        .tabela td {
+          font-size: 13px;
+          padding: 12px;
+          border-bottom: 1px solid #eef2f7;
+          color: #334155;
+          vertical-align: middle;
+        }
+
+        .empty-state {
+          text-align: center;
+          padding: 28px 12px;
+          color: #64748b;
+        }
+
+        .status-chip {
+          display: inline-flex;
+          border-radius: 999px;
+          padding: 6px 10px;
+          font-size: 11px;
+          font-weight: 900;
+        }
+
+        .status-ativo {
+          background: #dcfce7;
+          color: #15803d;
+        }
+
+        .status-inativo {
+          background: #fee2e2;
+          color: #b91c1c;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function KpiMini({
+  titulo,
+  valor,
+  destaque = false,
+}: {
+  titulo: string;
+  valor: string;
+  destaque?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-[18px] px-4 py-3 min-w-0 ${
+        destaque ? "bg-white text-[#0456A3]" : "bg-white/12 text-white border border-white/15"
+      }`}
+    >
+      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80 truncate">
+        {titulo}
+      </div>
+      <div className="mt-1 text-[18px] font-black leading-none truncate">
+        {valor}
+      </div>
     </div>
   );
 }
