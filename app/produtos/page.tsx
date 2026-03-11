@@ -114,6 +114,13 @@ function getCell(row: string[], map: Record<string, number>, keys: string[]) {
   return "";
 }
 
+function statusClass(status: string) {
+  const s = up(status);
+  if (s === "ATIVO") return "status-ativo";
+  if (s === "INATIVO") return "status-inativo";
+  return "status-ativo";
+}
+
 export default function ProdutosPage() {
   const router = useRouter();
   const csvInputRef = useRef<HTMLInputElement | null>(null);
@@ -548,35 +555,55 @@ export default function ProdutosPage() {
   }
 
   return (
-    <div className="min-h-screen flex bg-[#F6F7F9]">
+    <div className="min-h-screen flex bg-[#F4F6F8]">
       <Sidebar />
 
-      <main className="flex-1 min-w-0 p-6">
-        <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-[26px] font-black text-[#6C757D] leading-none">
-              PRODUTOS
-            </h1>
-            <p className="text-[14px] text-[#6C757D] mt-2">
-              CADASTRO COMPLETO, ESTOQUE, PREÇOS E BLOCO FISCAL
-            </p>
+      <main className="flex-1 p-4 md:p-6">
+        <div className="mb-6 rounded-[26px] bg-gradient-to-r from-[#0456A3] to-[#0A6FD6] p-5 md:p-6 text-white shadow-lg">
+          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+            <div>
+              <p className="text-[12px] font-bold tracking-[0.2em] opacity-80">
+                AUTO GESTÃO PRO
+              </p>
+              <h1 className="mt-2 text-[28px] md:text-[34px] font-black leading-none">
+                PRODUTOS
+              </h1>
+              <p className="mt-3 text-sm text-white/85">
+                CADASTRO COMPLETO, ESTOQUE, PREÇOS E BLOCO FISCAL
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
+              <KpiMini titulo="TOTAL" valor={String(total)} />
+              <KpiMini titulo="ATIVOS" valor={String(ativos)} />
+              <KpiMini titulo="ESTOQUE" valor={String(estoqueTotal)} />
+              <KpiMini titulo="EST. BAIXO" valor={String(estoqueBaixo)} destaque />
+            </div>
           </div>
 
-          <div className="flex gap-3 flex-wrap">
-            <input
-              placeholder="BUSCAR PRODUTO..."
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              className="h-[54px] w-[320px] xl:w-[410px] max-w-full rounded-2xl border border-[#2F2F2F] bg-white px-5 text-[18px] outline-none"
-            />
-
+          <div className="mt-5 flex gap-3 flex-wrap">
             <button
               onClick={() => csvInputRef.current?.click()}
-              className="h-[54px] rounded-2xl border border-[#2F2F2F] bg-white px-6 text-[18px] font-medium"
+              className="botao-header"
               type="button"
             >
               IMPORTAR CSV
             </button>
+
+            <button
+              onClick={resetForm}
+              className="botao-header"
+              type="button"
+            >
+              NOVO PRODUTO
+            </button>
+
+            <input
+              placeholder="BUSCAR PRODUTO..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="h-[48px] w-[320px] xl:w-[410px] max-w-full rounded-2xl border border-white/20 bg-white/10 px-5 text-[16px] text-white outline-none placeholder:text-white/70"
+            />
 
             <input
               ref={csvInputRef}
@@ -592,19 +619,29 @@ export default function ProdutosPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-          <CardKpi titulo="TOTAL DE PRODUTOS" valor={String(total)} />
-          <CardKpi titulo="ATIVOS" valor={String(ativos)} />
-          <CardKpi titulo="ESTOQUE TOTAL" valor={String(estoqueTotal)} />
-          <CardKpi titulo="ESTOQUE BAIXO" valor={String(estoqueBaixo)} />
-        </div>
+        <section className="card mb-6">
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">
+                {editingId ? "EDITAR PRODUTO" : "NOVO PRODUTO"}
+              </h2>
+              <p className="section-subtitle">
+                Cadastre dados fiscais, preços, estoque e foto em um único fluxo.
+              </p>
+            </div>
 
-        <section className="bg-white rounded-[24px] shadow-sm p-5 mb-6">
-          <h2 className="text-[15px] font-black text-[#6C757D] mb-5">
-            {editingId ? "EDITAR PRODUTO" : "NOVO PRODUTO"}
-          </h2>
+            <div className="flex gap-3 flex-wrap">
+              <button onClick={salvarProduto} className="botao-azul" type="button">
+                {editingId ? "SALVAR ALTERAÇÕES" : "SALVAR PRODUTO"}
+              </button>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_250px] gap-6">
+              <button onClick={resetForm} className="botao" type="button">
+                LIMPAR
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-6">
             <div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <input
@@ -708,40 +745,40 @@ export default function ProdutosPage() {
                 </select>
 
                 <input
-                  placeholder="102"
+                  placeholder="CST / CSOSN"
                   value={cstCsosn}
                   onChange={(e) => setCstCsosn(e.target.value)}
                   className="campo"
                 />
 
                 <input
-                  placeholder="0"
+                  placeholder="ALÍQUOTA ICMS"
                   value={aliquotaIcms}
                   onChange={(e) => setAliquotaIcms(e.target.value)}
                   className="campo"
                 />
 
                 <input
-                  placeholder="0"
+                  placeholder="ALÍQUOTA PIS"
                   value={aliquotaPis}
                   onChange={(e) => setAliquotaPis(e.target.value)}
                   className="campo"
                 />
 
                 <input
-                  placeholder="0"
+                  placeholder="ALÍQUOTA COFINS"
                   value={aliquotaCofins}
                   onChange={(e) => setAliquotaCofins(e.target.value)}
                   className="campo"
                 />
 
-                <label className="campo flex items-center gap-3 cursor-pointer font-bold text-[#6C757D]">
+                <label className="campo checkbox-campo">
                   <input
                     type="checkbox"
                     checked={controlaEstoque}
                     onChange={(e) => setControlaEstoque(e.target.checked)}
                   />
-                  CONTROLA ESTOQUE
+                  <span>CONTROLA ESTOQUE</span>
                 </label>
 
                 <input
@@ -776,30 +813,12 @@ export default function ProdutosPage() {
                   className="campo md:col-span-4"
                 />
               </div>
-
-              <div className="flex gap-3 mt-5">
-                <button
-                  onClick={salvarProduto}
-                  className="h-[54px] rounded-2xl bg-[#0456A3] px-7 text-[17px] font-medium text-white"
-                  type="button"
-                >
-                  SALVAR PRODUTO
-                </button>
-
-                <button
-                  onClick={resetForm}
-                  className="h-[54px] rounded-2xl border border-[#2F2F2F] bg-white px-7 text-[17px] font-medium text-[#1C1C1C]"
-                  type="button"
-                >
-                  LIMPAR
-                </button>
-              </div>
             </div>
 
-            <div className="rounded-[24px] border border-[#B7B7B7] p-4">
-              <div className="text-[14px] font-black text-[#6C757D] mb-3">FOTO</div>
+            <div className="foto-card">
+              <div className="foto-title">FOTO DO PRODUTO</div>
 
-              <div className="w-full h-[230px] rounded-[18px] border border-[#B7B7B7] bg-[#F6F7F9] overflow-hidden flex items-center justify-center">
+              <div className="foto-box">
                 {fotoUrl ? (
                   <img
                     src={fotoUrl}
@@ -810,85 +829,91 @@ export default function ProdutosPage() {
                     }}
                   />
                 ) : (
-                  <span className="text-[#7B848C] text-[14px]">SEM FOTO</span>
+                  <span className="text-[#64748B] text-[14px]">SEM FOTO</span>
                 )}
               </div>
 
               <div className="flex gap-2 mt-4">
                 <button
                   onClick={aplicarFotoUrl}
-                  className="flex-1 h-[46px] rounded-2xl border border-[#2F2F2F] bg-white text-[15px] font-medium"
+                  className="botao flex-1"
                   type="button"
                 >
-                  ENVIAR FOTO
+                  APLICAR FOTO
                 </button>
 
                 <button
                   onClick={limparFoto}
-                  className="w-[48px] h-[46px] rounded-2xl border border-[#2F2F2F] bg-white text-[20px]"
+                  className="botao danger-button"
                   type="button"
                 >
                   X
                 </button>
               </div>
+
+              <div className="mt-4 resumo-box">
+                <div className="resumo-linha">
+                  <span>P. BALCÃO</span>
+                  <strong>{moneyBR(toMoney(precoBalcao))}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>P. INSTALAÇÃO</span>
+                  <strong>{moneyBR(toMoney(precoInstalacao))}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>P. REVENDA</span>
+                  <strong>{moneyBR(toMoney(precoRevenda))}</strong>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="bg-white rounded-[24px] shadow-sm overflow-hidden">
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">LISTA DE PRODUTOS</h2>
+              <p className="section-subtitle">
+                Consulte, edite e acompanhe preços, estoque e situação dos produtos.
+              </p>
+            </div>
+          </div>
+
           <div className="overflow-auto">
-            <table className="w-full min-w-[1200px] text-sm">
-              <thead className="bg-[#F3F4F6]">
+            <table className="tabela min-w-[1320px]">
+              <thead>
                 <tr>
-                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
-                    PRODUTO
-                  </th>
-                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
-                    SKU
-                  </th>
-                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
-                    FISCAL
-                  </th>
-                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
-                    P. BALCÃO
-                  </th>
-                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
-                    P. INSTALAÇÃO
-                  </th>
-                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
-                    P. REVENDA
-                  </th>
-                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
-                    ESTOQUE
-                  </th>
-                  <th className="px-4 py-5 text-left text-[14px] font-black text-[#1F1F1F]">
-                    STATUS
-                  </th>
-                  <th className="px-4 py-5 text-right text-[14px] font-black text-[#1F1F1F]">
-                    AÇÕES
-                  </th>
+                  <th>PRODUTO</th>
+                  <th>SKU</th>
+                  <th>FISCAL</th>
+                  <th>P. BALCÃO</th>
+                  <th>P. INSTALAÇÃO</th>
+                  <th>P. REVENDA</th>
+                  <th>ESTOQUE</th>
+                  <th>STATUS</th>
+                  <th>AÇÕES</th>
                 </tr>
               </thead>
 
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-[#6C757D]">
+                    <td colSpan={9} className="empty-state">
                       CARREGANDO...
                     </td>
                   </tr>
                 ) : produtos.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-[#6C757D]">
+                    <td colSpan={9} className="empty-state">
                       NENHUM PRODUTO ENCONTRADO.
                     </td>
                   </tr>
                 ) : (
                   produtos.map((p) => (
-                    <tr key={p.id} className="border-t border-[#EFF1F4]">
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-xl overflow-hidden bg-[#EEF2F7] border border-[#E5E7EB] flex items-center justify-center">
+                    <tr key={p.id}>
+                      <td>
+                        <div className="produto-cell">
+                          <div className="produto-foto">
                             {p.foto_url ? (
                               <img
                                 src={p.foto_url}
@@ -896,13 +921,13 @@ export default function ProdutosPage() {
                                 className="w-full h-full object-cover"
                               />
                             ) : (
-                              <span className="text-[10px] text-[#6C757D]">SEM FOTO</span>
+                              <span className="text-[10px] text-[#64748B]">SEM FOTO</span>
                             )}
                           </div>
 
                           <div>
-                            <div className="font-bold text-[#111]">{p.nome}</div>
-                            <div className="text-xs text-[#6C757D]">
+                            <div className="font-bold text-[#0F172A]">{p.nome}</div>
+                            <div className="text-xs text-[#64748B]">
                               {p.categoria || "-"}
                               {p.subcategoria ? ` / ${p.subcategoria}` : ""}
                             </div>
@@ -910,32 +935,22 @@ export default function ProdutosPage() {
                         </div>
                       </td>
 
-                      <td className="px-4 py-4 text-[#1F1F1F]">{p.codigo_sku || "-"}</td>
+                      <td>{p.codigo_sku || "-"}</td>
 
-                      <td className="px-4 py-4 text-[#1F1F1F]">
+                      <td>
                         <div className="font-medium">NCM: {p.ncm || "-"}</div>
-                        <div className="text-xs text-[#6C757D]">
-                          CFOP: {p.cfop || "-"}
-                        </div>
+                        <div className="text-xs text-[#64748B]">CFOP: {p.cfop || "-"}</div>
                       </td>
 
-                      <td className="px-4 py-4 text-[#1F1F1F]">
-                        {moneyBR(toMoney(p.preco_balcao))}
-                      </td>
+                      <td className="font-semibold">{moneyBR(toMoney(p.preco_balcao))}</td>
+                      <td className="font-semibold">{moneyBR(toMoney(p.preco_instalacao))}</td>
+                      <td className="font-semibold">{moneyBR(toMoney(p.preco_revenda))}</td>
 
-                      <td className="px-4 py-4 text-[#1F1F1F]">
-                        {moneyBR(toMoney(p.preco_instalacao))}
-                      </td>
-
-                      <td className="px-4 py-4 text-[#1F1F1F]">
-                        {moneyBR(toMoney(p.preco_revenda))}
-                      </td>
-
-                      <td className="px-4 py-4 text-[#1F1F1F]">
+                      <td>
                         {p.controla_estoque ? (
                           <div>
                             <div className="font-semibold">{toMoney(p.estoque_atual)}</div>
-                            <div className="text-xs text-[#6C757D]">
+                            <div className="text-xs text-[#64748B]">
                               MÍN: {toMoney(p.estoque_minimo)}
                             </div>
                           </div>
@@ -944,13 +959,17 @@ export default function ProdutosPage() {
                         )}
                       </td>
 
-                      <td className="px-4 py-4 text-[#1F1F1F]">{p.status || "ATIVO"}</td>
+                      <td>
+                        <span className={`status-chip ${statusClass(p.status || "ATIVO")}`}>
+                          {p.status || "ATIVO"}
+                        </span>
+                      </td>
 
-                      <td className="px-4 py-4">
-                        <div className="flex justify-end gap-2">
+                      <td>
+                        <div className="flex gap-2 justify-end flex-wrap">
                           <button
                             onClick={() => editarProduto(p)}
-                            className="rounded-xl border border-[#2F2F2F] bg-white px-4 py-2 text-[13px] font-medium"
+                            className="botao-mini"
                             type="button"
                           >
                             EDITAR
@@ -958,7 +977,7 @@ export default function ProdutosPage() {
 
                           <button
                             onClick={() => removerProduto(p.id)}
-                            className="rounded-xl border border-[#2F2F2F] bg-white px-4 py-2 text-[13px] font-medium"
+                            className="botao-mini danger"
                             type="button"
                           >
                             REMOVER
@@ -972,7 +991,7 @@ export default function ProdutosPage() {
             </table>
           </div>
 
-          <div className="p-5">
+          <div className="mt-5">
             <Pagination
               page={page}
               setPage={setPage}
@@ -984,31 +1003,250 @@ export default function ProdutosPage() {
       </main>
 
       <style jsx>{`
+        .card {
+          background: white;
+          border-radius: 24px;
+          padding: 20px;
+          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+          border: 1px solid #eef2f7;
+        }
+
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 18px;
+          flex-wrap: wrap;
+        }
+
+        .section-title {
+          font-weight: 900;
+          font-size: 15px;
+          color: #334155;
+        }
+
+        .section-subtitle {
+          margin-top: 4px;
+          font-size: 12px;
+          color: #64748b;
+        }
+
         .campo {
           height: 46px;
           width: 100%;
           border-radius: 12px;
-          border: 1.5px solid #9a9a9a;
+          border: 1.5px solid #cbd5e1;
           background: #ffffff;
           padding: 0 12px;
-          font-size: 16px;
-          color: #1f1f1f;
+          font-size: 14px;
+          color: #0f172a;
           outline: none;
+          transition: 0.2s;
+        }
+
+        .campo:focus {
+          border-color: #0a6fd6;
+          box-shadow: 0 0 0 4px rgba(10, 111, 214, 0.08);
         }
 
         .campo::placeholder {
           color: #8b929a;
+        }
+
+        .checkbox-campo {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-weight: 700;
+          color: #475569;
+        }
+
+        .foto-card {
+          border: 1px solid #e2e8f0;
+          border-radius: 20px;
+          padding: 16px;
+          background: #f8fafc;
+        }
+
+        .foto-title {
+          font-size: 13px;
+          font-weight: 900;
+          color: #475569;
+          margin-bottom: 12px;
+        }
+
+        .foto-box {
+          width: 100%;
+          height: 240px;
+          border-radius: 18px;
+          border: 1px solid #cbd5e1;
+          background: white;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .botao {
+          border: 1px solid #cbd5e1;
+          border-radius: 12px;
+          padding: 10px 16px;
+          font-size: 13px;
+          background: white;
+          color: #1e293b;
+          font-weight: 700;
+        }
+
+        .botao-azul {
+          background: #0456a3;
+          color: white;
+          border-radius: 12px;
+          padding: 10px 16px;
+          font-size: 13px;
+          font-weight: 700;
+          border: none;
+        }
+
+        .danger-button {
+          min-width: 52px;
+        }
+
+        .botao-mini {
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
+          padding: 6px 10px;
+          font-size: 11px;
+          background: white;
+          color: #1e293b;
+          font-weight: 700;
+        }
+
+        .botao-mini.danger {
+          border-color: #fecaca;
+          background: #fef2f2;
+          color: #b91c1c;
+        }
+
+        .botao-header {
+          border: 1px solid rgba(255, 255, 255, 0.45);
+          background: rgba(255, 255, 255, 0.12);
+          color: white;
+          font-weight: 800;
+          border-radius: 14px;
+          padding: 11px 16px;
+          font-size: 13px;
+          backdrop-filter: blur(10px);
+        }
+
+        .tabela {
+          width: 100%;
+          border-collapse: collapse;
+        }
+
+        .tabela th {
+          text-align: left;
+          font-size: 12px;
+          padding: 13px 12px;
+          border-bottom: 1px solid #e2e8f0;
+          color: #334155;
+          font-weight: 900;
+          background: #f8fafc;
+        }
+
+        .tabela td {
+          font-size: 13px;
+          padding: 12px;
+          border-bottom: 1px solid #eef2f7;
+          color: #334155;
+          vertical-align: middle;
+        }
+
+        .empty-state {
+          text-align: center;
+          padding: 28px 12px;
+          color: #64748b;
+        }
+
+        .produto-cell {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .produto-foto {
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          overflow: hidden;
+          background: #eef2f7;
+          border: 1px solid #e2e8f0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .status-chip {
+          display: inline-flex;
+          border-radius: 999px;
+          padding: 6px 10px;
+          font-size: 11px;
+          font-weight: 900;
+        }
+
+        .status-ativo {
+          background: #dcfce7;
+          color: #15803d;
+        }
+
+        .status-inativo {
+          background: #fee2e2;
+          color: #b91c1c;
+        }
+
+        .resumo-box {
+          border: 1px solid #e2e8f0;
+          background: white;
+          border-radius: 16px;
+          padding: 14px;
+        }
+
+        .resumo-linha {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 8px 0;
+          border-bottom: 1px solid #e2e8f0;
+          font-size: 13px;
+          color: #334155;
+        }
+
+        .resumo-linha:last-child {
+          border-bottom: none;
         }
       `}</style>
     </div>
   );
 }
 
-function CardKpi({ titulo, valor }: { titulo: string; valor: string }) {
+function KpiMini({
+  titulo,
+  valor,
+  destaque = false,
+}: {
+  titulo: string;
+  valor: string;
+  destaque?: boolean;
+}) {
   return (
-    <div className="bg-white rounded-[22px] shadow-sm p-5 min-h-[110px]">
-      <div className="text-[14px] font-bold text-[#6C757D]">{titulo}</div>
-      <div className="mt-3 text-[24px] font-black text-[#111]">{valor}</div>
+    <div
+      className={`rounded-[18px] px-4 py-3 ${
+        destaque ? "bg-white text-[#0456A3]" : "bg-white/12 text-white border border-white/15"
+      }`}
+    >
+      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">{titulo}</div>
+      <div className="mt-1 text-[18px] font-black leading-none">{valor}</div>
     </div>
   );
 }
