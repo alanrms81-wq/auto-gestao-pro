@@ -171,6 +171,10 @@ function OrdensPageContent() {
   const [buscaServico, setBuscaServico] = useState("");
   const [buscaHistorico, setBuscaHistorico] = useState("");
 
+  const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false);
+  const [mostrarDropdownProduto, setMostrarDropdownProduto] = useState(false);
+  const [mostrarDropdownServico, setMostrarDropdownServico] = useState(false);
+
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [numeroOS, setNumeroOS] = useState(gerarNumeroOS());
@@ -305,6 +309,7 @@ function OrdensPageContent() {
       setClienteId(cliente.id);
       setClienteNome(cliente.nome);
       setBuscaCliente(cliente.nome);
+      setMostrarDropdownCliente(false);
     }
 
     await carregarVeiculosDoCliente(clienteIdParam);
@@ -428,12 +433,16 @@ function OrdensPageContent() {
     setAcrescimo("0");
     setProdutosOS([]);
     setServicosOS([]);
+    setMostrarDropdownCliente(false);
+    setMostrarDropdownProduto(false);
+    setMostrarDropdownServico(false);
   }
 
   async function selecionarCliente(c: Cliente) {
     setClienteId(c.id);
     setClienteNome(c.nome);
     setBuscaCliente(c.nome);
+    setMostrarDropdownCliente(false);
 
     setVeiculoId("");
     setVeiculo("");
@@ -468,6 +477,7 @@ function OrdensPageContent() {
       },
     ]);
     setBuscaProduto("");
+    setMostrarDropdownProduto(false);
   }
 
   function adicionarServicoDoCadastro(servico: ServicoBase) {
@@ -482,6 +492,7 @@ function OrdensPageContent() {
       },
     ]);
     setBuscaServico("");
+    setMostrarDropdownServico(false);
   }
 
   function atualizarProdutoOS(id: string | undefined, campo: keyof OsProduto, valor: unknown) {
@@ -685,6 +696,7 @@ function OrdensPageContent() {
     setClienteId(item.cliente_id || "");
     setClienteNome(item.cliente_nome || "");
     setBuscaCliente(item.cliente_nome || "");
+    setMostrarDropdownCliente(false);
 
     await carregarVeiculosDoCliente(item.cliente_id || "");
 
@@ -893,10 +905,16 @@ function OrdensPageContent() {
                     placeholder="DIGITE NOME, TELEFONE OU DOCUMENTO..."
                     className="campo"
                     value={buscaCliente}
-                    onChange={(e) => setBuscaCliente(e.target.value)}
+                    onChange={(e) => {
+                      setBuscaCliente(e.target.value);
+                      setMostrarDropdownCliente(true);
+                    }}
+                    onFocus={() => {
+                      if (buscaCliente.trim()) setMostrarDropdownCliente(true);
+                    }}
                   />
 
-                  {buscaCliente.trim() && clientesFiltrados.length > 0 && (
+                  {mostrarDropdownCliente && buscaCliente.trim() && clientesFiltrados.length > 0 && (
                     <div className="dropdown">
                       {clientesFiltrados.map((c) => (
                         <button
@@ -1025,10 +1043,16 @@ function OrdensPageContent() {
                   placeholder="BUSCAR PRODUTO POR NOME OU CÓDIGO..."
                   className="campo"
                   value={buscaProduto}
-                  onChange={(e) => setBuscaProduto(e.target.value)}
+                  onChange={(e) => {
+                    setBuscaProduto(e.target.value);
+                    setMostrarDropdownProduto(true);
+                  }}
+                  onFocus={() => {
+                    if (buscaProduto.trim().length >= 3) setMostrarDropdownProduto(true);
+                  }}
                 />
 
-                {buscaProduto.trim().length >= 3 && produtosFiltrados.length > 0 && (
+                {mostrarDropdownProduto && buscaProduto.trim().length >= 3 && produtosFiltrados.length > 0 && (
                   <div className="dropdown top-full mt-2">
                     {produtosFiltrados.map((p) => (
                       <button
@@ -1131,10 +1155,16 @@ function OrdensPageContent() {
                   placeholder="BUSCAR SERVIÇO CADASTRADO..."
                   className="campo"
                   value={buscaServico}
-                  onChange={(e) => setBuscaServico(e.target.value)}
+                  onChange={(e) => {
+                    setBuscaServico(e.target.value);
+                    setMostrarDropdownServico(true);
+                  }}
+                  onFocus={() => {
+                    if (buscaServico.trim().length >= 2) setMostrarDropdownServico(true);
+                  }}
                 />
 
-                {buscaServico.trim().length >= 2 && servicosFiltrados.length > 0 && (
+                {mostrarDropdownServico && buscaServico.trim().length >= 2 && servicosFiltrados.length > 0 && (
                   <div className="dropdown top-full mt-2">
                     {servicosFiltrados.map((s) => (
                       <button
