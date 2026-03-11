@@ -33,7 +33,6 @@ type Produto = {
   origem?: string | null;
   cst_csosn?: string | null;
   aliquota_icms?: number | null;
-  preco_venda?: number | null;
   preco_balcao?: number | null;
   preco_instalacao?: number | null;
   preco_revenda?: number | null;
@@ -117,13 +116,6 @@ function formatDateTimeBr(value?: string | null) {
   return d.toLocaleString("pt-BR");
 }
 
-function formatDateBr(value?: string | null) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return String(value);
-  return d.toLocaleDateString("pt-BR");
-}
-
 function hojeISO() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -132,14 +124,8 @@ function agoraISO() {
   return new Date().toISOString();
 }
 
-function getPrecoProduto(p: Produto) {
-  return (
-    toMoney(p.preco_balcao) ||
-    toMoney(p.preco_venda) ||
-    toMoney(p.preco_instalacao) ||
-    toMoney(p.preco_revenda) ||
-    0
-  );
+function getPrecoPadraoProduto(p: Produto) {
+  return toMoney(p.preco_balcao) || toMoney(p.preco_instalacao) || toMoney(p.preco_revenda) || 0;
 }
 
 function statusClass(status: string) {
@@ -274,7 +260,7 @@ export default function VendasPage() {
       supabase
         .from("produtos")
         .select(
-          "id,nome,codigo_sku,ncm,cfop,cest,unidade,origem,cst_csosn,aliquota_icms,preco_venda,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status"
+          "id,nome,codigo_sku,ncm,cfop,cest,unidade,origem,cst_csosn,aliquota_icms,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status"
         )
         .eq("empresa_id", eid)
         .order("nome"),
@@ -354,7 +340,7 @@ export default function VendasPage() {
   }
 
   function adicionarProduto(p: Produto) {
-    const preco = getPrecoProduto(p);
+    const precoPadrao = getPrecoPadraoProduto(p);
 
     setItens((prev) => [
       ...prev,
@@ -371,8 +357,8 @@ export default function VendasPage() {
         cstCsosn: up(p.cst_csosn || "102"),
         aliquotaIcms: toMoney(p.aliquota_icms || 0),
         quantidade: 1,
-        valorUnitario: preco,
-        total: preco,
+        valorUnitario: precoPadrao,
+        total: precoPadrao,
       },
     ]);
 
@@ -1012,9 +998,12 @@ export default function VendasPage() {
                               {up(p.codigo_sku || "-")} • NCM {up(p.ncm || "-")} • ESTOQUE{" "}
                               {toMoney(p.estoque_atual)}
                             </div>
+                            <div className="text-xs text-[#64748B] mt-1">
+                              BALCÃO {moneyBR(toMoney(p.preco_balcao))} • INSTALAÇÃO {moneyBR(toMoney(p.preco_instalacao))} • REVENDA {moneyBR(toMoney(p.preco_revenda))}
+                            </div>
                           </div>
                           <div className="font-black text-[#0456A3]">
-                            {moneyBR(getPrecoProduto(p))}
+                            {moneyBR(getPrecoPadraoProduto(p))}
                           </div>
                         </div>
                       </button>
@@ -1024,7 +1013,7 @@ export default function VendasPage() {
               </div>
 
               <div className="mt-4 overflow-auto">
-                <table className="tabela min-w-[1200px]">
+                <table className="tabela min-w-[1500px]">
                   <thead>
                     <tr>
                       <th>PRODUTO</th>
@@ -1032,8 +1021,11 @@ export default function VendasPage() {
                       <th>NCM</th>
                       <th>CFOP</th>
                       <th>CST/CSOSN</th>
-                      <th>QTD</th>
+                      <th>P. BALCÃO</th>
+                      <th>P. INSTALAÇÃO</th>
+                      <th>P. REVENDA</th>
                       <th>V. UNIT.</th>
+                      <th>QTD</th>
                       <th>TOTAL</th>
                       <th>AÇÃO</th>
                     </tr>
@@ -1041,80 +1033,93 @@ export default function VendasPage() {
                   <tbody>
                     {itens.length === 0 ? (
                       <tr>
-                        <td className="empty-state" colSpan={9}>
+                        <td className="empty-state" colSpan={12}>
                           NENHUM PRODUTO ADICIONADO.
                         </td>
                       </tr>
                     ) : (
-                      itens.map((item) => (
-                        <tr key={item.id}>
-                          <td>
-                            <input
-                              value={item.nome}
-                              onChange={(e) => atualizarItem(item.id, "nome", e.target.value)}
-                              className="campo-tabela"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              value={item.codigo || ""}
-                              onChange={(e) => atualizarItem(item.id, "codigo", e.target.value)}
-                              className="campo-tabela"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              value={item.ncm || ""}
-                              onChange={(e) => atualizarItem(item.id, "ncm", e.target.value)}
-                              className="campo-tabela"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              value={item.cfop || ""}
-                              onChange={(e) => atualizarItem(item.id, "cfop", e.target.value)}
-                              className="campo-tabela"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              value={item.cstCsosn || ""}
-                              onChange={(e) => atualizarItem(item.id, "cstCsosn", e.target.value)}
-                              className="campo-tabela"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.quantidade}
-                              onChange={(e) => atualizarItem(item.id, "quantidade", Number(e.target.value))}
-                              className="campo-tabela text-right"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={item.valorUnitario}
-                              onChange={(e) => atualizarItem(item.id, "valorUnitario", Number(e.target.value))}
-                              className="campo-tabela text-right"
-                            />
-                          </td>
-                          <td className="font-black text-right text-[#0F172A]">
-                            {moneyBR(item.total)}
-                          </td>
-                          <td className="text-right">
-                            <button
-                              onClick={() => removerItem(item.id)}
-                              className="botao-mini danger"
-                              type="button"
-                            >
-                              REMOVER
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                      itens.map((item) => {
+                        const produtoOriginal = produtos.find((p) => p.id === item.produtoId);
+
+                        return (
+                          <tr key={item.id}>
+                            <td>
+                              <input
+                                value={item.nome}
+                                onChange={(e) => atualizarItem(item.id, "nome", e.target.value)}
+                                className="campo-tabela"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                value={item.codigo || ""}
+                                onChange={(e) => atualizarItem(item.id, "codigo", e.target.value)}
+                                className="campo-tabela"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                value={item.ncm || ""}
+                                onChange={(e) => atualizarItem(item.id, "ncm", e.target.value)}
+                                className="campo-tabela"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                value={item.cfop || ""}
+                                onChange={(e) => atualizarItem(item.id, "cfop", e.target.value)}
+                                className="campo-tabela"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                value={item.cstCsosn || ""}
+                                onChange={(e) => atualizarItem(item.id, "cstCsosn", e.target.value)}
+                                className="campo-tabela"
+                              />
+                            </td>
+                            <td className="text-right font-semibold">
+                              {moneyBR(toMoney(produtoOriginal?.preco_balcao))}
+                            </td>
+                            <td className="text-right font-semibold">
+                              {moneyBR(toMoney(produtoOriginal?.preco_instalacao))}
+                            </td>
+                            <td className="text-right font-semibold">
+                              {moneyBR(toMoney(produtoOriginal?.preco_revenda))}
+                            </td>
+                            <td>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={item.valorUnitario}
+                                onChange={(e) => atualizarItem(item.id, "valorUnitario", Number(e.target.value))}
+                                className="campo-tabela text-right"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantidade}
+                                onChange={(e) => atualizarItem(item.id, "quantidade", Number(e.target.value))}
+                                className="campo-tabela text-right"
+                              />
+                            </td>
+                            <td className="font-black text-right text-[#0F172A]">
+                              {moneyBR(item.total)}
+                            </td>
+                            <td className="text-right">
+                              <button
+                                onClick={() => removerItem(item.id)}
+                                className="botao-mini danger"
+                                type="button"
+                              >
+                                REMOVER
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
