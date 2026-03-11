@@ -143,6 +143,13 @@ function getCell(row: string[], map: Record<string, number>, keys: string[]) {
   return "";
 }
 
+function statusClass(status: string) {
+  const s = up(status);
+  if (s === "ATIVO") return "status-ativo";
+  if (s === "INATIVO") return "status-inativo";
+  return "status-ativo";
+}
+
 export default function ClientesPage() {
   const router = useRouter();
   const csvInputRef = useRef<HTMLInputElement | null>(null);
@@ -309,7 +316,6 @@ export default function ClientesPage() {
   }
 
   const total = totalRegistros;
-
   const ativos = clientes.filter((c) => (c.status || "ATIVO") !== "INATIVO").length;
   const inativos = Math.max(0, totalRegistros - ativos);
   const totalVeiculos = veiculos.length;
@@ -682,35 +688,55 @@ export default function ClientesPage() {
   }
 
   return (
-    <div className="min-h-screen flex bg-[#F3F4F6]">
+    <div className="min-h-screen flex bg-[#F4F6F8]">
       <Sidebar />
 
-      <main className="flex-1 p-6">
-        <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-[26px] font-black text-[#6C757D] leading-none">
-              CLIENTES
-            </h1>
-            <p className="text-[14px] text-[#6C757D] mt-2">
-              CADASTRO DE CLIENTES E VEÍCULOS
-            </p>
+      <main className="flex-1 p-4 md:p-6">
+        <div className="mb-6 rounded-[26px] bg-gradient-to-r from-[#0456A3] to-[#0A6FD6] p-5 md:p-6 text-white shadow-lg">
+          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+            <div>
+              <p className="text-[12px] font-bold tracking-[0.2em] opacity-80">
+                AUTO GESTÃO PRO
+              </p>
+              <h1 className="mt-2 text-[28px] md:text-[34px] font-black leading-none">
+                CLIENTES
+              </h1>
+              <p className="mt-3 text-sm text-white/85">
+                CADASTRO DE CLIENTES E VEÍCULOS COM BUSCA RÁPIDA E FLUXO ORGANIZADO
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
+              <KpiMini titulo="TOTAL" valor={String(total)} />
+              <KpiMini titulo="ATIVOS" valor={String(ativos)} />
+              <KpiMini titulo="INATIVOS" valor={String(inativos)} />
+              <KpiMini titulo="VEÍCULOS" valor={String(totalVeiculos)} destaque />
+            </div>
           </div>
 
-          <div className="flex gap-3 flex-wrap">
-            <input
-              placeholder="BUSCAR CLIENTE..."
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              className="h-[54px] w-[320px] xl:w-[410px] max-w-full rounded-2xl border border-[#2F2F2F] bg-white px-5 text-[18px] outline-none"
-            />
-
+          <div className="mt-5 flex gap-3 flex-wrap">
             <button
               onClick={() => csvInputRef.current?.click()}
-              className="h-[54px] rounded-2xl border border-[#2F2F2F] bg-white px-6 text-[18px] font-medium"
+              className="botao-header"
               type="button"
             >
               IMPORTAR CSV
             </button>
+
+            <button
+              onClick={resetForm}
+              className="botao-header"
+              type="button"
+            >
+              NOVO CLIENTE
+            </button>
+
+            <input
+              placeholder="BUSCAR CLIENTE..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="h-[48px] w-[320px] xl:w-[410px] max-w-full rounded-2xl border border-white/20 bg-white/10 px-5 text-[16px] text-white outline-none placeholder:text-white/70"
+            />
 
             <input
               ref={csvInputRef}
@@ -726,17 +752,27 @@ export default function ClientesPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-          <CardKpi titulo="TOTAL DE CLIENTES" valor={String(total)} />
-          <CardKpi titulo="ATIVOS" valor={String(ativos)} />
-          <CardKpi titulo="INATIVOS" valor={String(inativos)} />
-          <CardKpi titulo="VEÍCULOS DO CLIENTE" valor={String(totalVeiculos)} />
-        </div>
-
         <section className="card mb-6">
-          <h2 className="titulo mb-4">
-            {editingId ? "EDITAR CLIENTE" : "NOVO CLIENTE"}
-          </h2>
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">
+                {editingId ? "EDITAR CLIENTE" : "NOVO CLIENTE"}
+              </h2>
+              <p className="section-subtitle">
+                Cadastre os dados do cliente, endereço e observações em um só fluxo.
+              </p>
+            </div>
+
+            <div className="flex gap-3 flex-wrap">
+              <button onClick={salvarCliente} className="botao-azul" type="button">
+                {editingId ? "SALVAR ALTERAÇÕES" : "SALVAR CLIENTE"}
+              </button>
+
+              <button onClick={resetForm} className="botao" type="button">
+                LIMPAR
+              </button>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <input
@@ -801,7 +837,7 @@ export default function ClientesPage() {
               <button
                 type="button"
                 onClick={() => buscarCepAutomatico(cep)}
-                className="h-[46px] rounded-xl border border-[#2F2F2F] bg-white px-4 text-[14px] font-medium whitespace-nowrap"
+                className="botao-secundario min-w-[96px]"
               >
                 {consultandoCep ? "..." : "BUSCAR"}
               </button>
@@ -856,27 +892,22 @@ export default function ClientesPage() {
               className="campo-textarea md:col-span-4"
             />
           </div>
-
-          <div className="flex gap-3 mt-5">
-            <button onClick={salvarCliente} className="botao-azul" type="button">
-              SALVAR CLIENTE
-            </button>
-
-            <button onClick={resetForm} className="botao" type="button">
-              LIMPAR
-            </button>
-          </div>
         </section>
 
         <section className="card mb-6">
-          <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
-            <h2 className="titulo">
-              VEÍCULOS DO CLIENTE {clienteSelecionadoNome ? `- ${clienteSelecionadoNome}` : ""}
-            </h2>
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">
+                VEÍCULOS DO CLIENTE {clienteSelecionadoNome ? `- ${clienteSelecionadoNome}` : ""}
+              </h2>
+              <p className="section-subtitle">
+                Vincule veículos ao cliente selecionado e mantenha o histórico organizado.
+              </p>
+            </div>
 
             {!clienteSelecionadoId && (
-              <span className="text-sm text-[#6C757D]">
-                SELECIONE OU SALVE UM CLIENTE PARA CADASTRAR VEÍCULOS
+              <span className="helper-badge">
+                SELECIONE UM CLIENTE NO HISTÓRICO PARA CADASTRAR VEÍCULOS
               </span>
             )}
           </div>
@@ -955,7 +986,7 @@ export default function ClientesPage() {
             />
           </div>
 
-          <div className="flex gap-3 mt-5">
+          <div className="flex gap-3 mt-5 flex-wrap">
             <button
               onClick={salvarVeiculo}
               className="botao-azul"
@@ -988,20 +1019,20 @@ export default function ClientesPage() {
               <tbody>
                 {!clienteSelecionadoId ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-6 text-[#6C757D]">
+                    <td colSpan={8} className="empty-state">
                       SELECIONE UM CLIENTE PARA VER OS VEÍCULOS.
                     </td>
                   </tr>
                 ) : veiculos.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-6 text-[#6C757D]">
+                    <td colSpan={8} className="empty-state">
                       NENHUM VEÍCULO CADASTRADO.
                     </td>
                   </tr>
                 ) : (
                   veiculos.map((v) => (
                     <tr key={v.id}>
-                      <td>{v.placa || "-"}</td>
+                      <td className="font-bold">{v.placa || "-"}</td>
                       <td>{v.marca || "-"}</td>
                       <td>{v.modelo || "-"}</td>
                       <td>{v.ano || "-"}</td>
@@ -1020,7 +1051,7 @@ export default function ClientesPage() {
 
                           <button
                             onClick={() => removerVeiculo(v.id)}
-                            className="botao-mini"
+                            className="botao-mini danger"
                             type="button"
                           >
                             REMOVER
@@ -1036,7 +1067,14 @@ export default function ClientesPage() {
         </section>
 
         <section className="card">
-          <h2 className="titulo mb-4">HISTÓRICO DE CLIENTES</h2>
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">HISTÓRICO DE CLIENTES</h2>
+              <p className="section-subtitle">
+                Busque, edite, selecione veículos e mantenha a base organizada.
+              </p>
+            </div>
+          </div>
 
           <div className="overflow-auto">
             <table className="tabela min-w-[1100px]">
@@ -1054,13 +1092,13 @@ export default function ClientesPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-6 text-[#6C757D]">
+                    <td colSpan={6} className="empty-state">
                       CARREGANDO...
                     </td>
                   </tr>
                 ) : clientes.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-6 text-[#6C757D]">
+                    <td colSpan={6} className="empty-state">
                       NENHUM CLIENTE ENCONTRADO.
                     </td>
                   </tr>
@@ -1069,12 +1107,12 @@ export default function ClientesPage() {
                     <tr key={c.id}>
                       <td>
                         <div className="font-bold text-[#111]">{c.nome}</div>
-                        <div className="text-xs text-[#6C757D]">{c.email || "-"}</div>
+                        <div className="text-xs text-[#64748B]">{c.email || "-"}</div>
                       </td>
 
                       <td>
                         <div>{c.telefone || "-"}</div>
-                        <div className="text-xs text-[#6C757D]">
+                        <div className="text-xs text-[#64748B]">
                           {c.celular || c.whatsapp || "-"}
                         </div>
                       </td>
@@ -1085,12 +1123,16 @@ export default function ClientesPage() {
                         <div>
                           {[c.rua, c.numero].filter(Boolean).join(", ") || "-"}
                         </div>
-                        <div className="text-xs text-[#6C757D]">
+                        <div className="text-xs text-[#64748B]">
                           {[c.bairro, c.cidade, c.estado].filter(Boolean).join(" / ") || "-"}
                         </div>
                       </td>
 
-                      <td>{c.status || "ATIVO"}</td>
+                      <td>
+                        <span className={`status-chip ${statusClass(c.status || "ATIVO")}`}>
+                          {c.status || "ATIVO"}
+                        </span>
+                      </td>
 
                       <td>
                         <div className="flex gap-2 flex-wrap">
@@ -1112,7 +1154,7 @@ export default function ClientesPage() {
 
                           <button
                             onClick={() => removerCliente(c.id)}
-                            className="botao-mini"
+                            className="botao-mini danger"
                             type="button"
                           >
                             REMOVER
@@ -1126,80 +1168,145 @@ export default function ClientesPage() {
             </table>
           </div>
 
-          <Pagination
-            page={page}
-            setPage={setPage}
-            total={totalRegistros}
-            pageSize={pageSize}
-          />
+          <div className="mt-5">
+            <Pagination
+              page={page}
+              setPage={setPage}
+              total={totalRegistros}
+              pageSize={pageSize}
+            />
+          </div>
         </section>
       </main>
 
       <style jsx>{`
         .card {
           background: white;
-          border-radius: 20px;
-          padding: 18px;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          border-radius: 24px;
+          padding: 20px;
+          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+          border: 1px solid #eef2f7;
         }
 
-        .titulo {
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 18px;
+          flex-wrap: wrap;
+        }
+
+        .section-title {
           font-weight: 900;
-          font-size: 14px;
-          color: #6c757d;
+          font-size: 15px;
+          color: #334155;
+        }
+
+        .section-subtitle {
+          margin-top: 4px;
+          font-size: 12px;
+          color: #64748b;
         }
 
         .campo {
-          height: 44px;
-          border: 1.5px solid #9a9a9a;
-          border-radius: 10px;
+          height: 46px;
+          border: 1.5px solid #cbd5e1;
+          border-radius: 12px;
           padding: 0 12px;
           font-size: 14px;
           width: 100%;
           background: white;
-          color: #111827;
+          color: #0f172a;
+          outline: none;
+          transition: 0.2s;
+        }
+
+        .campo:focus,
+        .campo-textarea:focus {
+          border-color: #0a6fd6;
+          box-shadow: 0 0 0 4px rgba(10, 111, 214, 0.08);
         }
 
         .campo-textarea {
-          border: 1.5px solid #9a9a9a;
-          border-radius: 10px;
+          border: 1.5px solid #cbd5e1;
+          border-radius: 12px;
           padding: 10px 12px;
           font-size: 14px;
           width: 100%;
           min-height: 110px;
           background: white;
-          color: #111827;
+          color: #0f172a;
           resize: vertical;
+          outline: none;
         }
 
         .botao {
-          border: 1px solid #2f2f2f;
-          border-radius: 10px;
+          border: 1px solid #cbd5e1;
+          border-radius: 12px;
           padding: 10px 16px;
           font-size: 13px;
           background: white;
-          color: #1f1f1f;
-          font-weight: 500;
+          color: #1e293b;
+          font-weight: 700;
+        }
+
+        .botao-secundario {
+          height: 46px;
+          border: 1px solid #cbd5e1;
+          border-radius: 12px;
+          padding: 0 16px;
+          font-size: 13px;
+          background: white;
+          color: #1e293b;
+          font-weight: 700;
         }
 
         .botao-azul {
           background: #0456a3;
           color: white;
-          border-radius: 10px;
+          border-radius: 12px;
           padding: 10px 16px;
           font-size: 13px;
-          font-weight: 600;
+          font-weight: 700;
           border: none;
         }
 
         .botao-mini {
-          border: 1px solid #2f2f2f;
-          border-radius: 8px;
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
           padding: 6px 10px;
           font-size: 11px;
           background: white;
-          color: #1f1f1f;
-          font-weight: 500;
+          color: #1e293b;
+          font-weight: 700;
+        }
+
+        .botao-mini.danger {
+          border-color: #fecaca;
+          background: #fef2f2;
+          color: #b91c1c;
+        }
+
+        .botao-header {
+          border: 1px solid rgba(255, 255, 255, 0.45);
+          background: rgba(255, 255, 255, 0.12);
+          color: white;
+          font-weight: 800;
+          border-radius: 14px;
+          padding: 11px 16px;
+          font-size: 13px;
+          backdrop-filter: blur(10px);
+        }
+
+        .helper-badge {
+          background: #eff6ff;
+          color: #1d4ed8;
+          border: 1px solid #bfdbfe;
+          border-radius: 999px;
+          padding: 8px 12px;
+          font-size: 11px;
+          font-weight: 800;
         }
 
         .tabela {
@@ -1210,29 +1317,66 @@ export default function ClientesPage() {
         .tabela th {
           text-align: left;
           font-size: 12px;
-          padding: 12px;
-          border-bottom: 1px solid #e5e7eb;
-          color: #111827;
+          padding: 13px 12px;
+          border-bottom: 1px solid #e2e8f0;
+          color: #334155;
           font-weight: 900;
+          background: #f8fafc;
         }
 
         .tabela td {
           font-size: 13px;
           padding: 12px;
-          border-bottom: 1px solid #e5e7eb;
-          color: #1f2937;
+          border-bottom: 1px solid #eef2f7;
+          color: #334155;
           vertical-align: middle;
+        }
+
+        .empty-state {
+          text-align: center;
+          padding: 28px 12px;
+          color: #64748b;
+        }
+
+        .status-chip {
+          display: inline-flex;
+          border-radius: 999px;
+          padding: 6px 10px;
+          font-size: 11px;
+          font-weight: 900;
+        }
+
+        .status-ativo {
+          background: #dcfce7;
+          color: #15803d;
+        }
+
+        .status-inativo {
+          background: #fee2e2;
+          color: #b91c1c;
         }
       `}</style>
     </div>
   );
 }
 
-function CardKpi({ titulo, valor }: { titulo: string; valor: string }) {
+function KpiMini({
+  titulo,
+  valor,
+  destaque = false,
+}: {
+  titulo: string;
+  valor: string;
+  destaque?: boolean;
+}) {
   return (
-    <div className="bg-white rounded-[22px] shadow-sm p-5 min-h-[110px]">
-      <div className="text-[14px] font-bold text-[#6C757D]">{titulo}</div>
-      <div className="mt-3 text-[24px] font-black text-[#111]">{valor}</div>
+    <div
+      className={`rounded-[18px] px-4 py-3 ${
+        destaque ? "bg-white text-[#0456A3]" : "bg-white/12 text-white border border-white/15"
+      }`}
+    >
+      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">{titulo}</div>
+      <div className="mt-1 text-[18px] font-black leading-none">{valor}</div>
     </div>
   );
 }
