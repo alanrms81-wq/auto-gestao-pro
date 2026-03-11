@@ -5,46 +5,46 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/app/components/Sidebar";
 import { canAccess, isLogged } from "@/lib/authGuard";
 import { getEmpresaFiscal } from "@/lib/fiscal";
+import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/session";
 
 type Cliente = {
-  id: number;
+  id: string;
   nome: string;
-  telefone?: string;
-  email?: string;
-  cpfCnpj?: string;
-  cidade?: string;
-  estado?: string;
-  cep?: string;
-  rua?: string;
-  numero?: string;
-  bairro?: string;
+  telefone?: string | null;
+  email?: string | null;
+  cpf_cnpj?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
+  cep?: string | null;
+  rua?: string | null;
+  numero?: string | null;
+  bairro?: string | null;
 };
 
 type Produto = {
-  id: number;
+  id: string;
   nome: string;
-  sku?: string;
-  codigoSku?: string;
-  ncm?: string;
-  cfop?: string;
-  cest?: string;
-  unidade?: string;
-  origem?: string;
-  cstCsosn?: string;
-  aliquotaIcms?: number;
-  preco?: number;
-  precoVenda?: number;
-  precoBalcao?: number;
-  precoInstalacao?: number;
-  precoRevenda?: number;
-  estoqueAtual?: number;
-  controlaEstoque?: boolean;
-  status?: "ATIVO" | "INATIVO";
+  codigo_sku?: string | null;
+  ncm?: string | null;
+  cfop?: string | null;
+  cest?: string | null;
+  unidade?: string | null;
+  origem?: string | null;
+  cst_csosn?: string | null;
+  aliquota_icms?: number | null;
+  preco_venda?: number | null;
+  preco_balcao?: number | null;
+  preco_instalacao?: number | null;
+  preco_revenda?: number | null;
+  estoque_atual?: number | null;
+  controla_estoque?: boolean | null;
+  status?: string | null;
 };
 
 type VendaItem = {
   id: number;
-  produtoId: number | null;
+  produtoId: string | null;
   nome: string;
   codigo?: string;
   ncm?: string;
@@ -60,44 +60,45 @@ type VendaItem = {
 };
 
 type Venda = {
-  id: number;
+  id: string;
+  empresa_id: string;
   numero: string;
-  dataISO: string;
-  clienteId: number | null;
-  clienteNome: string;
-  clienteTelefone?: string;
-  formaPagamento: string;
-  status: "ABERTA" | "FINALIZADA" | "CANCELADA";
-  itens: VendaItem[];
-  subtotal: number;
-  desconto: number;
-  total: number;
-  observacoes?: string;
+  data_venda?: string | null;
+  cliente_id?: string | null;
+  cliente_nome?: string | null;
+  cliente_telefone?: string | null;
+  forma_pagamento?: string | null;
+  status?: string | null;
+  subtotal?: number | null;
+  desconto?: number | null;
+  total?: number | null;
+  observacoes?: string | null;
+  created_at?: string | null;
 };
 
-const LS_CLIENTES = "clientes";
-const LS_PRODUTOS = "produtos";
-const LS_VENDAS = "vendas";
+type VendaItemDB = {
+  id: string;
+  venda_id: string;
+  produto_id?: string | null;
+  produto_nome?: string | null;
+  codigo?: string | null;
+  ncm?: string | null;
+  cfop?: string | null;
+  cest?: string | null;
+  unidade?: string | null;
+  origem?: string | null;
+  cst_csosn?: string | null;
+  aliquota_icms?: number | null;
+  quantidade?: number | null;
+  valor_unitario?: number | null;
+  total?: number | null;
+};
 
-function up(v: any) {
+function up(v: unknown) {
   return String(v ?? "").toUpperCase();
 }
 
-function readLS<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLS<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-function toMoney(v: any) {
+function toMoney(v: unknown) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
@@ -109,36 +110,36 @@ function moneyBR(v: number) {
   });
 }
 
-function nextVendaNumero() {
-  const lista = readLS<Venda[]>(LS_VENDAS, []);
-  if (!lista.length) return "VD-000001";
+function formatDateTimeBr(value?: string | null) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("pt-BR");
+}
 
-  let maior = 0;
-  for (const item of lista) {
-    const m = String(item.numero || "").match(/\d+/);
-    const n = m ? Number(m[0]) : 0;
-    if (n > maior) maior = n;
-  }
+function formatDateBr(value?: string | null) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString("pt-BR");
+}
 
-  return `VD-${String(maior + 1).padStart(6, "0")}`;
+function hojeISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function agoraISO() {
+  return new Date().toISOString();
 }
 
 function getPrecoProduto(p: Produto) {
   return (
-    toMoney(p.precoBalcao) ||
-    toMoney(p.precoVenda) ||
-    toMoney(p.precoInstalacao) ||
-    toMoney(p.precoRevenda) ||
-    toMoney(p.preco) ||
+    toMoney(p.preco_balcao) ||
+    toMoney(p.preco_venda) ||
+    toMoney(p.preco_instalacao) ||
+    toMoney(p.preco_revenda) ||
     0
   );
-}
-
-function formatDateTimeBr(value?: string) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return value;
-  return d.toLocaleString("pt-BR");
 }
 
 function statusClass(status: string) {
@@ -149,26 +150,43 @@ function statusClass(status: string) {
   return "status-aberta";
 }
 
+function isPagamentoImediato(forma: string) {
+  const f = up(forma);
+  return (
+    f === "DINHEIRO" ||
+    f === "PIX" ||
+    f === "CARTÃO DE DÉBITO" ||
+    f === "CARTAO DE DEBITO" ||
+    f === "TRANSFERÊNCIA" ||
+    f === "TRANSFERENCIA"
+  );
+}
+
 export default function VendasPage() {
   const router = useRouter();
-  const empresa = getEmpresaFiscal();
+  const empresaFiscal = getEmpresaFiscal();
 
   const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [empresaId, setEmpresaId] = useState<string | null>(null);
+
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [historico, setHistorico] = useState<Venda[]>([]);
 
-  const [numeroVenda, setNumeroVenda] = useState(nextVendaNumero());
+  const [numeroVenda, setNumeroVenda] = useState("VD-000001");
   const [status, setStatus] = useState<"ABERTA" | "FINALIZADA" | "CANCELADA">("ABERTA");
   const [formaPagamento, setFormaPagamento] = useState("DINHEIRO");
 
   const [buscaCliente, setBuscaCliente] = useState("");
-  const [clienteId, setClienteId] = useState<number | null>(null);
+  const [clienteId, setClienteId] = useState<string | null>(null);
 
   const [buscaProduto, setBuscaProduto] = useState("");
   const [itens, setItens] = useState<VendaItem[]>([]);
 
   const [desconto, setDesconto] = useState("0");
   const [observacoes, setObservacoes] = useState("");
+  const [buscaHistorico, setBuscaHistorico] = useState("");
 
   const clienteBoxRef = useRef<HTMLDivElement | null>(null);
   const produtoBoxRef = useRef<HTMLDivElement | null>(null);
@@ -177,32 +195,115 @@ export default function VendasPage() {
   const [openProdutos, setOpenProdutos] = useState(false);
 
   useEffect(() => {
-    if (!isLogged()) {
-      router.push("/login");
-      return;
+    async function init() {
+      if (!isLogged()) {
+        router.push("/login");
+        return;
+      }
+
+      if (!canAccess("VENDAS")) {
+        alert("ACESSO NEGADO");
+        router.push("/dashboard");
+        return;
+      }
+
+      const user = await getSessionUser();
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      setEmpresaId(user.empresa_id);
+      await carregarBase(user.empresa_id);
+      setReady(true);
     }
 
-    if (!canAccess("VENDAS")) {
-      alert("ACESSO NEGADO");
-      router.push("/dashboard");
-      return;
-    }
-
-    setClientes(readLS<Cliente[]>(LS_CLIENTES, []));
-    setProdutos(readLS<Produto[]>(LS_PRODUTOS, []));
-    setReady(true);
+    init();
   }, [router]);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       const target = e.target as Node;
-      if (clienteBoxRef.current && !clienteBoxRef.current.contains(target)) setOpenClientes(false);
-      if (produtoBoxRef.current && !produtoBoxRef.current.contains(target)) setOpenProdutos(false);
+      if (clienteBoxRef.current && !clienteBoxRef.current.contains(target)) {
+        setOpenClientes(false);
+      }
+      if (produtoBoxRef.current && !produtoBoxRef.current.contains(target)) {
+        setOpenProdutos(false);
+      }
     }
 
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
+
+  async function gerarProximoNumero(empId: string) {
+    const { data, error } = await supabase
+      .from("vendas")
+      .select("numero")
+      .eq("empresa_id", empId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error || !data || data.length === 0) {
+      setNumeroVenda("VD-000001");
+      return;
+    }
+
+    let maior = 0;
+    for (const item of data) {
+      const m = String(item.numero || "").match(/\d+/);
+      const n = m ? Number(m[0]) : 0;
+      if (n > maior) maior = n;
+    }
+
+    setNumeroVenda(`VD-${String(maior + 1).padStart(6, "0")}`);
+  }
+
+  async function carregarBase(empId?: string) {
+    const eid = empId || empresaId;
+    if (!eid) return;
+
+    setLoading(true);
+
+    const [clientesResp, produtosResp, vendasResp] = await Promise.all([
+      supabase
+        .from("clientes")
+        .select("id,nome,telefone,email,cpf_cnpj,cidade,estado,cep,rua,numero,bairro")
+        .eq("empresa_id", eid)
+        .order("nome"),
+      supabase
+        .from("produtos")
+        .select(
+          "id,nome,codigo_sku,ncm,cfop,cest,unidade,origem,cst_csosn,aliquota_icms,preco_venda,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status"
+        )
+        .eq("empresa_id", eid)
+        .order("nome"),
+      supabase
+        .from("vendas")
+        .select("*")
+        .eq("empresa_id", eid)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (clientesResp.error) {
+      alert("ERRO CLIENTES: " + clientesResp.error.message);
+    }
+
+    if (produtosResp.error) {
+      alert("ERRO PRODUTOS: " + produtosResp.error.message);
+    }
+
+    if (vendasResp.error) {
+      alert("ERRO VENDAS: " + vendasResp.error.message);
+    }
+
+    setClientes((clientesResp.data || []) as Cliente[]);
+    setProdutos((produtosResp.data || []) as Produto[]);
+    setHistorico((vendasResp.data || []) as Venda[]);
+
+    await gerarProximoNumero(eid);
+    setLoading(false);
+  }
 
   const clienteSelecionado = useMemo(() => {
     return clientes.find((c) => c.id === clienteId) || null;
@@ -213,7 +314,7 @@ export default function VendasPage() {
     if (q.length < 2) return [];
     return clientes
       .filter((c) =>
-        up(`${c.nome} ${c.telefone || ""} ${c.email || ""} ${c.cpfCnpj || ""}`).includes(q)
+        up(`${c.nome} ${c.telefone || ""} ${c.email || ""} ${c.cpf_cnpj || ""}`).includes(q)
       )
       .slice(0, 10);
   }, [clientes, buscaCliente]);
@@ -223,7 +324,7 @@ export default function VendasPage() {
     if (q.length < 3) return [];
     return produtos
       .filter((p) => (p.status || "ATIVO") !== "INATIVO")
-      .filter((p) => up(`${p.nome} ${p.sku || ""} ${p.codigoSku || ""} ${p.ncm || ""}`).includes(q))
+      .filter((p) => up(`${p.nome} ${p.codigo_sku || ""} ${p.ncm || ""}`).includes(q))
       .slice(0, 12);
   }, [produtos, buscaProduto]);
 
@@ -234,6 +335,17 @@ export default function VendasPage() {
   const totalGeral = useMemo(() => {
     return Math.max(0, subtotal - toMoney(desconto));
   }, [subtotal, desconto]);
+
+  const historicoFiltrado = useMemo(() => {
+    const q = up(buscaHistorico.trim());
+    if (!q) return historico;
+
+    return historico.filter((v) =>
+      up(
+        `${v.numero || ""} ${v.cliente_nome || ""} ${v.cliente_telefone || ""} ${v.forma_pagamento || ""} ${v.status || ""}`
+      ).includes(q)
+    );
+  }, [historico, buscaHistorico]);
 
   function selecionarCliente(c: Cliente) {
     setClienteId(c.id);
@@ -247,17 +359,17 @@ export default function VendasPage() {
     setItens((prev) => [
       ...prev,
       {
-        id: Date.now(),
+        id: Date.now() + Math.floor(Math.random() * 1000),
         produtoId: p.id,
         nome: up(p.nome),
-        codigo: up(p.codigoSku || p.sku || ""),
+        codigo: up(p.codigo_sku || ""),
         ncm: up(p.ncm || ""),
         cfop: up(p.cfop || "5102"),
         cest: up(p.cest || ""),
         unidade: up(p.unidade || "UN"),
         origem: up(p.origem || "0"),
-        cstCsosn: up(p.cstCsosn || "102"),
-        aliquotaIcms: toMoney(p.aliquotaIcms || 0),
+        cstCsosn: up(p.cst_csosn || "102"),
+        aliquotaIcms: toMoney(p.aliquota_icms || 0),
         quantidade: 1,
         valorUnitario: preco,
         total: preco,
@@ -307,7 +419,6 @@ export default function VendasPage() {
   }
 
   function limparVenda() {
-    setNumeroVenda(nextVendaNumero());
     setStatus("ABERTA");
     setFormaPagamento("DINHEIRO");
     setBuscaCliente("");
@@ -318,11 +429,12 @@ export default function VendasPage() {
     setObservacoes("");
     setOpenClientes(false);
     setOpenProdutos(false);
+    if (empresaId) gerarProximoNumero(empresaId);
   }
 
   function montarHtmlPreviaFiscal() {
     const clienteNome = clienteSelecionado?.nome || "-";
-    const clienteDoc = clienteSelecionado?.cpfCnpj || "-";
+    const clienteDoc = clienteSelecionado?.cpf_cnpj || "-";
     const clienteEndereco = clienteSelecionado
       ? `${clienteSelecionado.rua || ""}${clienteSelecionado.numero ? ", " + clienteSelecionado.numero : ""}${clienteSelecionado.bairro ? " - " + clienteSelecionado.bairro : ""}${clienteSelecionado.cidade ? " - " + clienteSelecionado.cidade : ""}${clienteSelecionado.estado ? "/" + clienteSelecionado.estado : ""}`
       : "-";
@@ -369,19 +481,19 @@ export default function VendasPage() {
         <body>
           <div class="alerta">
             <b>PRÉVIA FISCAL / ESTRUTURA PRONTA PARA FUTURA NF-E</b><br/>
-            Ambiente: ${empresa.ambiente} • Série: ${empresa.serieNfe} • Próximo número: ${empresa.proximoNumeroNfe}
+            Ambiente: ${empresaFiscal.ambiente} • Série: ${empresaFiscal.serieNfe} • Próximo número: ${empresaFiscal.proximoNumeroNfe}
           </div>
 
           <div class="box">
             <div class="grid2">
               <div>
-                <div class="titulo">${empresa.razaoSocial || "-"}</div>
-                <div class="sub">FANTASIA: ${empresa.nomeFantasia || "-"}</div>
-                <div class="sub">CNPJ: ${empresa.cnpj || "-"}</div>
-                <div class="sub">IE: ${empresa.ie || "-"}</div>
-                <div class="sub">CRT: ${empresa.crt || "-"}</div>
-                <div class="sub">${empresa.rua || ""}, ${empresa.numero || ""} ${empresa.bairro ? "- " + empresa.bairro : ""}</div>
-                <div class="sub">${empresa.cidade || ""}/${empresa.estado || ""} CEP ${empresa.cep || ""}</div>
+                <div class="titulo">${empresaFiscal.razaoSocial || "-"}</div>
+                <div class="sub">FANTASIA: ${empresaFiscal.nomeFantasia || "-"}</div>
+                <div class="sub">CNPJ: ${empresaFiscal.cnpj || "-"}</div>
+                <div class="sub">IE: ${empresaFiscal.ie || "-"}</div>
+                <div class="sub">CRT: ${empresaFiscal.crt || "-"}</div>
+                <div class="sub">${empresaFiscal.rua || ""}, ${empresaFiscal.numero || ""} ${empresaFiscal.bairro ? "- " + empresaFiscal.bairro : ""}</div>
+                <div class="sub">${empresaFiscal.cidade || ""}/${empresaFiscal.estado || ""} CEP ${empresaFiscal.cep || ""}</div>
               </div>
 
               <div style="text-align:right;">
@@ -406,8 +518,8 @@ export default function VendasPage() {
               <b>DADOS FISCAIS</b><br/>
               <div class="sub">NATUREZA DA OPERAÇÃO: VENDA DE MERCADORIA</div>
               <div class="sub">FORMA DE PAGAMENTO: ${up(formaPagamento)}</div>
-              <div class="sub">CERTIFICADO: ${empresa.certificadoTipo || "-"}</div>
-              <div class="sub">CÓDIGO MUNICÍPIO IBGE: ${empresa.codigoMunicipio || "-"}</div>
+              <div class="sub">CERTIFICADO: ${empresaFiscal.certificadoTipo || "-"}</div>
+              <div class="sub">CÓDIGO MUNICÍPIO IBGE: ${empresaFiscal.codigoMunicipio || "-"}</div>
             </div>
           </div>
 
@@ -437,7 +549,7 @@ export default function VendasPage() {
           <div class="grid2">
             <div class="box obs">
               <b>OBSERVAÇÕES</b><br/>
-              <div class="sub">${up(observacoes || empresa.observacoesDanfe || "-")}</div>
+              <div class="sub">${up(observacoes || empresaFiscal.observacoesDanfe || "-")}</div>
             </div>
 
             <div class="box">
@@ -473,7 +585,9 @@ export default function VendasPage() {
     w.document.close();
   }
 
-  function salvarVenda() {
+  async function salvarVenda() {
+    if (!empresaId) return;
+
     if (!clienteSelecionado) {
       alert("SELECIONE UM CLIENTE.");
       return;
@@ -484,41 +598,222 @@ export default function VendasPage() {
       return;
     }
 
-    const nova: Venda = {
-      id: Date.now(),
-      numero: numeroVenda,
-      dataISO: new Date().toISOString(),
-      clienteId: clienteSelecionado.id,
-      clienteNome: clienteSelecionado.nome,
-      clienteTelefone: clienteSelecionado.telefone || "",
-      formaPagamento: up(formaPagamento),
-      status,
-      itens: itens.map((i) => ({
-        ...i,
-        nome: up(i.nome),
-        codigo: up(i.codigo || ""),
-        ncm: up(i.ncm || ""),
-        cfop: up(i.cfop || "5102"),
-        cest: up(i.cest || ""),
-        unidade: up(i.unidade || "UN"),
-        origem: up(i.origem || "0"),
-        cstCsosn: up(i.cstCsosn || "102"),
-        aliquotaIcms: toMoney(i.aliquotaIcms || 0),
-        quantidade: toMoney(i.quantidade),
-        valorUnitario: toMoney(i.valorUnitario),
-        total: toMoney(i.total),
-      })),
-      subtotal,
+    for (const item of itens) {
+      if (!item.produtoId) continue;
+
+      const produto = produtos.find((p) => p.id === item.produtoId);
+      if (!produto) continue;
+
+      if (produto.controla_estoque) {
+        const estoqueAtual = toMoney(produto.estoque_atual);
+        const qtd = toMoney(item.quantidade);
+
+        if (qtd > estoqueAtual) {
+          alert(`ESTOQUE INSUFICIENTE PARA ${item.nome}. DISPONÍVEL: ${estoqueAtual}`);
+          return;
+        }
+      }
+    }
+
+    const vendaPayload = {
+      empresa_id: empresaId,
+      numero: up(numeroVenda),
+      data_venda: agoraISO(),
+      cliente_id: clienteSelecionado.id,
+      cliente_nome: up(clienteSelecionado.nome),
+      cliente_telefone: clienteSelecionado.telefone || "",
+      forma_pagamento: up(formaPagamento),
+      status: up(status),
+      subtotal: subtotal,
       desconto: toMoney(desconto),
       total: totalGeral,
       observacoes: up(observacoes),
     };
 
-    const lista = readLS<Venda[]>(LS_VENDAS, []);
-    writeLS(LS_VENDAS, [...lista, nova]);
+    const { data: vendaCriada, error: vendaError } = await supabase
+      .from("vendas")
+      .insert([vendaPayload])
+      .select("id")
+      .single();
 
-    alert("VENDA SALVA!");
+    if (vendaError || !vendaCriada) {
+      alert("ERRO AO SALVAR VENDA: " + (vendaError?.message || ""));
+      return;
+    }
+
+    const vendaId = vendaCriada.id as string;
+
+    const itensPayload = itens.map((i) => ({
+      venda_id: vendaId,
+      produto_id: i.produtoId,
+      produto_nome: up(i.nome),
+      codigo: up(i.codigo || ""),
+      ncm: up(i.ncm || ""),
+      cfop: up(i.cfop || "5102"),
+      cest: up(i.cest || ""),
+      unidade: up(i.unidade || "UN"),
+      origem: up(i.origem || "0"),
+      cst_csosn: up(i.cstCsosn || "102"),
+      aliquota_icms: toMoney(i.aliquotaIcms || 0),
+      quantidade: toMoney(i.quantidade),
+      valor_unitario: toMoney(i.valorUnitario),
+      total: toMoney(i.total),
+    }));
+
+    const { error: itensError } = await supabase.from("venda_itens").insert(itensPayload);
+
+    if (itensError) {
+      alert("VENDA SALVA, MAS HOUVE ERRO AO SALVAR ITENS: " + itensError.message);
+      return;
+    }
+
+    for (const item of itens) {
+      if (!item.produtoId) continue;
+
+      const produto = produtos.find((p) => p.id === item.produtoId);
+      if (!produto || !produto.controla_estoque) continue;
+
+      const novoEstoque = Math.max(
+        0,
+        toMoney(produto.estoque_atual) - toMoney(item.quantidade)
+      );
+
+      const { error: estoqueError } = await supabase
+        .from("produtos")
+        .update({ estoque_atual: novoEstoque })
+        .eq("id", item.produtoId)
+        .eq("empresa_id", empresaId);
+
+      if (estoqueError) {
+        alert(`VENDA SALVA, MAS HOUVE ERRO AO BAIXAR ESTOQUE DE ${item.nome}: ${estoqueError.message}`);
+        return;
+      }
+    }
+
+    const pagamentoImediato = isPagamentoImediato(formaPagamento) && status === "FINALIZADA";
+
+    const financeiroPayload = {
+      empresa_id: empresaId,
+      tipo: "RECEBER",
+      descricao: up(`VENDA ${numeroVenda}`),
+      cliente_id: clienteSelecionado.id,
+      cliente_nome: up(clienteSelecionado.nome),
+      documento: up(numeroVenda),
+      categoria: "VENDAS",
+      valor_original: totalGeral,
+      valor_pago: pagamentoImediato ? totalGeral : 0,
+      desconto: 0,
+      juros: 0,
+      multa: 0,
+      data_emissao: hojeISO(),
+      data_vencimento: hojeISO(),
+      data_pagamento: pagamentoImediato ? hojeISO() : null,
+      forma_pagamento: up(formaPagamento),
+      status: pagamentoImediato ? "PAGO" : "ABERTO",
+      observacoes: up(observacoes || `TÍTULO GERADO AUTOMATICAMENTE DA VENDA ${numeroVenda}`),
+    };
+
+    const { error: financeiroError } = await supabase
+      .from("financeiro_titulos")
+      .insert([financeiroPayload]);
+
+    if (financeiroError) {
+      alert("VENDA SALVA, MAS HOUVE ERRO NO FINANCEIRO: " + financeiroError.message);
+      return;
+    }
+
+    alert("VENDA SALVA COM ESTOQUE E FINANCEIRO!");
+    await carregarBase();
     limparVenda();
+  }
+
+  async function cancelarVenda(venda: Venda) {
+    if (!empresaId) return;
+
+    if (up(venda.status || "") === "CANCELADA") {
+      alert("ESSA VENDA JÁ ESTÁ CANCELADA.");
+      return;
+    }
+
+    if (!confirm(`CANCELAR A VENDA ${venda.numero}? O ESTOQUE SERÁ DEVOLVIDO.`)) return;
+
+    const { data: itensVenda, error: itensError } = await supabase
+      .from("venda_itens")
+      .select("*")
+      .eq("venda_id", venda.id);
+
+    if (itensError) {
+      alert("ERRO AO BUSCAR ITENS DA VENDA: " + itensError.message);
+      return;
+    }
+
+    for (const item of (itensVenda || []) as VendaItemDB[]) {
+      if (!item.produto_id) continue;
+
+      const { data: produtoAtual, error: prodError } = await supabase
+        .from("produtos")
+        .select("id,estoque_atual,controla_estoque")
+        .eq("empresa_id", empresaId)
+        .eq("id", item.produto_id)
+        .single();
+
+      if (prodError || !produtoAtual) continue;
+      if (!produtoAtual.controla_estoque) continue;
+
+      const novoEstoque = toMoney(produtoAtual.estoque_atual) + toMoney(item.quantidade);
+
+      await supabase
+        .from("produtos")
+        .update({ estoque_atual: novoEstoque })
+        .eq("empresa_id", empresaId)
+        .eq("id", item.produto_id);
+    }
+
+    const { error: vendaError } = await supabase
+      .from("vendas")
+      .update({ status: "CANCELADA" })
+      .eq("empresa_id", empresaId)
+      .eq("id", venda.id);
+
+    if (vendaError) {
+      alert("ERRO AO CANCELAR VENDA: " + vendaError.message);
+      return;
+    }
+
+    await supabase
+      .from("financeiro_titulos")
+      .update({
+        status: "CANCELADO",
+        observacoes: up(`TÍTULO CANCELADO AUTOMATICAMENTE DA VENDA ${venda.numero}`),
+      })
+      .eq("empresa_id", empresaId)
+      .eq("documento", up(venda.numero));
+
+    alert("VENDA CANCELADA E ESTOQUE DEVOLVIDO!");
+    await carregarBase();
+  }
+
+  async function verItensVenda(venda: Venda) {
+    const { data, error } = await supabase
+      .from("venda_itens")
+      .select("*")
+      .eq("venda_id", venda.id);
+
+    if (error) {
+      alert("ERRO AO BUSCAR ITENS: " + error.message);
+      return;
+    }
+
+    const texto = (data || [])
+      .map(
+        (item: any, idx: number) =>
+          `${idx + 1}. ${item.produto_nome} | QTD: ${item.quantidade} | UNIT: ${moneyBR(
+            toMoney(item.valor_unitario)
+          )} | TOTAL: ${moneyBR(toMoney(item.total))}`
+      )
+      .join("\n");
+
+    alert(texto || "SEM ITENS.");
   }
 
   if (!ready) return <div className="p-6">CARREGANDO...</div>;
@@ -671,7 +966,7 @@ export default function VendasPage() {
                     </div>
                     <div>
                       <span className="info-label">DOCUMENTO</span>
-                      <div className="info-value">{clienteSelecionado.cpfCnpj || "-"}</div>
+                      <div className="info-value">{clienteSelecionado.cpf_cnpj || "-"}</div>
                     </div>
                   </div>
                 </div>
@@ -714,7 +1009,8 @@ export default function VendasPage() {
                           <div>
                             <div className="font-bold text-[#0F172A]">{up(p.nome)}</div>
                             <div className="text-xs text-[#64748B]">
-                              {up(p.codigoSku || p.sku || "-")} • NCM {up(p.ncm || "-")}
+                              {up(p.codigo_sku || "-")} • NCM {up(p.ncm || "-")} • ESTOQUE{" "}
+                              {toMoney(p.estoque_atual)}
                             </div>
                           </div>
                           <div className="font-black text-[#0456A3]">
@@ -824,6 +1120,88 @@ export default function VendasPage() {
                 </table>
               </div>
             </div>
+
+            <div className="card">
+              <div className="section-header">
+                <div>
+                  <h2 className="section-title">HISTÓRICO DE VENDAS</h2>
+                  <p className="section-subtitle">
+                    Consulte vendas realizadas, visualize itens e cancele quando necessário.
+                  </p>
+                </div>
+              </div>
+
+              <input
+                value={buscaHistorico}
+                onChange={(e) => setBuscaHistorico(e.target.value)}
+                placeholder="BUSCAR POR NÚMERO, CLIENTE, TELEFONE, PAGAMENTO OU STATUS..."
+                className="campo mb-4"
+              />
+
+              <div className="overflow-auto">
+                <table className="tabela min-w-[1100px]">
+                  <thead>
+                    <tr>
+                      <th>NÚMERO</th>
+                      <th>DATA</th>
+                      <th>CLIENTE</th>
+                      <th>PAGAMENTO</th>
+                      <th>STATUS</th>
+                      <th>TOTAL</th>
+                      <th>AÇÕES</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={7} className="empty-state">
+                          CARREGANDO...
+                        </td>
+                      </tr>
+                    ) : historicoFiltrado.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="empty-state">
+                          NENHUMA VENDA ENCONTRADA.
+                        </td>
+                      </tr>
+                    ) : (
+                      historicoFiltrado.map((v) => (
+                        <tr key={v.id}>
+                          <td className="font-bold">{v.numero}</td>
+                          <td>{formatDateTimeBr(v.created_at || v.data_venda)}</td>
+                          <td>{v.cliente_nome || "-"}</td>
+                          <td>{v.forma_pagamento || "-"}</td>
+                          <td>
+                            <span className={`pill ${statusClass(v.status || "ABERTA")}`}>
+                              {v.status || "-"}
+                            </span>
+                          </td>
+                          <td className="font-bold">{moneyBR(toMoney(v.total))}</td>
+                          <td>
+                            <div className="flex gap-2 flex-wrap">
+                              <button
+                                className="botao-mini"
+                                onClick={() => verItensVenda(v)}
+                                type="button"
+                              >
+                                ITENS
+                              </button>
+                              <button
+                                className="botao-mini danger"
+                                onClick={() => cancelarVenda(v)}
+                                type="button"
+                              >
+                                CANCELAR
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
 
           <aside className="space-y-6">
@@ -833,27 +1211,27 @@ export default function VendasPage() {
               <div className="resumo-box">
                 <div className="resumo-linha">
                   <span>EMPRESA</span>
-                  <strong>{empresa.nomeFantasia || "-"}</strong>
+                  <strong>{empresaFiscal.nomeFantasia || "-"}</strong>
                 </div>
                 <div className="resumo-linha">
                   <span>CNPJ</span>
-                  <strong>{empresa.cnpj || "-"}</strong>
+                  <strong>{empresaFiscal.cnpj || "-"}</strong>
                 </div>
                 <div className="resumo-linha">
                   <span>AMBIENTE</span>
-                  <strong>{empresa.ambiente}</strong>
+                  <strong>{empresaFiscal.ambiente}</strong>
                 </div>
                 <div className="resumo-linha">
                   <span>SÉRIE</span>
-                  <strong>{empresa.serieNfe}</strong>
+                  <strong>{empresaFiscal.serieNfe}</strong>
                 </div>
                 <div className="resumo-linha">
                   <span>PRÓXIMA NF</span>
-                  <strong>{empresa.proximoNumeroNfe}</strong>
+                  <strong>{empresaFiscal.proximoNumeroNfe}</strong>
                 </div>
                 <div className="resumo-linha">
                   <span>CERTIFICADO</span>
-                  <strong>{empresa.certificadoTipo || "-"}</strong>
+                  <strong>{empresaFiscal.certificadoTipo || "-"}</strong>
                 </div>
               </div>
             </div>
