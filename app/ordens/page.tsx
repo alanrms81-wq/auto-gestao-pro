@@ -158,6 +158,7 @@ function OrdensPageContent() {
 
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [carregandoEdicao, setCarregandoEdicao] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -219,12 +220,13 @@ function OrdensPageContent() {
 
   useEffect(() => {
     if (!ready || !empresaId || clientes.length === 0) return;
+    if (editingId) return;
 
     const clienteIdParam = searchParams.get("cliente_id");
     if (!clienteIdParam) return;
 
     carregarDadosDoAgendamento();
-  }, [ready, empresaId, clientes, searchParams]);
+  }, [ready, empresaId, clientes, searchParams, editingId]);
 
   async function carregarBase(eid?: string) {
     const emp = eid || empresaId;
@@ -241,16 +243,12 @@ function OrdensPageContent() {
           .order("nome"),
         supabase
           .from("produtos")
-          .select(
-            "id,nome,codigo_sku,preco_balcao,controla_estoque,estoque_atual"
-          )
+          .select("id,nome,codigo_sku,preco_balcao,controla_estoque,estoque_atual")
           .eq("empresa_id", emp)
           .order("nome"),
         supabase
           .from("servicos")
-          .select(
-            "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
-          )
+          .select("id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status")
           .eq("empresa_id", emp)
           .eq("status", "ATIVO")
           .order("nome"),
@@ -296,12 +294,74 @@ function OrdensPageContent() {
     setVeiculosCliente((data || []) as Veiculo[]);
   }
 
+  function limparFormularioBase() {
+    setNumeroOS(gerarNumeroOS());
+    setClienteId("");
+    setClienteNome("");
+    setBuscaCliente("");
+    setVeiculoId("");
+    setVeiculo("");
+    setPlaca("");
+    setKm("");
+    setVeiculosCliente([]);
+    setStatus("ABERTA");
+    setTecnico("");
+    setPrazoData("");
+    setGarantiaNumero("");
+    setGarantiaTipo("DIAS");
+    setFormaPagamento("DINHEIRO");
+    setDefeitoRelatado("");
+    setObservacoes("");
+    setBuscaProduto("");
+    setBuscaServico("");
+    setDesconto("0");
+    setAcrescimo("0");
+    setProdutosOS([]);
+    setServicosOS([]);
+    setMostrarDropdownCliente(false);
+    setMostrarDropdownProduto(false);
+    setMostrarDropdownServico(false);
+  }
+
+  async function preencherFormularioOS(os: OrdemServico) {
+    setNumeroOS(os.numero || gerarNumeroOS());
+    setClienteId(os.cliente_id || "");
+    setClienteNome(os.cliente_nome || "");
+    setBuscaCliente(os.cliente_nome || "");
+    setMostrarDropdownCliente(false);
+
+    if (os.cliente_id) {
+      await carregarVeiculosDoCliente(os.cliente_id);
+    } else {
+      setVeiculosCliente([]);
+    }
+
+    setVeiculoId(os.veiculo_id || "");
+    setVeiculo(os.veiculo_descricao || "");
+    setPlaca(os.placa || "");
+    setKm(os.km || "");
+
+    setStatus(os.status || "ABERTA");
+    setTecnico(os.tecnico_responsavel || "");
+    setPrazoData(os.prazo_data || "");
+    setGarantiaNumero(os.garantia_numero || "");
+    setGarantiaTipo(os.garantia_tipo || "DIAS");
+    setFormaPagamento(os.forma_pagamento || "DINHEIRO");
+    setDefeitoRelatado(os.defeito_relatado || "");
+    setObservacoes(os.observacoes || "");
+    setDesconto(String(toMoney(os.desconto)));
+    setAcrescimo(String(toMoney(os.acrescimo)));
+  }
+
   async function carregarDadosDoAgendamento() {
     const clienteIdParam = searchParams.get("cliente_id") || "";
     const veiculoIdParam = searchParams.get("veiculo_id") || "";
     const agendamentoIdParam = searchParams.get("agendamento_id") || "";
 
     if (!empresaId || !clienteIdParam) return;
+    if (editingId) return;
+
+    limparFormularioBase();
 
     const cliente = clientes.find((c) => c.id === clienteIdParam);
 
@@ -410,32 +470,7 @@ function OrdensPageContent() {
 
   function novaOS() {
     setEditingId(null);
-    setNumeroOS(gerarNumeroOS());
-    setClienteId("");
-    setClienteNome("");
-    setBuscaCliente("");
-    setVeiculoId("");
-    setVeiculo("");
-    setPlaca("");
-    setKm("");
-    setVeiculosCliente([]);
-    setStatus("ABERTA");
-    setTecnico("");
-    setPrazoData("");
-    setGarantiaNumero("");
-    setGarantiaTipo("DIAS");
-    setFormaPagamento("DINHEIRO");
-    setDefeitoRelatado("");
-    setObservacoes("");
-    setBuscaProduto("");
-    setBuscaServico("");
-    setDesconto("0");
-    setAcrescimo("0");
-    setProdutosOS([]);
-    setServicosOS([]);
-    setMostrarDropdownCliente(false);
-    setMostrarDropdownProduto(false);
-    setMostrarDropdownServico(false);
+    limparFormularioBase();
   }
 
   async function selecionarCliente(c: Cliente) {
@@ -675,7 +710,7 @@ function OrdensPageContent() {
 
     const agendamentoIdParam = searchParams.get("agendamento_id");
 
-    if (agendamentoIdParam && empresaId) {
+    if (agendamentoIdParam && !editingId && empresaId) {
       await supabase
         .from("agendamentos")
         .update({ status: "CONVERTIDO" })
@@ -685,52 +720,74 @@ function OrdensPageContent() {
 
     alert(editingId ? "OS ATUALIZADA!" : "OS SALVA COM SUCESSO!");
     novaOS();
-    carregarBase();
+    await carregarBase();
   }
 
   async function editarOS(item: OrdemServico) {
     if (!empresaId) return;
 
-    setEditingId(item.id);
-    setNumeroOS(item.numero || "");
-    setClienteId(item.cliente_id || "");
-    setClienteNome(item.cliente_nome || "");
-    setBuscaCliente(item.cliente_nome || "");
+    setCarregandoEdicao(true);
     setMostrarDropdownCliente(false);
+    setMostrarDropdownProduto(false);
+    setMostrarDropdownServico(false);
 
-    await carregarVeiculosDoCliente(item.cliente_id || "");
+    limparFormularioBase();
+    setEditingId(item.id);
 
-    setVeiculoId(item.veiculo_id || "");
-    setVeiculo(item.veiculo_descricao || "");
-    setPlaca(item.placa || "");
-    setKm(item.km || "");
+    const { data: osCompleta, error: osError } = await supabase
+      .from("ordens_servico")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .eq("id", item.id)
+      .single();
 
-    setStatus(item.status || "ABERTA");
-    setTecnico(item.tecnico_responsavel || "");
-    setPrazoData(item.prazo_data || "");
-    setGarantiaNumero(item.garantia_numero || "");
-    setGarantiaTipo(item.garantia_tipo || "DIAS");
-    setFormaPagamento(item.forma_pagamento || "DINHEIRO");
-    setDefeitoRelatado(item.defeito_relatado || "");
-    setObservacoes(item.observacoes || "");
-    setDesconto(String(toMoney(item.desconto)));
-    setAcrescimo(String(toMoney(item.acrescimo)));
+    if (osError || !osCompleta) {
+      alert("ERRO AO CARREGAR OS PARA EDIÇÃO: " + (osError?.message || ""));
+      setEditingId(null);
+      setCarregandoEdicao(false);
+      return;
+    }
+
+    await preencherFormularioOS(osCompleta as OrdemServico);
 
     const [prodResp, servResp] = await Promise.all([
       supabase
         .from("ordens_servico_produtos")
         .select("*")
         .eq("empresa_id", empresaId)
-        .eq("ordem_servico_id", item.id),
+        .eq("ordem_servico_id", item.id)
+        .order("created_at", { ascending: true }),
       supabase
         .from("ordens_servico_servicos")
         .select("*")
         .eq("empresa_id", empresaId)
-        .eq("ordem_servico_id", item.id),
+        .eq("ordem_servico_id", item.id)
+        .order("created_at", { ascending: true }),
     ]);
 
-    setProdutosOS((prodResp.data || []).map((p: any) => ({ ...p, id: p.id || makeLocalId() })));
-    setServicosOS((servResp.data || []).map((s: any) => ({ ...s, id: s.id || makeLocalId() })));
+    if (prodResp.error) {
+      alert("ERRO AO CARREGAR PRODUTOS DA OS: " + prodResp.error.message);
+    }
+
+    if (servResp.error) {
+      alert("ERRO AO CARREGAR SERVIÇOS DA OS: " + servResp.error.message);
+    }
+
+    setProdutosOS(
+      ((prodResp.data || []) as OsProduto[]).map((p) => ({
+        ...p,
+        id: p.id || makeLocalId(),
+      }))
+    );
+
+    setServicosOS(
+      ((servResp.data || []) as OsServico[]).map((s) => ({
+        ...s,
+        id: s.id || makeLocalId(),
+      }))
+    );
+
+    setCarregandoEdicao(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -763,7 +820,7 @@ function OrdensPageContent() {
 
     alert("OS REMOVIDA!");
     if (editingId === id) novaOS();
-    carregarBase();
+    await carregarBase();
   }
 
   async function faturarOS(item: OrdemServico) {
@@ -817,7 +874,7 @@ function OrdensPageContent() {
     }
 
     alert("OS FATURADA COM SUCESSO!");
-    carregarBase();
+    await carregarBase();
   }
 
   function imprimirOS(item: OrdemServico) {
@@ -849,7 +906,12 @@ function OrdensPageContent() {
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
                 <span className="pill pill-white">NÚMERO {numeroOS}</span>
                 <span className={`pill ${statusClass(status)}`}>{status}</span>
-                {editingId ? <span className="pill pill-warning">EDITANDO</span> : <span className="pill pill-success">NOVA</span>}
+                {editingId ? (
+                  <span className="pill pill-warning">EDITANDO</span>
+                ) : (
+                  <span className="pill pill-success">NOVA</span>
+                )}
+                {carregandoEdicao && <span className="pill pill-white">CARREGANDO EDIÇÃO</span>}
               </div>
             </div>
 
@@ -894,7 +956,9 @@ function OrdensPageContent() {
               <div className="section-header">
                 <div>
                   <h2 className="section-title">CLIENTE E VEÍCULO</h2>
-                  <p className="section-subtitle">Identifique rapidamente o cliente, veículo e dados principais da OS.</p>
+                  <p className="section-subtitle">
+                    Identifique rapidamente o cliente, veículo e dados principais da OS.
+                  </p>
                 </div>
               </div>
 
@@ -1033,7 +1097,9 @@ function OrdensPageContent() {
               <div className="section-header">
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
-                  <p className="section-subtitle">Busque por nome ou código e adicione rapidamente à OS.</p>
+                  <p className="section-subtitle">
+                    Busque por nome ou código e adicione rapidamente à OS.
+                  </p>
                 </div>
                 <div className="helper-badge">DIGITE 3 LETRAS</div>
               </div>
@@ -1142,7 +1208,9 @@ function OrdensPageContent() {
               <div className="section-header">
                 <div>
                   <h2 className="section-title">SERVIÇOS / MÃO DE OBRA</h2>
-                  <p className="section-subtitle">Adicione serviços cadastrados ou lance um serviço manual.</p>
+                  <p className="section-subtitle">
+                    Adicione serviços cadastrados ou lance um serviço manual.
+                  </p>
                 </div>
 
                 <button className="botao" onClick={adicionarServico} type="button">
@@ -1247,7 +1315,9 @@ function OrdensPageContent() {
               <div className="section-header">
                 <div>
                   <h2 className="section-title">HISTÓRICO DE ORDENS</h2>
-                  <p className="section-subtitle">Consulte e reutilize ordens de serviço anteriores.</p>
+                  <p className="section-subtitle">
+                    Consulte e reutilize ordens de serviço anteriores.
+                  </p>
                 </div>
               </div>
 
@@ -1531,16 +1601,6 @@ function OrdensPageContent() {
           background: white;
           color: #1e293b;
           font-weight: 700;
-        }
-
-        .botao-azul {
-          background: #0456a3;
-          color: white;
-          border-radius: 12px;
-          padding: 10px 16px;
-          font-size: 13px;
-          font-weight: 700;
-          border: none;
         }
 
         .botao-mini {

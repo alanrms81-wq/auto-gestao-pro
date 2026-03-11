@@ -217,10 +217,7 @@ export default function ProdutosPage() {
       .select("*", { count: "exact", head: true })
       .eq("empresa_id", empId);
 
-    let queryData = supabase
-      .from("produtos")
-      .select("*")
-      .eq("empresa_id", empId);
+    let queryData = supabase.from("produtos").select("*").eq("empresa_id", empId);
 
     if (termoBusca) {
       const filtro = [
@@ -263,9 +260,7 @@ export default function ProdutosPage() {
   const ativos = produtos.filter((p) => (p.status || "ATIVO") !== "INATIVO").length;
   const estoqueTotal = produtos.reduce((acc, p) => acc + toMoney(p.estoque_atual), 0);
   const estoqueBaixo = produtos.filter(
-    (p) =>
-      !!p.controla_estoque &&
-      toMoney(p.estoque_atual) <= toMoney(p.estoque_minimo)
+    (p) => !!p.controla_estoque && toMoney(p.estoque_atual) <= toMoney(p.estoque_minimo)
   ).length;
 
   function resetForm() {
@@ -477,12 +472,9 @@ export default function ProdutosPage() {
       );
 
       const controlaEstoqueCsv =
-        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !==
-          "NAO" &&
-        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !==
-          "NÃO" &&
-        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !==
-          "FALSE";
+        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !== "NAO" &&
+        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !== "NÃO" &&
+        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !== "FALSE";
 
       const estoqueAtualCsv = toMoney(
         getCell(row, map, ["estoque", "estoqueatual", "estoque_atual"])
@@ -558,52 +550,58 @@ export default function ProdutosPage() {
     <div className="min-h-screen flex bg-[#F4F6F8]">
       <Sidebar />
 
-      <main className="flex-1 p-4 md:p-6">
-        <div className="mb-6 rounded-[26px] bg-gradient-to-r from-[#0456A3] to-[#0A6FD6] p-5 md:p-6 text-white shadow-lg">
-          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
-            <div>
+      <main className="flex-1 min-w-0 p-4 md:p-6">
+        <div className="mb-6 rounded-[28px] bg-gradient-to-r from-[#0456A3] to-[#0A6FD6] p-5 md:p-6 text-white shadow-[0_20px_50px_rgba(4,86,163,0.25)]">
+          <div className="flex flex-col 2xl:flex-row 2xl:items-center 2xl:justify-between gap-5">
+            <div className="min-w-0">
               <p className="text-[12px] font-bold tracking-[0.2em] opacity-80">
                 AUTO GESTÃO PRO
               </p>
               <h1 className="mt-2 text-[28px] md:text-[34px] font-black leading-none">
                 PRODUTOS
               </h1>
-              <p className="mt-3 text-sm text-white/85">
-                CADASTRO COMPLETO, ESTOQUE, PREÇOS E BLOCO FISCAL
+              <p className="mt-3 text-sm text-white/85 max-w-[700px]">
+                Cadastro fiscal, controle de estoque, múltiplas tabelas de preço e gestão visual dos produtos.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
-              <KpiMini titulo="TOTAL" valor={String(total)} />
-              <KpiMini titulo="ATIVOS" valor={String(ativos)} />
-              <KpiMini titulo="ESTOQUE" valor={String(estoqueTotal)} />
-              <KpiMini titulo="EST. BAIXO" valor={String(estoqueBaixo)} destaque />
+            <div className="w-full 2xl:w-auto">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 w-full 2xl:w-[760px]">
+                <KpiMini titulo="TOTAL" valor={String(total)} />
+                <KpiMini titulo="ATIVOS" valor={String(ativos)} />
+                <KpiMini titulo="ESTOQUE" valor={String(estoqueTotal)} />
+                <KpiMini titulo="EST. BAIXO" valor={String(estoqueBaixo)} destaque />
+              </div>
             </div>
           </div>
 
-          <div className="mt-5 flex gap-3 flex-wrap">
-            <button
-              onClick={() => csvInputRef.current?.click()}
-              className="botao-header"
-              type="button"
-            >
-              IMPORTAR CSV
-            </button>
+          <div className="mt-5 flex flex-col xl:flex-row xl:items-center gap-3">
+            <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={() => csvInputRef.current?.click()}
+                className="botao-header"
+                type="button"
+              >
+                IMPORTAR CSV
+              </button>
 
-            <button
-              onClick={resetForm}
-              className="botao-header"
-              type="button"
-            >
-              NOVO PRODUTO
-            </button>
+              <button
+                onClick={resetForm}
+                className="botao-header"
+                type="button"
+              >
+                NOVO PRODUTO
+              </button>
+            </div>
 
-            <input
-              placeholder="BUSCAR PRODUTO..."
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              className="h-[48px] w-[320px] xl:w-[410px] max-w-full rounded-2xl border border-white/20 bg-white/10 px-5 text-[16px] text-white outline-none placeholder:text-white/70"
-            />
+            <div className="flex-1 xl:flex xl:justify-end">
+              <input
+                placeholder="BUSCAR PRODUTO..."
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                className="header-search"
+              />
+            </div>
 
             <input
               ref={csvInputRef}
@@ -626,7 +624,7 @@ export default function ProdutosPage() {
                 {editingId ? "EDITAR PRODUTO" : "NOVO PRODUTO"}
               </h2>
               <p className="section-subtitle">
-                Cadastre dados fiscais, preços, estoque e foto em um único fluxo.
+                Cadastre dados fiscais, preços, estoque e imagem em um único fluxo.
               </p>
             </div>
 
@@ -641,178 +639,176 @@ export default function ProdutosPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-6">
-            <div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <input
+                placeholder="NOME"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                className="campo md:col-span-2"
+              />
+
+              <input
+                placeholder="SKU / CÓDIGO INTERNO"
+                value={codigoSku}
+                onChange={(e) => setCodigoSku(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="CÓDIGO DE BARRAS"
+                value={codigoBarras}
+                onChange={(e) => setCodigoBarras(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="CATEGORIA"
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="SUBCATEGORIA"
+                value={subcategoria}
+                onChange={(e) => setSubcategoria(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="PREÇO BALCÃO"
+                value={precoBalcao}
+                onChange={(e) => setPrecoBalcao(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="PREÇO INSTALAÇÃO"
+                value={precoInstalacao}
+                onChange={(e) => setPrecoInstalacao(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="PREÇO REVENDA"
+                value={precoRevenda}
+                onChange={(e) => setPrecoRevenda(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="NCM"
+                value={ncm}
+                onChange={(e) => setNcm(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="CEST"
+                value={cest}
+                onChange={(e) => setCest(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="CFOP"
+                value={cfop}
+                onChange={(e) => setCfop(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="UN"
+                value={unidade}
+                onChange={(e) => setUnidade(e.target.value)}
+                className="campo"
+              />
+
+              <select
+                value={origem}
+                onChange={(e) => setOrigem(e.target.value)}
+                className="campo"
+              >
+                <option value="0">ORIGEM 0 - NACIONAL</option>
+                <option value="1">ORIGEM 1 - IMPORTAÇÃO DIRETA</option>
+                <option value="2">ORIGEM 2 - IMPORTAÇÃO MERCADO INTERNO</option>
+                <option value="3">ORIGEM 3</option>
+                <option value="4">ORIGEM 4</option>
+                <option value="5">ORIGEM 5</option>
+                <option value="6">ORIGEM 6</option>
+                <option value="7">ORIGEM 7</option>
+                <option value="8">ORIGEM 8</option>
+              </select>
+
+              <input
+                placeholder="CST / CSOSN"
+                value={cstCsosn}
+                onChange={(e) => setCstCsosn(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="ALÍQUOTA ICMS"
+                value={aliquotaIcms}
+                onChange={(e) => setAliquotaIcms(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="ALÍQUOTA PIS"
+                value={aliquotaPis}
+                onChange={(e) => setAliquotaPis(e.target.value)}
+                className="campo"
+              />
+
+              <input
+                placeholder="ALÍQUOTA COFINS"
+                value={aliquotaCofins}
+                onChange={(e) => setAliquotaCofins(e.target.value)}
+                className="campo"
+              />
+
+              <label className="campo checkbox-campo">
                 <input
-                  placeholder="NOME"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  className="campo md:col-span-2"
+                  type="checkbox"
+                  checked={controlaEstoque}
+                  onChange={(e) => setControlaEstoque(e.target.checked)}
                 />
+                <span>CONTROLA ESTOQUE</span>
+              </label>
 
-                <input
-                  placeholder="SKU / CÓDIGO INTERNO"
-                  value={codigoSku}
-                  onChange={(e) => setCodigoSku(e.target.value)}
-                  className="campo"
-                />
+              <input
+                placeholder="ESTOQUE ATUAL"
+                value={estoqueAtual}
+                onChange={(e) => setEstoqueAtual(e.target.value)}
+                className="campo"
+                disabled={!controlaEstoque}
+              />
 
-                <input
-                  placeholder="CÓDIGO DE BARRAS"
-                  value={codigoBarras}
-                  onChange={(e) => setCodigoBarras(e.target.value)}
-                  className="campo"
-                />
+              <input
+                placeholder="ESTOQUE MÍNIMO"
+                value={estoqueMinimo}
+                onChange={(e) => setEstoqueMinimo(e.target.value)}
+                className="campo"
+                disabled={!controlaEstoque}
+              />
 
-                <input
-                  placeholder="CATEGORIA"
-                  value={categoria}
-                  onChange={(e) => setCategoria(e.target.value)}
-                  className="campo"
-                />
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="campo"
+              >
+                <option value="ATIVO">ATIVO</option>
+                <option value="INATIVO">INATIVO</option>
+              </select>
 
-                <input
-                  placeholder="SUBCATEGORIA"
-                  value={subcategoria}
-                  onChange={(e) => setSubcategoria(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="PREÇO BALCÃO"
-                  value={precoBalcao}
-                  onChange={(e) => setPrecoBalcao(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="PREÇO INSTALAÇÃO"
-                  value={precoInstalacao}
-                  onChange={(e) => setPrecoInstalacao(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="PREÇO REVENDA"
-                  value={precoRevenda}
-                  onChange={(e) => setPrecoRevenda(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="NCM"
-                  value={ncm}
-                  onChange={(e) => setNcm(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="CEST"
-                  value={cest}
-                  onChange={(e) => setCest(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="CFOP"
-                  value={cfop}
-                  onChange={(e) => setCfop(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="UN"
-                  value={unidade}
-                  onChange={(e) => setUnidade(e.target.value)}
-                  className="campo"
-                />
-
-                <select
-                  value={origem}
-                  onChange={(e) => setOrigem(e.target.value)}
-                  className="campo"
-                >
-                  <option value="0">ORIGEM 0 - NACIONAL</option>
-                  <option value="1">ORIGEM 1 - IMPORTAÇÃO DIRETA</option>
-                  <option value="2">ORIGEM 2 - IMPORTAÇÃO MERCADO INTERNO</option>
-                  <option value="3">ORIGEM 3</option>
-                  <option value="4">ORIGEM 4</option>
-                  <option value="5">ORIGEM 5</option>
-                  <option value="6">ORIGEM 6</option>
-                  <option value="7">ORIGEM 7</option>
-                  <option value="8">ORIGEM 8</option>
-                </select>
-
-                <input
-                  placeholder="CST / CSOSN"
-                  value={cstCsosn}
-                  onChange={(e) => setCstCsosn(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="ALÍQUOTA ICMS"
-                  value={aliquotaIcms}
-                  onChange={(e) => setAliquotaIcms(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="ALÍQUOTA PIS"
-                  value={aliquotaPis}
-                  onChange={(e) => setAliquotaPis(e.target.value)}
-                  className="campo"
-                />
-
-                <input
-                  placeholder="ALÍQUOTA COFINS"
-                  value={aliquotaCofins}
-                  onChange={(e) => setAliquotaCofins(e.target.value)}
-                  className="campo"
-                />
-
-                <label className="campo checkbox-campo">
-                  <input
-                    type="checkbox"
-                    checked={controlaEstoque}
-                    onChange={(e) => setControlaEstoque(e.target.checked)}
-                  />
-                  <span>CONTROLA ESTOQUE</span>
-                </label>
-
-                <input
-                  placeholder="ESTOQUE ATUAL"
-                  value={estoqueAtual}
-                  onChange={(e) => setEstoqueAtual(e.target.value)}
-                  className="campo"
-                  disabled={!controlaEstoque}
-                />
-
-                <input
-                  placeholder="ESTOQUE MÍNIMO"
-                  value={estoqueMinimo}
-                  onChange={(e) => setEstoqueMinimo(e.target.value)}
-                  className="campo"
-                  disabled={!controlaEstoque}
-                />
-
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="campo"
-                >
-                  <option value="ATIVO">ATIVO</option>
-                  <option value="INATIVO">INATIVO</option>
-                </select>
-
-                <input
-                  placeholder="URL DA FOTO"
-                  value={fotoUrl}
-                  onChange={(e) => setFotoUrl(e.target.value)}
-                  className="campo md:col-span-4"
-                />
-              </div>
+              <input
+                placeholder="URL DA FOTO"
+                value={fotoUrl}
+                onChange={(e) => setFotoUrl(e.target.value)}
+                className="campo md:col-span-4"
+              />
             </div>
 
             <div className="foto-card">
@@ -863,6 +859,10 @@ export default function ProdutosPage() {
                 <div className="resumo-linha">
                   <span>P. REVENDA</span>
                   <strong>{moneyBR(toMoney(precoRevenda))}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>ESTOQUE</span>
+                  <strong>{controlaEstoque ? toMoney(estoqueAtual) : "NÃO CONTROLA"}</strong>
                 </div>
               </div>
             </div>
@@ -925,8 +925,8 @@ export default function ProdutosPage() {
                             )}
                           </div>
 
-                          <div>
-                            <div className="font-bold text-[#0F172A]">{p.nome}</div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-[#0F172A] truncate">{p.nome}</div>
                             <div className="text-xs text-[#64748B]">
                               {p.categoria || "-"}
                               {p.subcategoria ? ` / ${p.subcategoria}` : ""}
@@ -1054,6 +1054,24 @@ export default function ProdutosPage() {
           color: #8b929a;
         }
 
+        .header-search {
+          height: 48px;
+          width: 100%;
+          max-width: 460px;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          background: rgba(255, 255, 255, 0.12);
+          padding: 0 18px;
+          font-size: 15px;
+          color: white;
+          outline: none;
+          backdrop-filter: blur(10px);
+        }
+
+        .header-search::placeholder {
+          color: rgba(255, 255, 255, 0.72);
+        }
+
         .checkbox-campo {
           display: flex;
           align-items: center;
@@ -1064,9 +1082,9 @@ export default function ProdutosPage() {
 
         .foto-card {
           border: 1px solid #e2e8f0;
-          border-radius: 20px;
+          border-radius: 22px;
           padding: 16px;
-          background: #f8fafc;
+          background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
         }
 
         .foto-title {
@@ -1106,6 +1124,7 @@ export default function ProdutosPage() {
           font-size: 13px;
           font-weight: 700;
           border: none;
+          box-shadow: 0 10px 20px rgba(4, 86, 163, 0.18);
         }
 
         .danger-button {
@@ -1152,6 +1171,7 @@ export default function ProdutosPage() {
           color: #334155;
           font-weight: 900;
           background: #f8fafc;
+          white-space: nowrap;
         }
 
         .tabela td {
@@ -1172,6 +1192,7 @@ export default function ProdutosPage() {
           display: flex;
           align-items: center;
           gap: 12px;
+          min-width: 240px;
         }
 
         .produto-foto {
@@ -1241,12 +1262,14 @@ function KpiMini({
 }) {
   return (
     <div
-      className={`rounded-[18px] px-4 py-3 ${
+      className={`rounded-[18px] px-4 py-3 min-w-0 ${
         destaque ? "bg-white text-[#0456A3]" : "bg-white/12 text-white border border-white/15"
       }`}
     >
-      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">{titulo}</div>
-      <div className="mt-1 text-[18px] font-black leading-none">{valor}</div>
+      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80 truncate">
+        {titulo}
+      </div>
+      <div className="mt-1 text-[18px] font-black leading-none truncate">{valor}</div>
     </div>
   );
 }
