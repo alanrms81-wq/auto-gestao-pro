@@ -142,6 +142,16 @@ function montarDescricaoVeiculo(v: Veiculo) {
   return [v.marca, v.modelo, v.ano].filter(Boolean).join(" / ");
 }
 
+function statusClass(status: string) {
+  const s = up(status);
+  if (s === "ABERTA") return "status-aberta";
+  if (s === "EM ANDAMENTO") return "status-andamento";
+  if (s === "FINALIZADA") return "status-finalizada";
+  if (s === "ENTREGUE") return "status-entregue";
+  if (s === "CANCELADA") return "status-cancelada";
+  return "status-aberta";
+}
+
 function OrdensPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -247,14 +257,10 @@ function OrdensPageContent() {
           .order("created_at", { ascending: false }),
       ]);
 
-    if (clientesResp.error)
-      alert("ERRO CLIENTES: " + clientesResp.error.message);
-    if (produtosResp.error)
-      alert("ERRO PRODUTOS: " + produtosResp.error.message);
-    if (servicosResp.error)
-      alert("ERRO SERVIÇOS: " + servicosResp.error.message);
-    if (historicoResp.error)
-      alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
+    if (clientesResp.error) alert("ERRO CLIENTES: " + clientesResp.error.message);
+    if (produtosResp.error) alert("ERRO PRODUTOS: " + produtosResp.error.message);
+    if (servicosResp.error) alert("ERRO SERVIÇOS: " + servicosResp.error.message);
+    if (historicoResp.error) alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
 
     setClientes((clientesResp.data || []) as Cliente[]);
     setProdutosBase((produtosResp.data || []) as Produto[]);
@@ -342,9 +348,7 @@ function OrdensPageContent() {
     return clientes
       .filter((c) =>
         up(
-          `${c.nome} ${c.telefone || ""} ${c.celular || ""} ${
-            c.whatsapp || ""
-          } ${c.cpf_cnpj || ""}`
+          `${c.nome} ${c.telefone || ""} ${c.celular || ""} ${c.whatsapp || ""} ${c.cpf_cnpj || ""}`
         ).includes(q)
       )
       .slice(0, 8);
@@ -365,11 +369,7 @@ function OrdensPageContent() {
 
     return servicosBase
       .filter((s) =>
-        up(
-          `${s.nome || ""} ${s.descricao || ""} ${s.categoria || ""} ${
-            s.tempo_estimado || ""
-          }`
-        ).includes(q)
+        up(`${s.nome || ""} ${s.descricao || ""} ${s.categoria || ""} ${s.tempo_estimado || ""}`).includes(q)
       )
       .slice(0, 8);
   }, [servicosBase, buscaServico]);
@@ -380,36 +380,27 @@ function OrdensPageContent() {
 
     return historico.filter((item) =>
       up(
-        `${item.numero || ""} ${item.cliente_nome || ""} ${
-          item.veiculo_descricao || ""
-        } ${item.status || ""} ${item.placa || ""}`
+        `${item.numero || ""} ${item.cliente_nome || ""} ${item.veiculo_descricao || ""} ${item.status || ""} ${item.placa || ""}`
       ).includes(q)
     );
   }, [historico, buscaHistorico]);
 
   const subtotalProdutos = useMemo(() => {
     return produtosOS.reduce(
-      (acc, item) =>
-        acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      (acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
       0
     );
   }, [produtosOS]);
 
   const subtotalServicos = useMemo(() => {
     return servicosOS.reduce(
-      (acc, item) =>
-        acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      (acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
       0
     );
   }, [servicosOS]);
 
   const totalGeral = useMemo(() => {
-    return (
-      subtotalProdutos +
-      subtotalServicos -
-      toMoney(desconto) +
-      toMoney(acrescimo)
-    );
+    return subtotalProdutos + subtotalServicos - toMoney(desconto) + toMoney(acrescimo);
   }, [subtotalProdutos, subtotalServicos, desconto, acrescimo]);
 
   function novaOS() {
@@ -493,11 +484,7 @@ function OrdensPageContent() {
     setBuscaServico("");
   }
 
-  function atualizarProdutoOS(
-    id: string | undefined,
-    campo: keyof OsProduto,
-    valor: unknown
-  ) {
+  function atualizarProdutoOS(id: string | undefined, campo: keyof OsProduto, valor: unknown) {
     setProdutosOS((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
@@ -535,11 +522,7 @@ function OrdensPageContent() {
     ]);
   }
 
-  function atualizarServicoOS(
-    id: string | undefined,
-    campo: keyof OsServico,
-    valor: unknown
-  ) {
+  function atualizarServicoOS(id: string | undefined, campo: keyof OsServico, valor: unknown) {
     setServicosOS((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
@@ -684,9 +667,7 @@ function OrdensPageContent() {
     if (agendamentoIdParam && empresaId) {
       await supabase
         .from("agendamentos")
-        .update({
-          status: "CONVERTIDO",
-        })
+        .update({ status: "CONVERTIDO" })
         .eq("empresa_id", empresaId)
         .eq("id", agendamentoIdParam);
     }
@@ -736,12 +717,8 @@ function OrdensPageContent() {
         .eq("ordem_servico_id", item.id),
     ]);
 
-    setProdutosOS(
-      (prodResp.data || []).map((p: any) => ({ ...p, id: p.id || makeLocalId() }))
-    );
-    setServicosOS(
-      (servResp.data || []).map((s: any) => ({ ...s, id: s.id || makeLocalId() }))
-    );
+    setProdutosOS((prodResp.data || []).map((p: any) => ({ ...p, id: p.id || makeLocalId() })));
+    setServicosOS((servResp.data || []).map((s: any) => ({ ...s, id: s.id || makeLocalId() })));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -823,9 +800,7 @@ function OrdensPageContent() {
       ]);
 
     if (financeiroError) {
-      alert(
-        "OS FATURADA, MAS HOUVE ERRO NO FINANCEIRO: " + financeiroError.message
-      );
+      alert("OS FATURADA, MAS HOUVE ERRO NO FINANCEIRO: " + financeiroError.message);
       return;
     }
 
@@ -846,82 +821,93 @@ function OrdensPageContent() {
   }
 
   return (
-    <div className="min-h-screen flex bg-[#F3F4F6]">
+    <div className="min-h-screen flex bg-[#F4F6F8]">
       <Sidebar />
 
-      <main className="flex-1 p-6">
-        <div className="flex justify-between items-start mb-6 gap-4 flex-wrap">
-          <div>
-            <h1 className="text-[26px] font-black text-[#6C757D]">
-              ORDEM DE SERVIÇO
-            </h1>
+      <main className="flex-1 p-4 md:p-6">
+        <div className="mb-6 rounded-[26px] bg-gradient-to-r from-[#0456A3] to-[#0A6FD6] p-5 md:p-6 text-white shadow-lg">
+          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+            <div>
+              <p className="text-[12px] font-bold tracking-[0.2em] opacity-80">
+                AUTO GESTÃO PRO
+              </p>
+              <h1 className="mt-2 text-[28px] md:text-[34px] font-black leading-none">
+                ORDEM DE SERVIÇO
+              </h1>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                <span className="pill pill-white">NÚMERO {numeroOS}</span>
+                <span className={`pill ${statusClass(status)}`}>{status}</span>
+                {editingId ? <span className="pill pill-warning">EDITANDO</span> : <span className="pill pill-success">NOVA</span>}
+              </div>
+            </div>
 
-            <p className="text-sm text-[#6C757D] mt-1">NÚMERO: {numeroOS}</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
+              <KpiMini titulo="PRODUTOS" valor={moneyBR(subtotalProdutos)} />
+              <KpiMini titulo="SERVIÇOS" valor={moneyBR(subtotalServicos)} />
+              <KpiMini titulo="TOTAL" valor={moneyBR(totalGeral)} destaque />
+              <KpiMini titulo="ITENS" valor={String(produtosOS.length + servicosOS.length)} />
+            </div>
           </div>
 
-          <div className="flex gap-3 flex-wrap">
-            <button
-              className="botao"
-              onClick={() =>
-                editingId && imprimirOS({ id: editingId } as OrdemServico)
-              }
-              type="button"
-            >
-              IMPRESSÃO DE OS
-            </button>
-
-            <button
-              className="botao"
-              onClick={() =>
-                editingId &&
-                imprimirTecnico({ id: editingId } as OrdemServico)
-              }
-              type="button"
-            >
-              IMPRESSÃO OS TÉCNICOS
-            </button>
-
-            <button className="botao-azul" onClick={salvarOS} type="button">
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button className="botao-header-primary" onClick={salvarOS} type="button">
               SALVAR OS
             </button>
 
-            <button className="botao" onClick={novaOS} type="button">
+            <button className="botao-header" onClick={novaOS} type="button">
               NOVA OS
+            </button>
+
+            <button
+              className="botao-header"
+              onClick={() => editingId && imprimirOS({ id: editingId } as OrdemServico)}
+              type="button"
+            >
+              IMPRIMIR OS
+            </button>
+
+            <button
+              className="botao-header"
+              onClick={() => editingId && imprimirTecnico({ id: editingId } as OrdemServico)}
+              type="button"
+            >
+              IMPRIMIR TÉCNICO
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6">
           <div className="space-y-6">
             <section className="card">
+              <div className="section-header">
+                <div>
+                  <h2 className="section-title">CLIENTE E VEÍCULO</h2>
+                  <p className="section-subtitle">Identifique rapidamente o cliente, veículo e dados principais da OS.</p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 relative">
                   <label className="label">CLIENTE</label>
                   <input
-                    placeholder="DIGITE O NOME, TELEFONE OU DOCUMENTO..."
+                    placeholder="DIGITE NOME, TELEFONE OU DOCUMENTO..."
                     className="campo"
                     value={buscaCliente}
                     onChange={(e) => setBuscaCliente(e.target.value)}
                   />
 
                   {buscaCliente.trim() && clientesFiltrados.length > 0 && (
-                    <div className="absolute z-20 mt-1 w-full rounded-xl border border-[#D1D5DB] bg-white shadow-lg max-h-[220px] overflow-auto">
+                    <div className="dropdown">
                       {clientesFiltrados.map((c) => (
                         <button
                           key={c.id}
                           type="button"
                           onClick={() => selecionarCliente(c)}
-                          className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
+                          className="dropdown-item"
                         >
-                          <div className="font-semibold text-[#111827]">
-                            {c.nome}
-                          </div>
+                          <div className="font-semibold text-[#111827]">{c.nome}</div>
                           <div className="text-xs text-[#6B7280]">
-                            {c.telefone ||
-                              c.celular ||
-                              c.whatsapp ||
-                              c.cpf_cnpj ||
-                              "-"}
+                            {c.telefone || c.celular || c.whatsapp || c.cpf_cnpj || "-"}
                           </div>
                         </button>
                       ))}
@@ -940,8 +926,7 @@ function OrdensPageContent() {
                     <option value="">SELECIONE O VEÍCULO</option>
                     {veiculosCliente.map((v) => (
                       <option key={v.id} value={v.id}>
-                        {montarDescricaoVeiculo(v)}{" "}
-                        {v.placa ? `- ${v.placa}` : ""}
+                        {montarDescricaoVeiculo(v)} {v.placa ? `- ${v.placa}` : ""}
                       </option>
                     ))}
                   </select>
@@ -968,44 +953,6 @@ function OrdensPageContent() {
                 </div>
 
                 <div>
-                  <label className="label">STATUS</label>
-                  <select
-                    className="campo"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                  >
-                    <option>ABERTA</option>
-                    <option>EM ANDAMENTO</option>
-                    <option>FINALIZADA</option>
-                    <option>ENTREGUE</option>
-                    <option>CANCELADA</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label">GARANTIA</label>
-                  <input
-                    placeholder="NÚMERO"
-                    className="campo"
-                    value={garantiaNumero}
-                    onChange={(e) => setGarantiaNumero(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="label">TIPO</label>
-                  <select
-                    className="campo"
-                    value={garantiaTipo}
-                    onChange={(e) => setGarantiaTipo(e.target.value)}
-                  >
-                    <option>DIAS</option>
-                    <option>MESES</option>
-                    <option>ANOS</option>
-                  </select>
-                </div>
-
-                <div>
                   <label className="label">FORMA DE PAGAMENTO</label>
                   <select
                     className="campo"
@@ -1019,22 +966,37 @@ function OrdensPageContent() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="label">PLACA</label>
-                  <input
-                    className="campo"
-                    value={placa}
-                    onChange={(e) => setPlaca(e.target.value)}
-                  />
+                <div className="placa-card">
+                  <span className="placa-label">PLACA</span>
+                  <span className="placa-valor">{placa || "--- ----"}</span>
                 </div>
 
                 <div>
                   <label className="label">KM</label>
+                  <input className="campo" value={km} onChange={(e) => setKm(e.target.value)} />
+                </div>
+
+                <div>
+                  <label className="label">GARANTIA</label>
                   <input
+                    placeholder="NÚMERO"
                     className="campo"
-                    value={km}
-                    onChange={(e) => setKm(e.target.value)}
+                    value={garantiaNumero}
+                    onChange={(e) => setGarantiaNumero(e.target.value)}
                   />
+                </div>
+
+                <div>
+                  <label className="label">TIPO GARANTIA</label>
+                  <select
+                    className="campo"
+                    value={garantiaTipo}
+                    onChange={(e) => setGarantiaTipo(e.target.value)}
+                  >
+                    <option>DIAS</option>
+                    <option>MESES</option>
+                    <option>ANOS</option>
+                  </select>
                 </div>
 
                 <div className="md:col-span-3">
@@ -1043,21 +1005,22 @@ function OrdensPageContent() {
                     className="campo-textarea"
                     value={defeitoRelatado}
                     onChange={(e) => setDefeitoRelatado(e.target.value)}
+                    placeholder="DESCREVA O RELATO DO CLIENTE, SINTOMAS, TESTES INICIAIS..."
                   />
                 </div>
               </div>
             </section>
 
             <section className="card">
-              <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
-                <h2 className="titulo">PRODUTOS</h2>
-
-                <p className="text-xs text-[#6C757D]">
-                  DIGITE 3 LETRAS PARA BUSCAR
-                </p>
+              <div className="section-header">
+                <div>
+                  <h2 className="section-title">PRODUTOS</h2>
+                  <p className="section-subtitle">Busque por nome ou código e adicione rapidamente à OS.</p>
+                </div>
+                <div className="helper-badge">DIGITE 3 LETRAS</div>
               </div>
 
-              <div className="relative flex gap-3 mb-3">
+              <div className="relative mb-4">
                 <input
                   placeholder="BUSCAR PRODUTO POR NOME OU CÓDIGO..."
                   className="campo"
@@ -1065,27 +1028,23 @@ function OrdensPageContent() {
                   onChange={(e) => setBuscaProduto(e.target.value)}
                 />
 
-                {buscaProduto.trim().length >= 3 &&
-                  produtosFiltrados.length > 0 && (
-                    <div className="absolute top-[48px] left-0 right-0 z-20 rounded-xl border border-[#D1D5DB] bg-white shadow-lg max-h-[220px] overflow-auto">
-                      {produtosFiltrados.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => adicionarProdutoDoBanco(p)}
-                          className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
-                        >
-                          <div className="font-semibold text-[#111827]">
-                            {p.nome}
-                          </div>
-                          <div className="text-xs text-[#6B7280]">
-                            {p.codigo_sku || "-"} •{" "}
-                            {moneyBR(toMoney(p.preco_balcao))}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                {buscaProduto.trim().length >= 3 && produtosFiltrados.length > 0 && (
+                  <div className="dropdown top-full mt-2">
+                    {produtosFiltrados.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => adicionarProdutoDoBanco(p)}
+                        className="dropdown-item"
+                      >
+                        <div className="font-semibold text-[#111827]">{p.nome}</div>
+                        <div className="text-xs text-[#6B7280]">
+                          {p.codigo_sku || "-"} • {moneyBR(toMoney(p.preco_balcao))}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <table className="tabela">
@@ -1103,10 +1062,7 @@ function OrdensPageContent() {
                 <tbody>
                   {produtosOS.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={6}
-                        className="text-center py-6 text-[#6C757D]"
-                      >
+                      <td colSpan={6} className="empty-state">
                         NENHUM PRODUTO ADICIONADO.
                       </td>
                     </tr>
@@ -1117,26 +1073,14 @@ function OrdensPageContent() {
                           <input
                             className="campo-tabela"
                             value={item.produto_nome || ""}
-                            onChange={(e) =>
-                              atualizarProdutoOS(
-                                item.id,
-                                "produto_nome",
-                                e.target.value
-                              )
-                            }
+                            onChange={(e) => atualizarProdutoOS(item.id, "produto_nome", e.target.value)}
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             value={item.codigo || ""}
-                            onChange={(e) =>
-                              atualizarProdutoOS(
-                                item.id,
-                                "codigo",
-                                e.target.value
-                              )
-                            }
+                            onChange={(e) => atualizarProdutoOS(item.id, "codigo", e.target.value)}
                           />
                         </td>
                         <td>
@@ -1144,13 +1088,7 @@ function OrdensPageContent() {
                             className="campo-tabela"
                             type="number"
                             value={toMoney(item.quantidade)}
-                            onChange={(e) =>
-                              atualizarProdutoOS(
-                                item.id,
-                                "quantidade",
-                                e.target.value
-                              )
-                            }
+                            onChange={(e) => atualizarProdutoOS(item.id, "quantidade", e.target.value)}
                           />
                         </td>
                         <td>
@@ -1158,27 +1096,14 @@ function OrdensPageContent() {
                             className="campo-tabela"
                             type="number"
                             value={toMoney(item.valor_unitario)}
-                            onChange={(e) =>
-                              atualizarProdutoOS(
-                                item.id,
-                                "valor_unitario",
-                                e.target.value
-                              )
-                            }
+                            onChange={(e) => atualizarProdutoOS(item.id, "valor_unitario", e.target.value)}
                           />
                         </td>
-                        <td>
-                          {moneyBR(
-                            toMoney(item.quantidade) *
-                              toMoney(item.valor_unitario)
-                          )}
+                        <td className="font-bold text-[#0F172A]">
+                          {moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}
                         </td>
                         <td>
-                          <button
-                            className="botao-mini"
-                            onClick={() => removerProdutoOS(item.id)}
-                            type="button"
-                          >
+                          <button className="botao-mini danger" onClick={() => removerProdutoOS(item.id)} type="button">
                             REMOVER
                           </button>
                         </td>
@@ -1190,15 +1115,18 @@ function OrdensPageContent() {
             </section>
 
             <section className="card">
-              <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
-                <h2 className="titulo">MÃO DE OBRA / SERVIÇOS</h2>
+              <div className="section-header">
+                <div>
+                  <h2 className="section-title">SERVIÇOS / MÃO DE OBRA</h2>
+                  <p className="section-subtitle">Adicione serviços cadastrados ou lance um serviço manual.</p>
+                </div>
 
                 <button className="botao" onClick={adicionarServico} type="button">
-                  ADICIONAR SERVIÇO MANUAL
+                  ADICIONAR MANUAL
                 </button>
               </div>
 
-              <div className="relative flex gap-3 mb-4">
+              <div className="relative mb-4">
                 <input
                   placeholder="BUSCAR SERVIÇO CADASTRADO..."
                   className="campo"
@@ -1206,27 +1134,24 @@ function OrdensPageContent() {
                   onChange={(e) => setBuscaServico(e.target.value)}
                 />
 
-                {buscaServico.trim().length >= 2 &&
-                  servicosFiltrados.length > 0 && (
-                    <div className="absolute top-[48px] left-0 right-0 z-20 rounded-xl border border-[#D1D5DB] bg-white shadow-lg max-h-[220px] overflow-auto">
-                      {servicosFiltrados.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => adicionarServicoDoCadastro(s)}
-                          className="w-full text-left px-3 py-3 border-b last:border-b-0 hover:bg-[#F3F4F6]"
-                        >
-                          <div className="font-semibold text-[#111827]">
-                            {s.nome}
-                          </div>
-                          <div className="text-xs text-[#6B7280]">
-                            {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
-                            {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                {buscaServico.trim().length >= 2 && servicosFiltrados.length > 0 && (
+                  <div className="dropdown top-full mt-2">
+                    {servicosFiltrados.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => adicionarServicoDoCadastro(s)}
+                        className="dropdown-item"
+                      >
+                        <div className="font-semibold text-[#111827]">{s.nome}</div>
+                        <div className="text-xs text-[#6B7280]">
+                          {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
+                          {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <table className="tabela">
@@ -1243,10 +1168,7 @@ function OrdensPageContent() {
                 <tbody>
                   {servicosOS.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={5}
-                        className="text-center py-6 text-[#6C757D]"
-                      >
+                      <td colSpan={5} className="empty-state">
                         NENHUM SERVIÇO ADICIONADO.
                       </td>
                     </tr>
@@ -1257,13 +1179,7 @@ function OrdensPageContent() {
                           <input
                             className="campo-tabela"
                             value={item.descricao || ""}
-                            onChange={(e) =>
-                              atualizarServicoOS(
-                                item.id,
-                                "descricao",
-                                e.target.value
-                              )
-                            }
+                            onChange={(e) => atualizarServicoOS(item.id, "descricao", e.target.value)}
                           />
                         </td>
                         <td>
@@ -1271,13 +1187,7 @@ function OrdensPageContent() {
                             className="campo-tabela"
                             type="number"
                             value={toMoney(item.quantidade)}
-                            onChange={(e) =>
-                              atualizarServicoOS(
-                                item.id,
-                                "quantidade",
-                                e.target.value
-                              )
-                            }
+                            onChange={(e) => atualizarServicoOS(item.id, "quantidade", e.target.value)}
                           />
                         </td>
                         <td>
@@ -1285,27 +1195,14 @@ function OrdensPageContent() {
                             className="campo-tabela"
                             type="number"
                             value={toMoney(item.valor_unitario)}
-                            onChange={(e) =>
-                              atualizarServicoOS(
-                                item.id,
-                                "valor_unitario",
-                                e.target.value
-                              )
-                            }
+                            onChange={(e) => atualizarServicoOS(item.id, "valor_unitario", e.target.value)}
                           />
                         </td>
-                        <td>
-                          {moneyBR(
-                            toMoney(item.quantidade) *
-                              toMoney(item.valor_unitario)
-                          )}
+                        <td className="font-bold text-[#0F172A]">
+                          {moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}
                         </td>
                         <td>
-                          <button
-                            className="botao-mini"
-                            onClick={() => removerServicoOS(item.id)}
-                            type="button"
-                          >
+                          <button className="botao-mini danger" onClick={() => removerServicoOS(item.id)} type="button">
                             REMOVER
                           </button>
                         </td>
@@ -1317,11 +1214,16 @@ function OrdensPageContent() {
             </section>
 
             <section className="card">
-              <h2 className="titulo mb-3">HISTÓRICO DE ORDENS DE SERVIÇO</h2>
+              <div className="section-header">
+                <div>
+                  <h2 className="section-title">HISTÓRICO DE ORDENS</h2>
+                  <p className="section-subtitle">Consulte e reutilize ordens de serviço anteriores.</p>
+                </div>
+              </div>
 
               <input
                 placeholder="BUSCAR POR NÚMERO, CLIENTE, VEÍCULO OU STATUS..."
-                className="campo mb-3"
+                className="campo mb-4"
                 value={buscaHistorico}
                 onChange={(e) => setBuscaHistorico(e.target.value)}
               />
@@ -1343,64 +1245,43 @@ function OrdensPageContent() {
                 <tbody>
                   {historicoFiltrado.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={8}
-                        className="text-center py-6 text-[#6C757D]"
-                      >
+                      <td colSpan={8} className="empty-state">
                         NENHUMA ORDEM DE SERVIÇO ENCONTRADA.
                       </td>
                     </tr>
                   ) : (
                     historicoFiltrado.map((item) => (
                       <tr key={item.id}>
-                        <td>{item.numero || "-"}</td>
+                        <td className="font-bold">{item.numero || "-"}</td>
                         <td>
                           {item.created_at
-                            ? new Date(item.created_at).toLocaleDateString(
-                                "pt-BR"
-                              )
+                            ? new Date(item.created_at).toLocaleDateString("pt-BR")
                             : "-"}
                         </td>
                         <td>{item.cliente_nome || "-"}</td>
                         <td>{item.veiculo_descricao || "-"}</td>
-                        <td>{item.status || "-"}</td>
+                        <td>
+                          <span className={`status-chip ${statusClass(item.status || "ABERTA")}`}>
+                            {item.status || "-"}
+                          </span>
+                        </td>
                         <td>{item.faturado ? "SIM" : "NÃO"}</td>
-                        <td>{moneyBR(toMoney(item.total || 0))}</td>
+                        <td className="font-bold">{moneyBR(toMoney(item.total || 0))}</td>
                         <td>
                           <div className="flex gap-1 flex-wrap">
-                            <button
-                              className="botao-mini"
-                              onClick={() => editarOS(item)}
-                              type="button"
-                            >
+                            <button className="botao-mini" onClick={() => editarOS(item)} type="button">
                               EDITAR
                             </button>
-                            <button
-                              className="botao-mini"
-                              onClick={() => imprimirOS(item)}
-                              type="button"
-                            >
+                            <button className="botao-mini" onClick={() => imprimirOS(item)} type="button">
                               OS
                             </button>
-                            <button
-                              className="botao-mini"
-                              onClick={() => imprimirTecnico(item)}
-                              type="button"
-                            >
+                            <button className="botao-mini" onClick={() => imprimirTecnico(item)} type="button">
                               TÉCNICO
                             </button>
-                            <button
-                              className="botao-mini"
-                              onClick={() => faturarOS(item)}
-                              type="button"
-                            >
+                            <button className="botao-mini success" onClick={() => faturarOS(item)} type="button">
                               FATURAR
                             </button>
-                            <button
-                              className="botao-mini"
-                              onClick={() => removerOS(item.id)}
-                              type="button"
-                            >
+                            <button className="botao-mini danger" onClick={() => removerOS(item.id)} type="button">
                               REMOVER
                             </button>
                           </div>
@@ -1414,60 +1295,74 @@ function OrdensPageContent() {
           </div>
 
           <div className="space-y-6">
-            <section className="card">
-              <h2 className="titulo mb-4">RESUMO DA OS</h2>
+            <section className="card sticky-card">
+              <h2 className="section-title mb-4">RESUMO DA OS</h2>
 
-              <div className="space-y-2 text-sm text-[#1F1F1F]">
-                <p>
-                  <b>CLIENTE:</b> {clienteNome || "-"}
-                </p>
-                <p>
-                  <b>VEÍCULO:</b> {veiculo || "-"}
-                </p>
-                <p>
-                  <b>PLACA:</b> {placa || "-"}
-                </p>
-                <p>
-                  <b>KM:</b> {km || "-"}
-                </p>
-                <p>
-                  <b>TÉCNICO:</b> {tecnico || "-"}
-                </p>
-                <p>
-                  <b>PRAZO:</b> {prazoData || "-"}
-                </p>
-                <p>
-                  <b>GARANTIA:</b>{" "}
-                  {garantiaNumero ? `${garantiaNumero} ${garantiaTipo}` : "-"}
-                </p>
-                <p>
-                  <b>PAGAMENTO:</b> {formaPagamento}
-                </p>
-                <p>
-                  <b>STATUS:</b> {status}
-                </p>
+              <div className="resumo-box">
+                <div className="resumo-linha">
+                  <span>CLIENTE</span>
+                  <strong>{clienteNome || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>VEÍCULO</span>
+                  <strong>{veiculo || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>PLACA</span>
+                  <strong>{placa || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>KM</span>
+                  <strong>{km || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>TÉCNICO</span>
+                  <strong>{tecnico || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>PRAZO</span>
+                  <strong>{prazoData || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>GARANTIA</span>
+                  <strong>{garantiaNumero ? `${garantiaNumero} ${garantiaTipo}` : "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>PAGAMENTO</span>
+                  <strong>{formaPagamento}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>STATUS</span>
+                  <strong>{status}</strong>
+                </div>
+              </div>
+
+              <div className="mt-5">
+                <label className="label">STATUS DA OS</label>
+                <select className="campo" value={status} onChange={(e) => setStatus(e.target.value)}>
+                  <option>ABERTA</option>
+                  <option>EM ANDAMENTO</option>
+                  <option>FINALIZADA</option>
+                  <option>ENTREGUE</option>
+                  <option>CANCELADA</option>
+                </select>
               </div>
             </section>
 
             <section className="card">
-              <h2 className="titulo mb-4">TOTAIS</h2>
+              <h2 className="section-title mb-4">FINANCEIRO</h2>
 
-              <div className="space-y-4">
-                <div className="flex justify-between text-sm">
+              <div className="finance-box">
+                <div className="finance-line">
                   <span>PRODUTOS</span>
-                  <span className="font-semibold">
-                    {moneyBR(subtotalProdutos)}
-                  </span>
+                  <strong>{moneyBR(subtotalProdutos)}</strong>
+                </div>
+                <div className="finance-line">
+                  <span>SERVIÇOS</span>
+                  <strong>{moneyBR(subtotalServicos)}</strong>
                 </div>
 
-                <div className="flex justify-between text-sm">
-                  <span>MÃO DE OBRA</span>
-                  <span className="font-semibold">
-                    {moneyBR(subtotalServicos)}
-                  </span>
-                </div>
-
-                <div>
+                <div className="mt-4">
                   <label className="label">DESCONTO</label>
                   <input
                     className="campo"
@@ -1477,7 +1372,7 @@ function OrdensPageContent() {
                   />
                 </div>
 
-                <div>
+                <div className="mt-3">
                   <label className="label">ACRÉSCIMO</label>
                   <input
                     className="campo"
@@ -1487,19 +1382,19 @@ function OrdensPageContent() {
                   />
                 </div>
 
-                <div className="flex justify-between text-[16px] font-black text-[#0456A3]">
+                <div className="finance-total">
                   <span>TOTAL GERAL</span>
-                  <span>{moneyBR(totalGeral)}</span>
+                  <strong>{moneyBR(totalGeral)}</strong>
                 </div>
               </div>
             </section>
 
             <section className="card">
-              <h2 className="titulo mb-3">OBSERVAÇÕES</h2>
+              <h2 className="section-title mb-3">OBSERVAÇÕES INTERNAS</h2>
 
               <textarea
                 className="campo-textarea"
-                placeholder="DESCREVA O SERVIÇO, DEFEITO, CONDIÇÕES DE ENTRADA, PEÇAS TROCADAS, ETC."
+                placeholder="DESCREVA O SERVIÇO, DEFEITO, CONDIÇÕES DE ENTRADA, PEÇAS TROCADAS, TESTES, ORIENTAÇÕES AO CLIENTE..."
                 value={observacoes}
                 onChange={(e) => setObservacoes(e.target.value)}
               />
@@ -1511,87 +1406,154 @@ function OrdensPageContent() {
       <style jsx>{`
         .card {
           background: white;
-          border-radius: 20px;
-          padding: 18px;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          border-radius: 24px;
+          padding: 20px;
+          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+          border: 1px solid #eef2f7;
         }
 
-        .titulo {
+        .sticky-card {
+          position: sticky;
+          top: 20px;
+        }
+
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        }
+
+        .section-title {
           font-weight: 900;
-          font-size: 14px;
-          color: #6c757d;
+          font-size: 15px;
+          color: #334155;
+        }
+
+        .section-subtitle {
+          margin-top: 4px;
+          font-size: 12px;
+          color: #64748b;
         }
 
         .label {
           display: block;
           font-size: 12px;
           font-weight: 800;
-          color: #6c757d;
+          color: #64748b;
           margin-bottom: 6px;
           text-transform: uppercase;
+          letter-spacing: 0.03em;
         }
 
         .campo {
-          height: 44px;
-          border: 1.5px solid #9a9a9a;
-          border-radius: 10px;
+          height: 46px;
+          border: 1.5px solid #cbd5e1;
+          border-radius: 12px;
           padding: 0 12px;
           font-size: 14px;
           width: 100%;
-          background: white;
-          color: #111827;
+          background: #fff;
+          color: #0f172a;
+          outline: none;
+          transition: 0.2s;
+        }
+
+        .campo:focus,
+        .campo-textarea:focus,
+        .campo-tabela:focus {
+          border-color: #0a6fd6;
+          box-shadow: 0 0 0 4px rgba(10, 111, 214, 0.08);
         }
 
         .campo-textarea {
-          border: 1.5px solid #9a9a9a;
-          border-radius: 10px;
-          padding: 10px;
+          border: 1.5px solid #cbd5e1;
+          border-radius: 12px;
+          padding: 12px;
           font-size: 14px;
           width: 100%;
-          min-height: 150px;
+          min-height: 140px;
           background: white;
-          color: #111827;
+          color: #0f172a;
+          outline: none;
+          resize: vertical;
         }
 
         .campo-tabela {
           width: 100%;
-          height: 36px;
-          border: 1px solid #d1d5db;
-          border-radius: 8px;
+          height: 38px;
+          border: 1px solid #dbe4ee;
+          border-radius: 10px;
           padding: 0 8px;
           font-size: 13px;
           color: #111827;
           background: white;
+          outline: none;
         }
 
         .botao {
-          border: 1px solid #2f2f2f;
-          border-radius: 10px;
+          border: 1px solid #cbd5e1;
+          border-radius: 12px;
           padding: 10px 16px;
           font-size: 13px;
           background: white;
-          color: #1f1f1f;
-          font-weight: 500;
+          color: #1e293b;
+          font-weight: 700;
         }
 
         .botao-azul {
           background: #0456a3;
           color: white;
-          border-radius: 10px;
+          border-radius: 12px;
           padding: 10px 16px;
           font-size: 13px;
-          font-weight: 600;
+          font-weight: 700;
           border: none;
         }
 
         .botao-mini {
-          border: 1px solid #2f2f2f;
-          border-radius: 8px;
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
           padding: 6px 10px;
           font-size: 11px;
           background: white;
-          color: #1f1f1f;
-          font-weight: 500;
+          color: #1e293b;
+          font-weight: 700;
+        }
+
+        .botao-mini.success {
+          border-color: #bbf7d0;
+          background: #f0fdf4;
+          color: #166534;
+        }
+
+        .botao-mini.danger {
+          border-color: #fecaca;
+          background: #fef2f2;
+          color: #b91c1c;
+        }
+
+        .botao-header {
+          border: 1px solid rgba(255, 255, 255, 0.45);
+          background: rgba(255, 255, 255, 0.12);
+          color: white;
+          font-weight: 800;
+          border-radius: 14px;
+          padding: 11px 16px;
+          font-size: 13px;
+          backdrop-filter: blur(10px);
+        }
+
+        .botao-header-primary {
+          border: none;
+          background: white;
+          color: #0456a3;
+          font-weight: 900;
+          border-radius: 14px;
+          padding: 11px 18px;
+          font-size: 13px;
         }
 
         .tabela {
@@ -1602,20 +1564,215 @@ function OrdensPageContent() {
         .tabela th {
           text-align: left;
           font-size: 12px;
-          padding: 12px;
-          border-bottom: 1px solid #e5e7eb;
-          color: #111827;
+          padding: 13px 12px;
+          border-bottom: 1px solid #e2e8f0;
+          color: #334155;
           font-weight: 900;
+          background: #f8fafc;
         }
 
         .tabela td {
           font-size: 13px;
           padding: 12px;
-          border-bottom: 1px solid #e5e7eb;
-          color: #1f2937;
+          border-bottom: 1px solid #eef2f7;
+          color: #334155;
           vertical-align: middle;
         }
+
+        .empty-state {
+          text-align: center;
+          padding: 28px 12px;
+          color: #64748b;
+        }
+
+        .dropdown {
+          position: absolute;
+          z-index: 20;
+          width: 100%;
+          border-radius: 16px;
+          border: 1px solid #dbe4ee;
+          background: white;
+          box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
+          max-height: 240px;
+          overflow: auto;
+        }
+
+        .dropdown-item {
+          width: 100%;
+          text-align: left;
+          padding: 12px;
+          border-bottom: 1px solid #eef2f7;
+          background: white;
+        }
+
+        .dropdown-item:last-child {
+          border-bottom: none;
+        }
+
+        .dropdown-item:hover {
+          background: #f8fafc;
+        }
+
+        .helper-badge {
+          background: #eff6ff;
+          color: #1d4ed8;
+          border: 1px solid #bfdbfe;
+          border-radius: 999px;
+          padding: 8px 12px;
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .placa-card {
+          min-height: 46px;
+          border: 1.5px solid #bfdbfe;
+          background: #eff6ff;
+          border-radius: 14px;
+          padding: 8px 14px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+        }
+
+        .placa-label {
+          font-size: 10px;
+          font-weight: 800;
+          color: #1d4ed8;
+          letter-spacing: 0.12em;
+        }
+
+        .placa-valor {
+          font-size: 20px;
+          font-weight: 900;
+          color: #0f172a;
+          line-height: 1.1;
+        }
+
+        .pill {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 999px;
+          padding: 8px 12px;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+        }
+
+        .pill-white {
+          background: rgba(255, 255, 255, 0.15);
+          border: 1px solid rgba(255, 255, 255, 0.28);
+          color: white;
+        }
+
+        .pill-success {
+          background: rgba(34, 197, 94, 0.18);
+          border: 1px solid rgba(187, 247, 208, 0.5);
+          color: white;
+        }
+
+        .pill-warning {
+          background: rgba(245, 158, 11, 0.22);
+          border: 1px solid rgba(253, 230, 138, 0.45);
+          color: white;
+        }
+
+        .status-chip {
+          display: inline-flex;
+          border-radius: 999px;
+          padding: 6px 10px;
+          font-size: 11px;
+          font-weight: 900;
+        }
+
+        .status-aberta {
+          background: #e0f2fe;
+          color: #0369a1;
+        }
+
+        .status-andamento {
+          background: #dbeafe;
+          color: #1d4ed8;
+        }
+
+        .status-finalizada {
+          background: #dcfce7;
+          color: #15803d;
+        }
+
+        .status-entregue {
+          background: #e2e8f0;
+          color: #334155;
+        }
+
+        .status-cancelada {
+          background: #fee2e2;
+          color: #b91c1c;
+        }
+
+        .resumo-box,
+        .finance-box {
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          border-radius: 18px;
+          padding: 16px;
+        }
+
+        .resumo-linha,
+        .finance-line {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 8px 0;
+          border-bottom: 1px solid #e2e8f0;
+          font-size: 13px;
+          color: #334155;
+        }
+
+        .resumo-linha:last-child,
+        .finance-line:last-child {
+          border-bottom: none;
+        }
+
+        .finance-total {
+          margin-top: 16px;
+          border-radius: 16px;
+          background: linear-gradient(135deg, #0456a3 0%, #0a6fd6 100%);
+          color: white;
+          padding: 16px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 16px;
+          font-weight: 900;
+        }
+
+        @media (max-width: 1279px) {
+          .sticky-card {
+            position: static;
+          }
+        }
       `}</style>
+    </div>
+  );
+}
+
+function KpiMini({
+  titulo,
+  valor,
+  destaque = false,
+}: {
+  titulo: string;
+  valor: string;
+  destaque?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-[18px] px-4 py-3 ${
+        destaque ? "bg-white text-[#0456A3]" : "bg-white/12 text-white border border-white/15"
+      }`}
+    >
+      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">{titulo}</div>
+      <div className="mt-1 text-[18px] font-black leading-none">{valor}</div>
     </div>
   );
 }
