@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
+import Pagination from "@/app/components/Pagination";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
@@ -116,12 +117,20 @@ function getCell(row: string[], map: Record<string, number>, keys: string[]) {
 export default function ProdutosPage() {
   const router = useRouter();
   const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const buscaTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
+
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState("");
+  const [buscaAplicada, setBuscaAplicada] = useState("");
+
+  const [page, setPage] = useState(1);
+  const [totalRegistros, setTotalRegistros] = useState(0);
+  const pageSize = 50;
+
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [nome, setNome] = useState("");
@@ -157,83 +166,100 @@ export default function ProdutosPage() {
       }
 
       setEmpresaId(user.empresa_id);
-      await carregarProdutos(user.empresa_id);
       setReady(true);
     }
 
     init();
   }, [router]);
 
-  async function carregarProdutos(eid?: string) {
+  useEffect(() => {
+    if (!empresaId) return;
+    carregarProdutos(empresaId, buscaAplicada, page);
+  }, [empresaId, page, buscaAplicada]);
+
+  useEffect(() => {
+    if (buscaTimeoutRef.current) {
+      clearTimeout(buscaTimeoutRef.current);
+    }
+
+    buscaTimeoutRef.current = setTimeout(() => {
+      setPage(1);
+      setBuscaAplicada(busca.trim());
+    }, 350);
+
+    return () => {
+      if (buscaTimeoutRef.current) {
+        clearTimeout(buscaTimeoutRef.current);
+      }
+    };
+  }, [busca]);
+
+  async function carregarProdutos(eid?: string, buscaAtual?: string, paginaAtual?: number) {
     const empId = eid || empresaId;
     if (!empId) return;
 
     setLoading(true);
 
-    const pageSize = 1000;
-    let from = 0;
-    let todos: Produto[] = [];
-    let continua = true;
+    const pageNumber = paginaAtual || page;
+    const termoBusca = (buscaAtual ?? buscaAplicada).trim();
+    const from = (pageNumber - 1) * pageSize;
+    const to = from + pageSize - 1;
 
-    while (continua) {
-      const { data, error } = await supabase
-        .from("produtos")
-        .select("*")
-        .eq("empresa_id", empId)
-        .order("created_at", { ascending: false })
-        .range(from, from + pageSize - 1);
+    let queryCount = supabase
+      .from("produtos")
+      .select("*", { count: "exact", head: true })
+      .eq("empresa_id", empId);
 
-      if (error) {
-        alert("ERRO AO CARREGAR PRODUTOS: " + error.message);
-        break;
-      }
+    let queryData = supabase
+      .from("produtos")
+      .select("*")
+      .eq("empresa_id", empId);
 
-      const lote = (data || []) as Produto[];
-      todos = [...todos, ...lote];
+    if (termoBusca) {
+      const filtro = [
+        `nome.ilike.%${termoBusca}%`,
+        `codigo_sku.ilike.%${termoBusca}%`,
+        `codigo_barras.ilike.%${termoBusca}%`,
+        `categoria.ilike.%${termoBusca}%`,
+        `subcategoria.ilike.%${termoBusca}%`,
+        `ncm.ilike.%${termoBusca}%`,
+        `cfop.ilike.%${termoBusca}%`,
+      ].join(",");
 
-      if (lote.length < pageSize) {
-        continua = false;
-      } else {
-        from += pageSize;
-      }
+      queryCount = queryCount.or(filtro);
+      queryData = queryData.or(filtro);
     }
 
-    setProdutos(todos);
+    const { count, error: countError } = await queryCount;
+
+    if (countError) {
+      alert("ERRO AO CONTAR PRODUTOS: " + countError.message);
+      setLoading(false);
+      return;
+    }
+
+    const { data, error } = await queryData
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      alert("ERRO AO CARREGAR PRODUTOS: " + error.message);
+    } else {
+      setProdutos((data || []) as Produto[]);
+      setTotalRegistros(count || 0);
+    }
+
     setLoading(false);
   }
 
-  const produtosFiltrados = useMemo(() => {
-    const q = up(busca.trim());
-    if (!q) return produtos;
-
-    return produtos.filter((p) =>
-      up(
-        `${p.nome} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""} ${p.ncm || ""} ${p.cfop || ""}`
-      ).includes(q)
-    );
-  }, [produtos, busca]);
-
-  const total = useMemo(() => produtos.length, [produtos]);
-
-  const ativos = useMemo(
-    () => produtos.filter((p) => (p.status || "ATIVO") !== "INATIVO").length,
-    [produtos]
-  );
-
-  const estoqueTotal = useMemo(
-    () => produtos.reduce((acc, p) => acc + toMoney(p.estoque_atual), 0),
-    [produtos]
-  );
-
-  const estoqueBaixo = useMemo(
-    () =>
-      produtos.filter(
-        (p) =>
-          !!p.controla_estoque &&
-          toMoney(p.estoque_atual) <= toMoney(p.estoque_minimo)
-      ).length,
-    [produtos]
-  );
+  const total = totalRegistros;
+  const ativos = produtos.filter((p) => (p.status || "ATIVO") !== "INATIVO").length;
+  const estoqueTotal = produtos.reduce((acc, p) => acc + toMoney(p.estoque_atual), 0);
+  const estoqueBaixo = produtos.filter(
+    (p) =>
+      !!p.controla_estoque &&
+      toMoney(p.estoque_atual) <= toMoney(p.estoque_minimo)
+  ).length;
 
   function resetForm() {
     setEditingId(null);
@@ -309,7 +335,7 @@ export default function ProdutosPage() {
 
       alert("PRODUTO ATUALIZADO!");
       resetForm();
-      carregarProdutos();
+      await carregarProdutos();
       return;
     }
 
@@ -322,7 +348,10 @@ export default function ProdutosPage() {
 
     alert("PRODUTO CRIADO!");
     resetForm();
-    carregarProdutos();
+    setPage(1);
+    setBusca("");
+    setBuscaAplicada("");
+    await carregarProdutos(empresaId, "", 1);
   }
 
   function editarProduto(p: Produto) {
@@ -368,7 +397,7 @@ export default function ProdutosPage() {
     }
 
     alert("PRODUTO REMOVIDO!");
-    carregarProdutos();
+    await carregarProdutos();
   }
 
   function aplicarFotoUrl() {
@@ -508,7 +537,10 @@ export default function ProdutosPage() {
     }
 
     alert(`IMPORTAÇÃO CONCLUÍDA!\nCRIADOS: ${created}\nATUALIZADOS: ${updated}`);
-    carregarProdutos();
+    setPage(1);
+    setBusca("");
+    setBuscaAplicada("");
+    await carregarProdutos(empresaId, "", 1);
   }
 
   if (!ready) {
@@ -751,7 +783,7 @@ export default function ProdutosPage() {
                   className="h-[54px] rounded-2xl bg-[#0456A3] px-7 text-[17px] font-medium text-white"
                   type="button"
                 >
-                  {editingId ? "SALVAR PRODUTO" : "SALVAR PRODUTO"}
+                  SALVAR PRODUTO
                 </button>
 
                 <button
@@ -845,14 +877,14 @@ export default function ProdutosPage() {
                       CARREGANDO...
                     </td>
                   </tr>
-                ) : produtosFiltrados.length === 0 ? (
+                ) : produtos.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-4 py-10 text-center text-[#6C757D]">
                       NENHUM PRODUTO ENCONTRADO.
                     </td>
                   </tr>
                 ) : (
-                  produtosFiltrados.map((p) => (
+                  produtos.map((p) => (
                     <tr key={p.id} className="border-t border-[#EFF1F4]">
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-3">
@@ -938,6 +970,15 @@ export default function ProdutosPage() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="p-5">
+            <Pagination
+              page={page}
+              setPage={setPage}
+              total={totalRegistros}
+              pageSize={pageSize}
+            />
           </div>
         </section>
       </main>
