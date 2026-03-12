@@ -19,6 +19,10 @@ type Produto = {
   id: string;
   nome: string;
   codigo_sku?: string | null;
+  codigo_barras?: string | null;
+  categoria?: string | null;
+  subcategoria?: string | null;
+  ncm?: string | null;
   preco_balcao?: number | null;
   controla_estoque?: boolean | null;
   estoque_atual?: number | null;
@@ -85,8 +89,8 @@ type OsProduto = {
   empresa_id?: string;
   ordem_servico_id?: string;
   produto_id?: string | null;
-  nome?: string | null;
   produto_nome?: string | null;
+  nome?: string | null;
   codigo?: string | null;
   quantidade?: number | null;
   valor_unitario?: number | null;
@@ -105,6 +109,14 @@ type OsServico = {
 
 function up(v: unknown) {
   return String(v ?? "").toUpperCase();
+}
+
+function normalizeText(v: unknown) {
+  return String(v ?? "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
 }
 
 function toMoney(v: unknown) {
@@ -244,12 +256,16 @@ function OrdensPageContent() {
           .order("nome"),
         supabase
           .from("produtos")
-          .select("id,nome,codigo_sku,preco_balcao,controla_estoque,estoque_atual")
+          .select(
+            "id,nome,codigo_sku,codigo_barras,categoria,subcategoria,ncm,preco_balcao,controla_estoque,estoque_atual"
+          )
           .eq("empresa_id", emp)
           .order("nome"),
         supabase
           .from("servicos")
-          .select("id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status")
+          .select(
+            "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
+          )
           .eq("empresa_id", emp)
           .eq("status", "ATIVO")
           .order("nome"),
@@ -408,12 +424,12 @@ function OrdensPageContent() {
   }
 
   const clientesFiltrados = useMemo(() => {
-    const q = up(buscaCliente.trim());
+    const q = normalizeText(buscaCliente.trim());
     if (!q) return clientes.slice(0, 8);
 
     return clientes
       .filter((c) =>
-        up(
+        normalizeText(
           `${c.nome} ${c.telefone || ""} ${c.celular || ""} ${c.whatsapp || ""} ${c.cpf_cnpj || ""}`
         ).includes(q)
       )
@@ -421,31 +437,38 @@ function OrdensPageContent() {
   }, [clientes, buscaCliente]);
 
   const produtosFiltrados = useMemo(() => {
-    const q = up(buscaProduto.trim());
-    if (!q || q.length < 3) return [];
+    const q = normalizeText(buscaProduto.trim());
+
+    if (!q || q.length < 2) return [];
 
     return produtosBase
-      .filter((p) => up(`${p.nome} ${p.codigo_sku || ""}`).includes(q))
-      .slice(0, 8);
+      .filter((p) =>
+        normalizeText(
+          `${p.nome || ""} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""} ${p.ncm || ""}`
+        ).includes(q)
+      )
+      .slice(0, 20);
   }, [produtosBase, buscaProduto]);
 
   const servicosFiltrados = useMemo(() => {
-    const q = up(buscaServico.trim());
+    const q = normalizeText(buscaServico.trim());
     if (!q || q.length < 2) return [];
 
     return servicosBase
       .filter((s) =>
-        up(`${s.nome || ""} ${s.descricao || ""} ${s.categoria || ""} ${s.tempo_estimado || ""}`).includes(q)
+        normalizeText(
+          `${s.nome || ""} ${s.descricao || ""} ${s.categoria || ""} ${s.tempo_estimado || ""}`
+        ).includes(q)
       )
       .slice(0, 8);
   }, [servicosBase, buscaServico]);
 
   const historicoFiltrado = useMemo(() => {
-    const q = up(buscaHistorico.trim());
+    const q = normalizeText(buscaHistorico.trim());
     if (!q) return historico;
 
     return historico.filter((item) =>
-      up(
+      normalizeText(
         `${item.numero || ""} ${item.cliente_nome || ""} ${item.veiculo_descricao || ""} ${item.status || ""} ${item.placa || ""}`
       ).includes(q)
     );
@@ -505,9 +528,9 @@ function OrdensPageContent() {
       {
         id: makeLocalId(),
         produto_id: p.id,
-        nome: p.nome,
         produto_nome: p.nome,
-        codigo: p.codigo_sku || "",
+        nome: p.nome,
+        codigo: p.codigo_sku || p.codigo_barras || "",
         quantidade: 1,
         valor_unitario: toMoney(p.preco_balcao),
         subtotal: toMoney(p.preco_balcao),
@@ -544,12 +567,6 @@ function OrdensPageContent() {
               ? toMoney(valor)
               : valor,
         };
-
-        if (campo === "produto_nome" || campo === "nome") {
-          const texto = String(valor ?? "");
-          atualizado.nome = texto;
-          atualizado.produto_nome = texto;
-        }
 
         atualizado.subtotal =
           toMoney(atualizado.quantidade) * toMoney(atualizado.valor_unitario);
@@ -701,7 +718,6 @@ function OrdensPageContent() {
       const { error } = await supabase
         .from("ordens_servico_produtos")
         .insert(produtosPayload);
-
       if (error) {
         alert("ERRO AO SALVAR PRODUTOS DA OS: " + error.message);
         return;
@@ -712,7 +728,6 @@ function OrdensPageContent() {
       const { error } = await supabase
         .from("ordens_servico_servicos")
         .insert(servicosPayload);
-
       if (error) {
         alert("ERRO AO SALVAR SERVIÇOS DA OS: " + error.message);
         return;
@@ -783,11 +798,11 @@ function OrdensPageContent() {
     }
 
     setProdutosOS(
-      ((prodResp.data || []) as any[]).map((p) => ({
+      ((prodResp.data || []) as OsProduto[]).map((p) => ({
         ...p,
         id: p.id || makeLocalId(),
-        nome: p.nome || p.produto_nome || "",
         produto_nome: p.produto_nome || p.nome || "",
+        nome: p.nome || p.produto_nome || "",
       }))
     );
 
@@ -1109,15 +1124,15 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busque por nome ou código e adicione rapidamente à OS.
+                    Busque por nome, SKU, código de barras, categoria, subcategoria ou NCM.
                   </p>
                 </div>
-                <div className="helper-badge">DIGITE 3 LETRAS</div>
+                <div className="helper-badge">DIGITE 2 LETRAS</div>
               </div>
 
               <div className="relative mb-4">
                 <input
-                  placeholder="BUSCAR PRODUTO POR NOME OU CÓDIGO..."
+                  placeholder="BUSCAR PRODUTO POR NOME, SKU, BARRAS, CATEGORIA, SUBCATEGORIA OU NCM..."
                   className="campo"
                   value={buscaProduto}
                   onChange={(e) => {
@@ -1125,11 +1140,11 @@ function OrdensPageContent() {
                     setMostrarDropdownProduto(true);
                   }}
                   onFocus={() => {
-                    if (buscaProduto.trim().length >= 3) setMostrarDropdownProduto(true);
+                    if (buscaProduto.trim().length >= 2) setMostrarDropdownProduto(true);
                   }}
                 />
 
-                {mostrarDropdownProduto && buscaProduto.trim().length >= 3 && produtosFiltrados.length > 0 && (
+                {mostrarDropdownProduto && buscaProduto.trim().length >= 2 && produtosFiltrados.length > 0 && (
                   <div className="dropdown top-full mt-2">
                     {produtosFiltrados.map((p) => (
                       <button
@@ -1140,7 +1155,9 @@ function OrdensPageContent() {
                       >
                         <div className="font-semibold text-[#111827]">{p.nome}</div>
                         <div className="text-xs text-[#6B7280]">
-                          {p.codigo_sku || "-"} • {moneyBR(toMoney(p.preco_balcao))}
+                          {p.codigo_sku || p.codigo_barras || "-"} • {p.categoria || "-"}
+                          {p.subcategoria ? ` / ${p.subcategoria}` : ""} • NCM {p.ncm || "-"} •{" "}
+                          {moneyBR(toMoney(p.preco_balcao))}
                         </div>
                       </button>
                     ))}
