@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
 
@@ -35,11 +35,10 @@ type OrdemServico = {
 
 type OsProduto = {
   id?: string;
-  empresa_id?: string;
   ordem_servico_id?: string;
   produto_id?: string | null;
-  produto_nome?: string | null;
   nome?: string | null;
+  produto_nome?: string | null;
   codigo?: string | null;
   quantidade?: number | null;
   valor_unitario?: number | null;
@@ -48,7 +47,6 @@ type OsProduto = {
 
 type OsServico = {
   id?: string;
-  empresa_id?: string;
   ordem_servico_id?: string;
   descricao?: string | null;
   quantidade?: number | null;
@@ -71,449 +69,629 @@ function moneyBR(v: number) {
 function formatDateBR(v?: string | null) {
   if (!v) return "-";
   const d = new Date(v);
-  if (isNaN(d.getTime())) return v;
+  if (Number.isNaN(d.getTime())) return v;
   return d.toLocaleDateString("pt-BR");
 }
 
 function formatDateTimeBR(v?: string | null) {
   if (!v) return "-";
   const d = new Date(v);
-  if (isNaN(d.getTime())) return v;
+  if (Number.isNaN(d.getTime())) return v;
   return d.toLocaleString("pt-BR");
 }
 
-function ImpressaoOSContent() {
+function statusLabel(status?: string | null) {
+  return status || "-";
+}
+
+export default function ImprimirOSPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const id = searchParams.get("id");
 
   const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState("");
+  const [empresaNome, setEmpresaNome] = useState("AUTO GESTÃO PRO");
   const [ordem, setOrdem] = useState<OrdemServico | null>(null);
   const [produtos, setProdutos] = useState<OsProduto[]>([]);
   const [servicos, setServicos] = useState<OsServico[]>([]);
-  const [empresaNome, setEmpresaNome] = useState("");
 
   useEffect(() => {
-    async function carregar() {
-      try {
-        setLoading(true);
-        setErro("");
+    async function init() {
+      const user = await getSessionUser();
 
-        if (!id) {
-          setErro("ID DA OS NÃO INFORMADO.");
-          setLoading(false);
-          return;
-        }
-
-        const user = await getSessionUser();
-
-        if (!user?.empresa_id) {
-          setErro("SESSÃO INVÁLIDA.");
-          setLoading(false);
-          return;
-        }
-
-        setEmpresaNome(user.nome || "");
-
-        const [{ data: osData, error: osError }, { data: prodData, error: prodError }, { data: servData, error: servError }] =
-          await Promise.all([
-            supabase
-              .from("ordens_servico")
-              .select("*")
-              .eq("empresa_id", user.empresa_id)
-              .eq("id", id)
-              .single(),
-            supabase
-              .from("ordens_servico_produtos")
-              .select("*")
-              .eq("empresa_id", user.empresa_id)
-              .eq("ordem_servico_id", id)
-              .order("created_at", { ascending: true }),
-            supabase
-              .from("ordens_servico_servicos")
-              .select("*")
-              .eq("empresa_id", user.empresa_id)
-              .eq("ordem_servico_id", id)
-              .order("created_at", { ascending: true }),
-          ]);
-
-        if (osError || !osData) {
-          setErro("OS NÃO ENCONTRADA.");
-          setLoading(false);
-          return;
-        }
-
-        if (prodError) {
-          setErro("ERRO AO CARREGAR PRODUTOS DA OS: " + prodError.message);
-          setLoading(false);
-          return;
-        }
-
-        if (servError) {
-          setErro("ERRO AO CARREGAR SERVIÇOS DA OS: " + servError.message);
-          setLoading(false);
-          return;
-        }
-
-        setOrdem(osData as OrdemServico);
-        setProdutos((prodData || []) as OsProduto[]);
-        setServicos((servData || []) as OsServico[]);
-      } catch (e: any) {
-        setErro(e?.message || "ERRO AO CARREGAR IMPRESSÃO.");
-      } finally {
-        setLoading(false);
+      if (!user) {
+        router.push("/login");
+        return;
       }
+
+      setEmpresaNome(user?.empresa_nome || user?.nome_empresa || "AUTO GESTÃO PRO");
+
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+
+      await carregarOS(user.empresa_id, id);
     }
 
-    carregar();
-  }, [id]);
+    init();
+  }, [router, id]);
 
-  useEffect(() => {
-    if (!loading && ordem && !erro) {
-      const t = setTimeout(() => {
-        window.print();
-      }, 500);
+  async function carregarOS(empresaId: string, ordemId: string) {
+    setLoading(true);
 
-      return () => clearTimeout(t);
+    const [osResp, prodResp, servResp] = await Promise.all([
+      supabase
+        .from("ordens_servico")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .eq("id", ordemId)
+        .single(),
+
+      supabase
+        .from("ordens_servico_produtos")
+        .select("*")
+        .eq("ordem_servico_id", ordemId),
+
+      supabase
+        .from("ordens_servico_servicos")
+        .select("*")
+        .eq("ordem_servico_id", ordemId),
+    ]);
+
+    if (osResp.error) {
+      alert("ERRO AO CARREGAR OS: " + osResp.error.message);
+      setLoading(false);
+      return;
     }
-  }, [loading, ordem, erro]);
+
+    if (prodResp.error) {
+      alert("ERRO AO CARREGAR PRODUTOS DA OS: " + prodResp.error.message);
+    }
+
+    if (servResp.error) {
+      alert("ERRO AO CARREGAR SERVIÇOS DA OS: " + servResp.error.message);
+    }
+
+    setOrdem((osResp.data || null) as OrdemServico | null);
+    setProdutos((prodResp.data || []) as OsProduto[]);
+    setServicos((servResp.data || []) as OsServico[]);
+    setLoading(false);
+  }
 
   const subtotalProdutos = useMemo(() => {
     if (ordem) return toMoney(ordem.subtotal_produtos);
-    return produtos.reduce((acc, item) => acc + toMoney(item.subtotal), 0);
+    return produtos.reduce(
+      (acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      0
+    );
   }, [ordem, produtos]);
 
   const subtotalServicos = useMemo(() => {
     if (ordem) return toMoney(ordem.subtotal_servicos);
-    return servicos.reduce((acc, item) => acc + toMoney(item.subtotal), 0);
+    return servicos.reduce(
+      (acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      0
+    );
   }, [ordem, servicos]);
 
   const desconto = toMoney(ordem?.desconto);
   const acrescimo = toMoney(ordem?.acrescimo);
-  const total = toMoney(ordem?.total);
+  const total = useMemo(() => {
+    if (ordem?.total !== undefined && ordem?.total !== null) {
+      return toMoney(ordem.total);
+    }
+    return subtotalProdutos + subtotalServicos - desconto + acrescimo;
+  }, [ordem, subtotalProdutos, subtotalServicos, desconto, acrescimo]);
 
   if (loading) {
-    return <div style={{ padding: 24, fontFamily: "Arial, sans-serif" }}>CARREGANDO...</div>;
+    return <div style={{ padding: 24 }}>CARREGANDO...</div>;
   }
 
-  if (erro || !ordem) {
-    return (
-      <div style={{ padding: 24, fontFamily: "Arial, sans-serif" }}>
-        <h1>IMPRESSÃO OS</h1>
-        <p>{erro || "OS NÃO ENCONTRADA."}</p>
-      </div>
-    );
+  if (!ordem) {
+    return <div style={{ padding: 24 }}>OS NÃO ENCONTRADA.</div>;
   }
 
   return (
-    <div className="page">
-      <div className="print-actions no-print">
-        <button onClick={() => window.print()}>IMPRIMIR</button>
-        <button onClick={() => window.close()}>FECHAR</button>
+    <div className="print-page">
+      <div className="no-print topbar">
+        <button className="action-button primary" onClick={() => window.print()}>
+          IMPRIMIR
+        </button>
+        <button className="action-button" onClick={() => window.close()}>
+          FECHAR
+        </button>
       </div>
 
-      <header className="header">
-        <div>
-          <div className="empresa">ORDEM DE SERVIÇO</div>
-          <div className="empresa-sub">{empresaNome || "AUTO GESTÃO PRO"}</div>
-        </div>
+      <div className="sheet">
+        <header className="header">
+          <div>
+            <div className="empresa">{empresaNome}</div>
+            <div className="subempresa">ORDEM DE SERVIÇO</div>
+          </div>
 
-        <div className="header-box">
-          <div><strong>NÚMERO:</strong> {ordem.numero || "-"}</div>
-          <div><strong>DATA:</strong> {formatDateTimeBR(ordem.created_at)}</div>
-          <div><strong>STATUS:</strong> {ordem.status || "-"}</div>
-        </div>
-      </header>
+          <div className="os-box">
+            <div className="os-numero">OS {ordem.numero || "-"}</div>
+            <div className="os-meta">
+              <span>ABERTURA: {formatDateTimeBR(ordem.created_at)}</span>
+            </div>
+            <div className="os-meta">
+              <span>STATUS: {statusLabel(ordem.status)}</span>
+            </div>
+            <div className="os-meta">
+              <span>FATURADA: {ordem.faturado ? "SIM" : "NÃO"}</span>
+            </div>
+          </div>
+        </header>
 
-      <section className="card">
-        <h2>DADOS DO CLIENTE</h2>
-        <div className="grid">
-          <div><strong>CLIENTE:</strong> {ordem.cliente_nome || "-"}</div>
-          <div><strong>VEÍCULO:</strong> {ordem.veiculo_descricao || "-"}</div>
-          <div><strong>PLACA:</strong> {ordem.placa || "-"}</div>
-          <div><strong>KM:</strong> {ordem.km || "-"}</div>
-          <div><strong>TÉCNICO:</strong> {ordem.tecnico_responsavel || "-"}</div>
-          <div><strong>PRAZO:</strong> {formatDateBR(ordem.prazo_data)}</div>
-          <div><strong>GARANTIA:</strong> {ordem.garantia_numero ? `${ordem.garantia_numero} ${ordem.garantia_tipo || ""}` : "-"}</div>
-          <div><strong>PAGAMENTO:</strong> {ordem.forma_pagamento || "-"}</div>
-        </div>
-      </section>
+        <section className="block">
+          <div className="block-title">DADOS DO CLIENTE</div>
 
-      <section className="card">
-        <h2>DEFEITO RELATADO</h2>
-        <div className="bloco-texto">{ordem.defeito_relatado || "-"}</div>
-      </section>
+          <div className="grid two">
+            <div className="field">
+              <div className="label">CLIENTE</div>
+              <div className="value">{ordem.cliente_nome || "-"}</div>
+            </div>
 
-      <section className="card">
-        <h2>PRODUTOS</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>PRODUTO</th>
-              <th>CÓDIGO</th>
-              <th>QTD</th>
-              <th>V. UNIT.</th>
-              <th>TOTAL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {produtos.length === 0 ? (
+            <div className="field">
+              <div className="label">FORMA DE PAGAMENTO</div>
+              <div className="value">{ordem.forma_pagamento || "-"}</div>
+            </div>
+          </div>
+        </section>
+
+        <section className="block">
+          <div className="block-title">DADOS DO VEÍCULO</div>
+
+          <div className="grid four">
+            <div className="field">
+              <div className="label">VEÍCULO</div>
+              <div className="value">{ordem.veiculo_descricao || "-"}</div>
+            </div>
+
+            <div className="field">
+              <div className="label">PLACA</div>
+              <div className="value">{ordem.placa || "-"}</div>
+            </div>
+
+            <div className="field">
+              <div className="label">KM</div>
+              <div className="value">{ordem.km || "-"}</div>
+            </div>
+
+            <div className="field">
+              <div className="label">TÉCNICO</div>
+              <div className="value">{ordem.tecnico_responsavel || "-"}</div>
+            </div>
+          </div>
+
+          <div className="grid three mt16">
+            <div className="field">
+              <div className="label">PRAZO</div>
+              <div className="value">{formatDateBR(ordem.prazo_data)}</div>
+            </div>
+
+            <div className="field">
+              <div className="label">GARANTIA</div>
+              <div className="value">
+                {ordem.garantia_numero
+                  ? `${ordem.garantia_numero} ${ordem.garantia_tipo || ""}`
+                  : "-"}
+              </div>
+            </div>
+
+            <div className="field">
+              <div className="label">STATUS</div>
+              <div className="value">{ordem.status || "-"}</div>
+            </div>
+          </div>
+        </section>
+
+        <section className="block">
+          <div className="block-title">DEFEITO RELATADO</div>
+          <div className="text-box">{ordem.defeito_relatado || "-"}</div>
+        </section>
+
+        <section className="block">
+          <div className="block-title">PRODUTOS</div>
+
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={5} className="empty">SEM PRODUTOS</td>
+                <th>PRODUTO</th>
+                <th>CÓDIGO</th>
+                <th>QTD</th>
+                <th>V. UNIT.</th>
+                <th>TOTAL</th>
               </tr>
-            ) : (
-              produtos.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.produto_nome || item.nome || "-"}</td>
-                  <td>{item.codigo || "-"}</td>
-                  <td>{toMoney(item.quantidade)}</td>
-                  <td>{moneyBR(toMoney(item.valor_unitario))}</td>
-                  <td>{moneyBR(toMoney(item.subtotal))}</td>
+            </thead>
+            <tbody>
+              {produtos.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="empty">
+                    NENHUM PRODUTO LANÇADO.
+                  </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </section>
+              ) : (
+                produtos.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.produto_nome || item.nome || "-"}</td>
+                    <td>{item.codigo || "-"}</td>
+                    <td>{toMoney(item.quantidade)}</td>
+                    <td>{moneyBR(toMoney(item.valor_unitario))}</td>
+                    <td>{moneyBR(toMoney(item.subtotal))}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </section>
 
-      <section className="card">
-        <h2>SERVIÇOS</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>DESCRIÇÃO</th>
-              <th>QTD</th>
-              <th>V. UNIT.</th>
-              <th>TOTAL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {servicos.length === 0 ? (
+        <section className="block">
+          <div className="block-title">SERVIÇOS</div>
+
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={4} className="empty">SEM SERVIÇOS</td>
+                <th>DESCRIÇÃO</th>
+                <th>QTD</th>
+                <th>V. UNIT.</th>
+                <th>TOTAL</th>
               </tr>
-            ) : (
-              servicos.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.descricao || "-"}</td>
-                  <td>{toMoney(item.quantidade)}</td>
-                  <td>{moneyBR(toMoney(item.valor_unitario))}</td>
-                  <td>{moneyBR(toMoney(item.subtotal))}</td>
+            </thead>
+            <tbody>
+              {servicos.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="empty">
+                    NENHUM SERVIÇO LANÇADO.
+                  </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </section>
+              ) : (
+                servicos.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.descricao || "-"}</td>
+                    <td>{toMoney(item.quantidade)}</td>
+                    <td>{moneyBR(toMoney(item.valor_unitario))}</td>
+                    <td>{moneyBR(toMoney(item.subtotal))}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </section>
 
-      <section className="card">
-        <h2>OBSERVAÇÕES</h2>
-        <div className="bloco-texto">{ordem.observacoes || "-"}</div>
-      </section>
+        <section className="block">
+          <div className="block-title">OBSERVAÇÕES</div>
+          <div className="text-box">{ordem.observacoes || "-"}</div>
+        </section>
 
-      <section className="totais">
-        <div className="totais-box">
-          <div className="linha-total">
-            <span>SUBTOTAL PRODUTOS</span>
-            <strong>{moneyBR(subtotalProdutos)}</strong>
-          </div>
-          <div className="linha-total">
-            <span>SUBTOTAL SERVIÇOS</span>
-            <strong>{moneyBR(subtotalServicos)}</strong>
-          </div>
-          <div className="linha-total">
-            <span>DESCONTO</span>
-            <strong>{moneyBR(desconto)}</strong>
-          </div>
-          <div className="linha-total">
-            <span>ACRÉSCIMO</span>
-            <strong>{moneyBR(acrescimo)}</strong>
-          </div>
-          <div className="linha-total final">
-            <span>TOTAL GERAL</span>
-            <strong>{moneyBR(total)}</strong>
-          </div>
-        </div>
-      </section>
+        <section className="block totals-block">
+          <div className="totals">
+            <div className="total-line">
+              <span>SUBTOTAL PRODUTOS</span>
+              <strong>{moneyBR(subtotalProdutos)}</strong>
+            </div>
 
-      <section className="assinaturas">
-        <div className="assinatura">
-          <div className="linha-assinatura" />
-          <span>ASSINATURA DO CLIENTE</span>
-        </div>
-        <div className="assinatura">
-          <div className="linha-assinatura" />
-          <span>RESPONSÁVEL / TÉCNICO</span>
-        </div>
-      </section>
+            <div className="total-line">
+              <span>SUBTOTAL SERVIÇOS</span>
+              <strong>{moneyBR(subtotalServicos)}</strong>
+            </div>
+
+            <div className="total-line">
+              <span>DESCONTO</span>
+              <strong>{moneyBR(desconto)}</strong>
+            </div>
+
+            <div className="total-line">
+              <span>ACRÉSCIMO</span>
+              <strong>{moneyBR(acrescimo)}</strong>
+            </div>
+
+            <div className="total-line grand">
+              <span>TOTAL GERAL</span>
+              <strong>{moneyBR(total)}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="assinaturas">
+          <div className="assinatura">
+            <div className="linha" />
+            <div className="assinatura-label">ASSINATURA DO CLIENTE</div>
+          </div>
+
+          <div className="assinatura">
+            <div className="linha" />
+            <div className="assinatura-label">RESPONSÁVEL / TÉCNICO</div>
+          </div>
+        </section>
+      </div>
 
       <style jsx>{`
-        .page {
+        .print-page {
+          background: #eef2f7;
+          min-height: 100vh;
           padding: 24px;
-          font-family: Arial, sans-serif;
+          font-family: Arial, Helvetica, sans-serif;
           color: #111827;
-          background: #fff;
         }
 
-        .print-actions {
+        .topbar {
           display: flex;
-          gap: 8px;
-          margin-bottom: 16px;
+          gap: 12px;
+          justify-content: center;
+          margin-bottom: 20px;
         }
 
-        .print-actions button {
-          border: 1px solid #d1d5db;
-          background: #fff;
-          padding: 8px 12px;
-          border-radius: 8px;
-          cursor: pointer;
+        .action-button {
+          border: 1px solid #cbd5e1;
+          background: white;
+          color: #0f172a;
+          border-radius: 10px;
+          padding: 10px 18px;
+          font-size: 13px;
           font-weight: 700;
+          cursor: pointer;
+        }
+
+        .action-button.primary {
+          background: #0456a3;
+          color: white;
+          border-color: #0456a3;
+        }
+
+        .sheet {
+          width: 100%;
+          max-width: 1100px;
+          margin: 0 auto;
+          background: white;
+          border-radius: 18px;
+          padding: 28px;
+          box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
         }
 
         .header {
           display: flex;
           justify-content: space-between;
-          gap: 16px;
-          border-bottom: 2px solid #111827;
-          padding-bottom: 16px;
+          align-items: flex-start;
+          gap: 24px;
+          border-bottom: 2px solid #e5e7eb;
+          padding-bottom: 18px;
           margin-bottom: 20px;
         }
 
         .empresa {
           font-size: 28px;
           font-weight: 900;
+          color: #0456a3;
+          line-height: 1;
         }
 
-        .empresa-sub {
-          margin-top: 4px;
+        .subempresa {
+          margin-top: 8px;
           font-size: 14px;
-          color: #4b5563;
+          font-weight: 700;
+          color: #475569;
+          letter-spacing: 0.08em;
         }
 
-        .header-box {
-          text-align: right;
-          font-size: 13px;
-          line-height: 1.7;
+        .os-box {
+          min-width: 280px;
+          border: 1px solid #dbe4ee;
+          border-radius: 14px;
+          padding: 14px;
+          background: #f8fafc;
         }
 
-        .card {
-          margin-bottom: 16px;
-        }
-
-        .card h2 {
-          font-size: 14px;
+        .os-numero {
+          font-size: 22px;
           font-weight: 900;
+          color: #0f172a;
           margin-bottom: 8px;
-          border-bottom: 1px solid #d1d5db;
+        }
+
+        .os-meta {
+          font-size: 13px;
+          color: #475569;
+          margin-top: 4px;
+        }
+
+        .block {
+          margin-top: 18px;
+        }
+
+        .block-title {
+          font-size: 13px;
+          font-weight: 900;
+          color: #334155;
+          letter-spacing: 0.08em;
+          margin-bottom: 10px;
           padding-bottom: 6px;
+          border-bottom: 1px solid #e2e8f0;
         }
 
         .grid {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 8px 16px;
-          font-size: 13px;
+          gap: 12px;
         }
 
-        .bloco-texto {
-          min-height: 60px;
-          border: 1px solid #d1d5db;
-          padding: 10px;
-          border-radius: 8px;
-          font-size: 13px;
+        .grid.two {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .grid.three {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .grid.four {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .field {
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 10px 12px;
+          background: #fff;
+        }
+
+        .label {
+          font-size: 11px;
+          font-weight: 800;
+          color: #64748b;
+          margin-bottom: 6px;
+        }
+
+        .value {
+          font-size: 14px;
+          font-weight: 700;
+          color: #0f172a;
+          min-height: 18px;
+        }
+
+        .text-box {
+          min-height: 80px;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 12px;
+          font-size: 14px;
+          line-height: 1.5;
+          background: #fff;
           white-space: pre-wrap;
         }
 
-        table {
+        .table {
           width: 100%;
           border-collapse: collapse;
+          border: 1px solid #e2e8f0;
+        }
+
+        .table th {
+          background: #f8fafc;
+          color: #334155;
           font-size: 12px;
-        }
-
-        th, td {
-          border: 1px solid #d1d5db;
-          padding: 8px;
-          text-align: left;
-          vertical-align: top;
-        }
-
-        th {
-          background: #f3f4f6;
           font-weight: 900;
+          text-align: left;
+          padding: 10px;
+          border-bottom: 1px solid #e2e8f0;
+        }
+
+        .table td {
+          font-size: 13px;
+          padding: 10px;
+          border-bottom: 1px solid #eef2f7;
+          vertical-align: top;
         }
 
         .empty {
           text-align: center;
-          color: #6b7280;
+          color: #64748b;
+          padding: 18px;
         }
 
-        .totais {
+        .totals-block {
           display: flex;
           justify-content: flex-end;
-          margin-top: 20px;
         }
 
-        .totais-box {
-          width: 360px;
-          border: 1px solid #d1d5db;
-          border-radius: 10px;
-          padding: 12px;
+        .totals {
+          width: 100%;
+          max-width: 420px;
+          border: 1px solid #dbe4ee;
+          border-radius: 14px;
+          padding: 14px;
+          background: #f8fafc;
         }
 
-        .linha-total {
+        .total-line {
           display: flex;
           justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-          font-size: 13px;
+          gap: 12px;
+          padding: 9px 0;
+          border-bottom: 1px solid #e2e8f0;
+          font-size: 14px;
         }
 
-        .linha-total.final {
-          font-size: 16px;
-          font-weight: 900;
+        .total-line:last-child {
           border-bottom: none;
+        }
+
+        .total-line.grand {
+          font-size: 18px;
+          font-weight: 900;
+          color: #0456a3;
         }
 
         .assinaturas {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 40px;
-          margin-top: 48px;
+          margin-top: 50px;
+          padding-top: 18px;
         }
 
         .assinatura {
           text-align: center;
-          font-size: 12px;
         }
 
-        .linha-assinatura {
+        .linha {
           border-top: 1px solid #111827;
           margin-bottom: 8px;
-          height: 24px;
+        }
+
+        .assinatura-label {
+          font-size: 12px;
+          font-weight: 700;
+          color: #475569;
+        }
+
+        .mt16 {
+          margin-top: 16px;
+        }
+
+        @media (max-width: 900px) {
+          .sheet {
+            padding: 18px;
+          }
+
+          .header {
+            flex-direction: column;
+          }
+
+          .os-box {
+            min-width: 100%;
+          }
+
+          .grid.two,
+          .grid.three,
+          .grid.four,
+          .assinaturas {
+            grid-template-columns: 1fr;
+          }
         }
 
         @media print {
+          .print-page {
+            background: white;
+            padding: 0;
+          }
+
           .no-print {
             display: none !important;
           }
 
-          .page {
+          .sheet {
+            max-width: 100%;
+            box-shadow: none;
+            border-radius: 0;
             padding: 0;
           }
 
-          body {
-            background: #fff;
+          @page {
+            size: A4;
+            margin: 12mm;
           }
         }
       `}</style>
     </div>
-  );
-}
-
-export default function ImprimirOSPage() {
-  return (
-    <Suspense fallback={<div style={{ padding: 24 }}>CARREGANDO...</div>}>
-      <ImpressaoOSContent />
-    </Suspense>
   );
 }
