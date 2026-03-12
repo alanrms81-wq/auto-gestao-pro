@@ -849,11 +849,71 @@ function OrdensPageContent() {
     await carregarBase();
   }
 
+  async function finalizarOS(item: OrdemServico) {
+    if (!empresaId) return;
+
+    if (item.status === "CANCELADA") {
+      alert("NÃO É POSSÍVEL FINALIZAR UMA OS CANCELADA.");
+      return;
+    }
+
+    if (item.status === "FINALIZADA" || item.status === "ENTREGUE") {
+      alert("ESSA OS JÁ ESTÁ FINALIZADA.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("ordens_servico")
+      .update({
+        status: "FINALIZADA",
+      })
+      .eq("empresa_id", empresaId)
+      .eq("id", item.id);
+
+    if (error) {
+      alert("ERRO AO FINALIZAR OS: " + error.message);
+      return;
+    }
+
+    alert("OS FINALIZADA COM SUCESSO!");
+    await carregarBase();
+  }
+
+  async function entregarOS(item: OrdemServico) {
+    if (!empresaId) return;
+
+    if (item.status === "CANCELADA") {
+      alert("NÃO É POSSÍVEL ENTREGAR UMA OS CANCELADA.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("ordens_servico")
+      .update({
+        status: "ENTREGUE",
+      })
+      .eq("empresa_id", empresaId)
+      .eq("id", item.id);
+
+    if (error) {
+      alert("ERRO AO MARCAR OS COMO ENTREGUE: " + error.message);
+      return;
+    }
+
+    alert("OS MARCADA COMO ENTREGUE!");
+    await carregarBase();
+  }
+
   async function faturarOS(item: OrdemServico) {
     if (!empresaId) return;
 
     if (item.faturado) {
       alert("ESSA OS JÁ ESTÁ FATURADA.");
+      return;
+    }
+
+    if (item.status === "CANCELADA") {
+      alert("NÃO É POSSÍVEL FATURAR UMA OS CANCELADA.");
       return;
     }
 
@@ -1400,15 +1460,46 @@ function OrdensPageContent() {
                             <button className="botao-mini" onClick={() => editarOS(item)} type="button">
                               EDITAR
                             </button>
+
+                            <button
+                              className="botao-mini success"
+                              onClick={() => finalizarOS(item)}
+                              type="button"
+                              disabled={
+                                item.status === "FINALIZADA" ||
+                                item.status === "ENTREGUE" ||
+                                item.status === "CANCELADA"
+                              }
+                            >
+                              FINALIZAR
+                            </button>
+
+                            <button
+                              className="botao-mini warning"
+                              onClick={() => faturarOS(item)}
+                              type="button"
+                              disabled={!!item.faturado || item.status === "CANCELADA"}
+                            >
+                              {item.faturado ? "FATURADA" : "FATURAR"}
+                            </button>
+
+                            <button
+                              className="botao-mini info"
+                              onClick={() => entregarOS(item)}
+                              type="button"
+                              disabled={item.status === "ENTREGUE" || item.status === "CANCELADA"}
+                            >
+                              ENTREGAR
+                            </button>
+
                             <button className="botao-mini" onClick={() => imprimirOS(item)} type="button">
                               OS
                             </button>
+
                             <button className="botao-mini" onClick={() => imprimirTecnico(item)} type="button">
                               TÉCNICO
                             </button>
-                            <button className="botao-mini success" onClick={() => faturarOS(item)} type="button">
-                              FATURAR
-                            </button>
+
                             <button className="botao-mini danger" onClick={() => removerOS(item.id)} type="button">
                               REMOVER
                             </button>
@@ -1647,10 +1738,27 @@ function OrdensPageContent() {
           color: #166534;
         }
 
+        .botao-mini.warning {
+          border-color: #fde68a;
+          background: #fffbeb;
+          color: #b45309;
+        }
+
+        .botao-mini.info {
+          border-color: #bfdbfe;
+          background: #eff6ff;
+          color: #1d4ed8;
+        }
+
         .botao-mini.danger {
           border-color: #fecaca;
           background: #fef2f2;
           color: #b91c1c;
+        }
+
+        .botao-mini:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
 
         .botao-header {
