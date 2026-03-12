@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -20,12 +20,10 @@ type Produto = {
   nome: string;
   codigo_sku?: string | null;
   codigo_barras?: string | null;
-  categoria?: string | null;
-  subcategoria?: string | null;
-  ncm?: string | null;
   preco_balcao?: number | null;
   controla_estoque?: boolean | null;
   estoque_atual?: number | null;
+  status?: string | null;
 };
 
 type ServicoBase = {
@@ -111,14 +109,6 @@ function up(v: unknown) {
   return String(v ?? "").toUpperCase();
 }
 
-function normalizeText(v: unknown) {
-  return String(v ?? "")
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-}
-
 function toMoney(v: unknown) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -169,6 +159,10 @@ function OrdensPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const clienteBoxRef = useRef<HTMLDivElement | null>(null);
+  const produtoBoxRef = useRef<HTMLDivElement | null>(null);
+  const servicoBoxRef = useRef<HTMLDivElement | null>(null);
+
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [carregandoEdicao, setCarregandoEdicao] = useState(false);
@@ -184,6 +178,7 @@ function OrdensPageContent() {
   const [buscaProduto, setBuscaProduto] = useState("");
   const [buscaServico, setBuscaServico] = useState("");
   const [buscaHistorico, setBuscaHistorico] = useState("");
+  const [filtroStatusHistorico, setFiltroStatusHistorico] = useState("TODAS");
 
   const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false);
   const [mostrarDropdownProduto, setMostrarDropdownProduto] = useState(false);
@@ -232,6 +227,27 @@ function OrdensPageContent() {
   }, [router]);
 
   useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+
+      if (clienteBoxRef.current && !clienteBoxRef.current.contains(target)) {
+        setMostrarDropdownCliente(false);
+      }
+
+      if (produtoBoxRef.current && !produtoBoxRef.current.contains(target)) {
+        setMostrarDropdownProduto(false);
+      }
+
+      if (servicoBoxRef.current && !servicoBoxRef.current.contains(target)) {
+        setMostrarDropdownServico(false);
+      }
+    }
+
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  useEffect(() => {
     if (!ready || !empresaId || clientes.length === 0) return;
     if (editingId) return;
 
@@ -257,7 +273,7 @@ function OrdensPageContent() {
         supabase
           .from("produtos")
           .select(
-            "id,nome,codigo_sku,codigo_barras,categoria,subcategoria,ncm,preco_balcao,controla_estoque,estoque_atual"
+            "id,nome,codigo_sku,codigo_barras,preco_balcao,controla_estoque,estoque_atual,status"
           )
           .eq("empresa_id", emp)
           .order("nome"),
@@ -424,12 +440,12 @@ function OrdensPageContent() {
   }
 
   const clientesFiltrados = useMemo(() => {
-    const q = normalizeText(buscaCliente.trim());
+    const q = up(buscaCliente.trim());
     if (!q) return clientes.slice(0, 8);
 
     return clientes
       .filter((c) =>
-        normalizeText(
+        up(
           `${c.nome} ${c.telefone || ""} ${c.celular || ""} ${c.whatsapp || ""} ${c.cpf_cnpj || ""}`
         ).includes(q)
       )
@@ -437,59 +453,74 @@ function OrdensPageContent() {
   }, [clientes, buscaCliente]);
 
   const produtosFiltrados = useMemo(() => {
-    const q = normalizeText(buscaProduto.trim());
-
+    const q = up(buscaProduto.trim());
     if (!q || q.length < 2) return [];
 
     return produtosBase
+      .filter((p) => up(p.status || "ATIVO") !== "INATIVO")
       .filter((p) =>
-        normalizeText(
-          `${p.nome || ""} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""} ${p.ncm || ""}`
+        up(
+          `${p.nome} ${p.codigo_sku || ""} ${p.codigo_barras || ""}`
         ).includes(q)
       )
-      .slice(0, 20);
+      .slice(0, 10);
   }, [produtosBase, buscaProduto]);
 
   const servicosFiltrados = useMemo(() => {
-    const q = normalizeText(buscaServico.trim());
+    const q = up(buscaServico.trim());
     if (!q || q.length < 2) return [];
 
     return servicosBase
       .filter((s) =>
-        normalizeText(
+        up(
           `${s.nome || ""} ${s.descricao || ""} ${s.categoria || ""} ${s.tempo_estimado || ""}`
         ).includes(q)
       )
-      .slice(0, 8);
+      .slice(0, 10);
   }, [servicosBase, buscaServico]);
 
   const historicoFiltrado = useMemo(() => {
-    const q = normalizeText(buscaHistorico.trim());
-    if (!q) return historico;
+    let lista = historico;
 
-    return historico.filter((item) =>
-      normalizeText(
+    if (filtroStatusHistorico !== "TODAS") {
+      lista = lista.filter(
+        (item) => up(item.status || "") === up(filtroStatusHistorico)
+      );
+    }
+
+    const q = up(buscaHistorico.trim());
+    if (!q) return lista;
+
+    return lista.filter((item) =>
+      up(
         `${item.numero || ""} ${item.cliente_nome || ""} ${item.veiculo_descricao || ""} ${item.status || ""} ${item.placa || ""}`
       ).includes(q)
     );
-  }, [historico, buscaHistorico]);
+  }, [historico, buscaHistorico, filtroStatusHistorico]);
 
   const subtotalProdutos = useMemo(() => {
     return produtosOS.reduce(
-      (acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      (acc, item) =>
+        acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
       0
     );
   }, [produtosOS]);
 
   const subtotalServicos = useMemo(() => {
     return servicosOS.reduce(
-      (acc, item) => acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      (acc, item) =>
+        acc + toMoney(item.quantidade) * toMoney(item.valor_unitario),
       0
     );
   }, [servicosOS]);
 
   const totalGeral = useMemo(() => {
-    return subtotalProdutos + subtotalServicos - toMoney(desconto) + toMoney(acrescimo);
+    return (
+      subtotalProdutos +
+      subtotalServicos -
+      toMoney(desconto) +
+      toMoney(acrescimo)
+    );
   }, [subtotalProdutos, subtotalServicos, desconto, acrescimo]);
 
   function novaOS() {
@@ -530,7 +561,7 @@ function OrdensPageContent() {
         produto_id: p.id,
         produto_nome: p.nome,
         nome: p.nome,
-        codigo: p.codigo_sku || p.codigo_barras || "",
+        codigo: p.codigo_sku || "",
         quantidade: 1,
         valor_unitario: toMoney(p.preco_balcao),
         subtotal: toMoney(p.preco_balcao),
@@ -555,7 +586,11 @@ function OrdensPageContent() {
     setMostrarDropdownServico(false);
   }
 
-  function atualizarProdutoOS(id: string | undefined, campo: keyof OsProduto, valor: unknown) {
+  function atualizarProdutoOS(
+    id: string | undefined,
+    campo: keyof OsProduto,
+    valor: unknown
+  ) {
     setProdutosOS((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
@@ -570,6 +605,10 @@ function OrdensPageContent() {
 
         atualizado.subtotal =
           toMoney(atualizado.quantidade) * toMoney(atualizado.valor_unitario);
+
+        if (campo === "produto_nome") {
+          atualizado.nome = String(valor || "");
+        }
 
         return atualizado;
       })
@@ -593,7 +632,11 @@ function OrdensPageContent() {
     ]);
   }
 
-  function atualizarServicoOS(id: string | undefined, campo: keyof OsServico, valor: unknown) {
+  function atualizarServicoOS(
+    id: string | undefined,
+    campo: keyof OsServico,
+    valor: unknown
+  ) {
     setServicosOS((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
@@ -691,17 +734,19 @@ function OrdensPageContent() {
       ordemId = data.id;
     }
 
-    const produtosPayload = produtosOS.map((item) => ({
-      empresa_id: empresaId,
-      ordem_servico_id: ordemId,
-      produto_id: item.produto_id || null,
-      nome: up(item.produto_nome || item.nome || ""),
-      produto_nome: up(item.produto_nome || item.nome || ""),
-      codigo: up(item.codigo || ""),
-      quantidade: toMoney(item.quantidade),
-      valor_unitario: toMoney(item.valor_unitario),
-      subtotal: toMoney(item.quantidade) * toMoney(item.valor_unitario),
-    }));
+    const produtosPayload = produtosOS
+      .filter((item) => String(item.produto_nome || item.nome || "").trim())
+      .map((item) => ({
+        empresa_id: empresaId,
+        ordem_servico_id: ordemId,
+        produto_id: item.produto_id || null,
+        nome: up(item.produto_nome || item.nome || ""),
+        produto_nome: up(item.produto_nome || item.nome || ""),
+        codigo: up(item.codigo || ""),
+        quantidade: toMoney(item.quantidade),
+        valor_unitario: toMoney(item.valor_unitario),
+        subtotal: toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      }));
 
     const servicosPayload = servicosOS
       .filter((item) => String(item.descricao || "").trim())
@@ -718,6 +763,7 @@ function OrdensPageContent() {
       const { error } = await supabase
         .from("ordens_servico_produtos")
         .insert(produtosPayload);
+
       if (error) {
         alert("ERRO AO SALVAR PRODUTOS DA OS: " + error.message);
         return;
@@ -728,6 +774,7 @@ function OrdensPageContent() {
       const { error } = await supabase
         .from("ordens_servico_servicos")
         .insert(servicosPayload);
+
       if (error) {
         alert("ERRO AO SALVAR SERVIÇOS DA OS: " + error.message);
         return;
@@ -852,21 +899,17 @@ function OrdensPageContent() {
   async function finalizarOS(item: OrdemServico) {
     if (!empresaId) return;
 
-    if (item.status === "CANCELADA") {
-      alert("NÃO É POSSÍVEL FINALIZAR UMA OS CANCELADA.");
-      return;
-    }
-
-    if (item.status === "FINALIZADA" || item.status === "ENTREGUE") {
-      alert("ESSA OS JÁ ESTÁ FINALIZADA.");
+    if (
+      item.status === "FINALIZADA" ||
+      item.status === "ENTREGUE" ||
+      item.status === "CANCELADA"
+    ) {
       return;
     }
 
     const { error } = await supabase
       .from("ordens_servico")
-      .update({
-        status: "FINALIZADA",
-      })
+      .update({ status: "FINALIZADA" })
       .eq("empresa_id", empresaId)
       .eq("id", item.id);
 
@@ -875,29 +918,34 @@ function OrdensPageContent() {
       return;
     }
 
-    alert("OS FINALIZADA COM SUCESSO!");
+    if (editingId === item.id) {
+      setStatus("FINALIZADA");
+    }
+
+    alert("OS FINALIZADA!");
     await carregarBase();
   }
 
   async function entregarOS(item: OrdemServico) {
     if (!empresaId) return;
 
-    if (item.status === "CANCELADA") {
-      alert("NÃO É POSSÍVEL ENTREGAR UMA OS CANCELADA.");
+    if (item.status === "ENTREGUE" || item.status === "CANCELADA") {
       return;
     }
 
     const { error } = await supabase
       .from("ordens_servico")
-      .update({
-        status: "ENTREGUE",
-      })
+      .update({ status: "ENTREGUE" })
       .eq("empresa_id", empresaId)
       .eq("id", item.id);
 
     if (error) {
-      alert("ERRO AO MARCAR OS COMO ENTREGUE: " + error.message);
+      alert("ERRO AO ENTREGAR OS: " + error.message);
       return;
+    }
+
+    if (editingId === item.id) {
+      setStatus("ENTREGUE");
     }
 
     alert("OS MARCADA COMO ENTREGUE!");
@@ -909,11 +957,6 @@ function OrdensPageContent() {
 
     if (item.faturado) {
       alert("ESSA OS JÁ ESTÁ FATURADA.");
-      return;
-    }
-
-    if (item.status === "CANCELADA") {
-      alert("NÃO É POSSÍVEL FATURAR UMA OS CANCELADA.");
       return;
     }
 
@@ -955,7 +998,10 @@ function OrdensPageContent() {
       ]);
 
     if (financeiroError) {
-      alert("OS FATURADA, MAS HOUVE ERRO NO FINANCEIRO: " + financeiroError.message);
+      alert(
+        "OS FATURADA, MAS HOUVE ERRO NO FINANCEIRO: " +
+          financeiroError.message
+      );
       return;
     }
 
@@ -997,7 +1043,9 @@ function OrdensPageContent() {
                 ) : (
                   <span className="pill pill-success">NOVA</span>
                 )}
-                {carregandoEdicao && <span className="pill pill-white">CARREGANDO EDIÇÃO</span>}
+                {carregandoEdicao && (
+                  <span className="pill pill-white">CARREGANDO EDIÇÃO</span>
+                )}
               </div>
             </div>
 
@@ -1005,12 +1053,19 @@ function OrdensPageContent() {
               <KpiMini titulo="PRODUTOS" valor={moneyBR(subtotalProdutos)} />
               <KpiMini titulo="SERVIÇOS" valor={moneyBR(subtotalServicos)} />
               <KpiMini titulo="TOTAL" valor={moneyBR(totalGeral)} destaque />
-              <KpiMini titulo="ITENS" valor={String(produtosOS.length + servicosOS.length)} />
+              <KpiMini
+                titulo="ITENS"
+                valor={String(produtosOS.length + servicosOS.length)}
+              />
             </div>
           </div>
 
           <div className="mt-5 flex flex-wrap gap-3">
-            <button className="botao-header-primary" onClick={salvarOS} type="button">
+            <button
+              className="botao-header-primary"
+              onClick={salvarOS}
+              type="button"
+            >
               SALVAR OS
             </button>
 
@@ -1020,7 +1075,9 @@ function OrdensPageContent() {
 
             <button
               className="botao-header"
-              onClick={() => editingId && imprimirOS({ id: editingId } as OrdemServico)}
+              onClick={() =>
+                editingId && imprimirOS({ id: editingId } as OrdemServico)
+              }
               type="button"
             >
               IMPRIMIR OS
@@ -1028,7 +1085,10 @@ function OrdensPageContent() {
 
             <button
               className="botao-header"
-              onClick={() => editingId && imprimirTecnico({ id: editingId } as OrdemServico)}
+              onClick={() =>
+                editingId &&
+                imprimirTecnico({ id: editingId } as OrdemServico)
+              }
               type="button"
             >
               IMPRIMIR TÉCNICO
@@ -1049,7 +1109,7 @@ function OrdensPageContent() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-2 relative">
+                <div className="md:col-span-2 relative" ref={clienteBoxRef}>
                   <label className="label">CLIENTE</label>
                   <input
                     placeholder="DIGITE NOME, TELEFONE OU DOCUMENTO..."
@@ -1064,23 +1124,31 @@ function OrdensPageContent() {
                     }}
                   />
 
-                  {mostrarDropdownCliente && buscaCliente.trim() && clientesFiltrados.length > 0 && (
-                    <div className="dropdown">
-                      {clientesFiltrados.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => selecionarCliente(c)}
-                          className="dropdown-item"
-                        >
-                          <div className="font-semibold text-[#111827]">{c.nome}</div>
-                          <div className="text-xs text-[#6B7280]">
-                            {c.telefone || c.celular || c.whatsapp || c.cpf_cnpj || "-"}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  {mostrarDropdownCliente &&
+                    buscaCliente.trim() &&
+                    clientesFiltrados.length > 0 && (
+                      <div className="dropdown">
+                        {clientesFiltrados.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => selecionarCliente(c)}
+                            className="dropdown-item"
+                          >
+                            <div className="font-semibold text-[#111827]">
+                              {c.nome}
+                            </div>
+                            <div className="text-xs text-[#6B7280]">
+                              {c.telefone ||
+                                c.celular ||
+                                c.whatsapp ||
+                                c.cpf_cnpj ||
+                                "-"}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                 </div>
 
                 <div>
@@ -1094,7 +1162,8 @@ function OrdensPageContent() {
                     <option value="">SELECIONE O VEÍCULO</option>
                     {veiculosCliente.map((v) => (
                       <option key={v.id} value={v.id}>
-                        {montarDescricaoVeiculo(v)} {v.placa ? `- ${v.placa}` : ""}
+                        {montarDescricaoVeiculo(v)}{" "}
+                        {v.placa ? `- ${v.placa}` : ""}
                       </option>
                     ))}
                   </select>
@@ -1141,7 +1210,11 @@ function OrdensPageContent() {
 
                 <div>
                   <label className="label">KM</label>
-                  <input className="campo" value={km} onChange={(e) => setKm(e.target.value)} />
+                  <input
+                    className="campo"
+                    value={km}
+                    onChange={(e) => setKm(e.target.value)}
+                  />
                 </div>
 
                 <div>
@@ -1184,15 +1257,15 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busque por nome, SKU, código de barras, categoria, subcategoria ou NCM.
+                    Busque por nome, código interno ou código de barras.
                   </p>
                 </div>
                 <div className="helper-badge">DIGITE 2 LETRAS</div>
               </div>
 
-              <div className="relative mb-4">
+              <div className="relative mb-4" ref={produtoBoxRef}>
                 <input
-                  placeholder="BUSCAR PRODUTO POR NOME, SKU, BARRAS, CATEGORIA, SUBCATEGORIA OU NCM..."
+                  placeholder="BUSCAR PRODUTO POR NOME, CÓDIGO OU BARRAS..."
                   className="campo"
                   value={buscaProduto}
                   onChange={(e) => {
@@ -1200,29 +1273,34 @@ function OrdensPageContent() {
                     setMostrarDropdownProduto(true);
                   }}
                   onFocus={() => {
-                    if (buscaProduto.trim().length >= 2) setMostrarDropdownProduto(true);
+                    if (buscaProduto.trim().length >= 2) {
+                      setMostrarDropdownProduto(true);
+                    }
                   }}
                 />
 
-                {mostrarDropdownProduto && buscaProduto.trim().length >= 2 && produtosFiltrados.length > 0 && (
-                  <div className="dropdown top-full mt-2">
-                    {produtosFiltrados.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => adicionarProdutoDoBanco(p)}
-                        className="dropdown-item"
-                      >
-                        <div className="font-semibold text-[#111827]">{p.nome}</div>
-                        <div className="text-xs text-[#6B7280]">
-                          {p.codigo_sku || p.codigo_barras || "-"} • {p.categoria || "-"}
-                          {p.subcategoria ? ` / ${p.subcategoria}` : ""} • NCM {p.ncm || "-"} •{" "}
-                          {moneyBR(toMoney(p.preco_balcao))}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {mostrarDropdownProduto &&
+                  buscaProduto.trim().length >= 2 &&
+                  produtosFiltrados.length > 0 && (
+                    <div className="dropdown top-full mt-2">
+                      {produtosFiltrados.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => adicionarProdutoDoBanco(p)}
+                          className="dropdown-item"
+                        >
+                          <div className="font-semibold text-[#111827]">
+                            {p.nome}
+                          </div>
+                          <div className="text-xs text-[#6B7280]">
+                            {p.codigo_sku || p.codigo_barras || "-"} •{" "}
+                            {moneyBR(toMoney(p.preco_balcao))}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
 
               <table className="tabela">
@@ -1250,38 +1328,68 @@ function OrdensPageContent() {
                         <td>
                           <input
                             className="campo-tabela"
-                            value={item.produto_nome || item.nome || ""}
-                            onChange={(e) => atualizarProdutoOS(item.id, "produto_nome", e.target.value)}
+                            value={item.produto_nome || ""}
+                            onChange={(e) =>
+                              atualizarProdutoOS(
+                                item.id,
+                                "produto_nome",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             value={item.codigo || ""}
-                            onChange={(e) => atualizarProdutoOS(item.id, "codigo", e.target.value)}
+                            onChange={(e) =>
+                              atualizarProdutoOS(item.id, "codigo", e.target.value)
+                            }
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             type="number"
+                            min="1"
                             value={toMoney(item.quantidade)}
-                            onChange={(e) => atualizarProdutoOS(item.id, "quantidade", e.target.value)}
+                            onChange={(e) =>
+                              atualizarProdutoOS(
+                                item.id,
+                                "quantidade",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             type="number"
+                            min="0"
+                            step="0.01"
                             value={toMoney(item.valor_unitario)}
-                            onChange={(e) => atualizarProdutoOS(item.id, "valor_unitario", e.target.value)}
+                            onChange={(e) =>
+                              atualizarProdutoOS(
+                                item.id,
+                                "valor_unitario",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td className="font-bold text-[#0F172A]">
-                          {moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}
+                          {moneyBR(
+                            toMoney(item.quantidade) *
+                              toMoney(item.valor_unitario)
+                          )}
                         </td>
                         <td>
-                          <button className="botao-mini danger" onClick={() => removerProdutoOS(item.id)} type="button">
+                          <button
+                            className="botao-mini danger"
+                            onClick={() => removerProdutoOS(item.id)}
+                            type="button"
+                          >
                             REMOVER
                           </button>
                         </td>
@@ -1297,7 +1405,7 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">SERVIÇOS / MÃO DE OBRA</h2>
                   <p className="section-subtitle">
-                    Adicione serviços cadastrados ou lance um serviço manual.
+                    Adicione serviços cadastrados ou lance um item manual.
                   </p>
                 </div>
 
@@ -1306,7 +1414,7 @@ function OrdensPageContent() {
                 </button>
               </div>
 
-              <div className="relative mb-4">
+              <div className="relative mb-4" ref={servicoBoxRef}>
                 <input
                   placeholder="BUSCAR SERVIÇO CADASTRADO..."
                   className="campo"
@@ -1316,28 +1424,34 @@ function OrdensPageContent() {
                     setMostrarDropdownServico(true);
                   }}
                   onFocus={() => {
-                    if (buscaServico.trim().length >= 2) setMostrarDropdownServico(true);
+                    if (buscaServico.trim().length >= 2) {
+                      setMostrarDropdownServico(true);
+                    }
                   }}
                 />
 
-                {mostrarDropdownServico && buscaServico.trim().length >= 2 && servicosFiltrados.length > 0 && (
-                  <div className="dropdown top-full mt-2">
-                    {servicosFiltrados.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => adicionarServicoDoCadastro(s)}
-                        className="dropdown-item"
-                      >
-                        <div className="font-semibold text-[#111827]">{s.nome}</div>
-                        <div className="text-xs text-[#6B7280]">
-                          {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
-                          {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {mostrarDropdownServico &&
+                  buscaServico.trim().length >= 2 &&
+                  servicosFiltrados.length > 0 && (
+                    <div className="dropdown top-full mt-2">
+                      {servicosFiltrados.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => adicionarServicoDoCadastro(s)}
+                          className="dropdown-item"
+                        >
+                          <div className="font-semibold text-[#111827]">
+                            {s.nome}
+                          </div>
+                          <div className="text-xs text-[#6B7280]">
+                            {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
+                            {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
 
               <table className="tabela">
@@ -1365,30 +1479,58 @@ function OrdensPageContent() {
                           <input
                             className="campo-tabela"
                             value={item.descricao || ""}
-                            onChange={(e) => atualizarServicoOS(item.id, "descricao", e.target.value)}
+                            onChange={(e) =>
+                              atualizarServicoOS(
+                                item.id,
+                                "descricao",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             type="number"
+                            min="1"
                             value={toMoney(item.quantidade)}
-                            onChange={(e) => atualizarServicoOS(item.id, "quantidade", e.target.value)}
+                            onChange={(e) =>
+                              atualizarServicoOS(
+                                item.id,
+                                "quantidade",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             type="number"
+                            min="0"
+                            step="0.01"
                             value={toMoney(item.valor_unitario)}
-                            onChange={(e) => atualizarServicoOS(item.id, "valor_unitario", e.target.value)}
+                            onChange={(e) =>
+                              atualizarServicoOS(
+                                item.id,
+                                "valor_unitario",
+                                e.target.value
+                              )
+                            }
                           />
                         </td>
                         <td className="font-bold text-[#0F172A]">
-                          {moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}
+                          {moneyBR(
+                            toMoney(item.quantidade) *
+                              toMoney(item.valor_unitario)
+                          )}
                         </td>
                         <td>
-                          <button className="botao-mini danger" onClick={() => removerServicoOS(item.id)} type="button">
+                          <button
+                            className="botao-mini danger"
+                            onClick={() => removerServicoOS(item.id)}
+                            type="button"
+                          >
                             REMOVER
                           </button>
                         </td>
@@ -1404,17 +1546,32 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">HISTÓRICO DE ORDENS</h2>
                   <p className="section-subtitle">
-                    Consulte e reutilize ordens de serviço anteriores.
+                    Consulte e gerencie ordens finalizadas, faturadas e entregues.
                   </p>
                 </div>
               </div>
 
-              <input
-                placeholder="BUSCAR POR NÚMERO, CLIENTE, VEÍCULO OU STATUS..."
-                className="campo mb-4"
-                value={buscaHistorico}
-                onChange={(e) => setBuscaHistorico(e.target.value)}
-              />
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-4 mb-4">
+                <input
+                  placeholder="BUSCAR POR NÚMERO, CLIENTE, VEÍCULO OU STATUS..."
+                  className="campo"
+                  value={buscaHistorico}
+                  onChange={(e) => setBuscaHistorico(e.target.value)}
+                />
+
+                <select
+                  className="campo"
+                  value={filtroStatusHistorico}
+                  onChange={(e) => setFiltroStatusHistorico(e.target.value)}
+                >
+                  <option value="TODAS">TODAS AS ORDENS</option>
+                  <option value="ABERTA">ABERTAS</option>
+                  <option value="EM ANDAMENTO">EM ANDAMENTO</option>
+                  <option value="FINALIZADA">FINALIZADAS</option>
+                  <option value="ENTREGUE">ENTREGUES</option>
+                  <option value="CANCELADA">CANCELADAS</option>
+                </select>
+              </div>
 
               <table className="tabela">
                 <thead>
@@ -1426,7 +1583,7 @@ function OrdensPageContent() {
                     <th>STATUS</th>
                     <th>FAT.</th>
                     <th>TOTAL</th>
-                    <th>AÇÕES</th>
+                    <th className="text-center">COMANDOS</th>
                   </tr>
                 </thead>
 
@@ -1441,28 +1598,46 @@ function OrdensPageContent() {
                     historicoFiltrado.map((item) => (
                       <tr key={item.id}>
                         <td className="font-bold">{item.numero || "-"}</td>
+
                         <td>
                           {item.created_at
-                            ? new Date(item.created_at).toLocaleDateString("pt-BR")
+                            ? new Date(item.created_at).toLocaleDateString(
+                                "pt-BR"
+                              )
                             : "-"}
                         </td>
+
                         <td>{item.cliente_nome || "-"}</td>
                         <td>{item.veiculo_descricao || "-"}</td>
+
                         <td>
-                          <span className={`status-chip ${statusClass(item.status || "ABERTA")}`}>
+                          <span
+                            className={`status-chip ${statusClass(
+                              item.status || "ABERTA"
+                            )}`}
+                          >
                             {item.status || "-"}
                           </span>
                         </td>
+
                         <td>{item.faturado ? "SIM" : "NÃO"}</td>
-                        <td className="font-bold">{moneyBR(toMoney(item.total || 0))}</td>
-                        <td>
-                          <div className="flex gap-1 flex-wrap">
-                            <button className="botao-mini" onClick={() => editarOS(item)} type="button">
+
+                        <td className="font-bold">
+                          {moneyBR(toMoney(item.total || 0))}
+                        </td>
+
+                        <td className="align-top">
+                          <div className="flex flex-col gap-2 min-w-[130px]">
+                            <button
+                              className="botao-mini w-full"
+                              onClick={() => editarOS(item)}
+                              type="button"
+                            >
                               EDITAR
                             </button>
 
                             <button
-                              className="botao-mini success"
+                              className="botao-mini success w-full"
                               onClick={() => finalizarOS(item)}
                               type="button"
                               disabled={
@@ -1475,7 +1650,7 @@ function OrdensPageContent() {
                             </button>
 
                             <button
-                              className="botao-mini warning"
+                              className="botao-mini warning w-full"
                               onClick={() => faturarOS(item)}
                               type="button"
                               disabled={!!item.faturado || item.status === "CANCELADA"}
@@ -1484,23 +1659,38 @@ function OrdensPageContent() {
                             </button>
 
                             <button
-                              className="botao-mini info"
+                              className="botao-mini info w-full"
                               onClick={() => entregarOS(item)}
                               type="button"
-                              disabled={item.status === "ENTREGUE" || item.status === "CANCELADA"}
+                              disabled={
+                                item.status === "ENTREGUE" ||
+                                item.status === "CANCELADA"
+                              }
                             >
                               ENTREGAR
                             </button>
 
-                            <button className="botao-mini" onClick={() => imprimirOS(item)} type="button">
-                              OS
+                            <button
+                              className="botao-mini w-full"
+                              onClick={() => imprimirOS(item)}
+                              type="button"
+                            >
+                              IMPRIMIR OS
                             </button>
 
-                            <button className="botao-mini" onClick={() => imprimirTecnico(item)} type="button">
-                              TÉCNICO
+                            <button
+                              className="botao-mini w-full"
+                              onClick={() => imprimirTecnico(item)}
+                              type="button"
+                            >
+                              FICHA TÉCNICO
                             </button>
 
-                            <button className="botao-mini danger" onClick={() => removerOS(item.id)} type="button">
+                            <button
+                              className="botao-mini danger w-full"
+                              onClick={() => removerOS(item.id)}
+                              type="button"
+                            >
                               REMOVER
                             </button>
                           </div>
@@ -1544,7 +1734,9 @@ function OrdensPageContent() {
                 </div>
                 <div className="resumo-linha">
                   <span>GARANTIA</span>
-                  <strong>{garantiaNumero ? `${garantiaNumero} ${garantiaTipo}` : "-"}</strong>
+                  <strong>
+                    {garantiaNumero ? `${garantiaNumero} ${garantiaTipo}` : "-"}
+                  </strong>
                 </div>
                 <div className="resumo-linha">
                   <span>PAGAMENTO</span>
@@ -1558,7 +1750,11 @@ function OrdensPageContent() {
 
               <div className="mt-5">
                 <label className="label">STATUS DA OS</label>
-                <select className="campo" value={status} onChange={(e) => setStatus(e.target.value)}>
+                <select
+                  className="campo"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
                   <option>ABERTA</option>
                   <option>EM ANDAMENTO</option>
                   <option>FINALIZADA</option>
@@ -1754,11 +1950,6 @@ function OrdensPageContent() {
           border-color: #fecaca;
           background: #fef2f2;
           color: #b91c1c;
-        }
-
-        .botao-mini:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
         }
 
         .botao-header {
@@ -1994,10 +2185,14 @@ function KpiMini({
   return (
     <div
       className={`rounded-[18px] px-4 py-3 ${
-        destaque ? "bg-white text-[#0456A3]" : "bg-white/12 text-white border border-white/15"
+        destaque
+          ? "bg-white text-[#0456A3]"
+          : "bg-white/12 text-white border border-white/15"
       }`}
     >
-      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">{titulo}</div>
+      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">
+        {titulo}
+      </div>
       <div className="mt-1 text-[18px] font-black leading-none">{valor}</div>
     </div>
   );
