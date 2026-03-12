@@ -85,6 +85,7 @@ type OsProduto = {
   empresa_id?: string;
   ordem_servico_id?: string;
   produto_id?: string | null;
+  nome?: string | null;
   produto_nome?: string | null;
   codigo?: string | null;
   quantidade?: number | null;
@@ -504,6 +505,7 @@ function OrdensPageContent() {
       {
         id: makeLocalId(),
         produto_id: p.id,
+        nome: p.nome,
         produto_nome: p.nome,
         codigo: p.codigo_sku || "",
         quantidade: 1,
@@ -542,6 +544,12 @@ function OrdensPageContent() {
               ? toMoney(valor)
               : valor,
         };
+
+        if (campo === "produto_nome" || campo === "nome") {
+          const texto = String(valor ?? "");
+          atualizado.nome = texto;
+          atualizado.produto_nome = texto;
+        }
 
         atualizado.subtotal =
           toMoney(atualizado.quantidade) * toMoney(atualizado.valor_unitario);
@@ -670,7 +678,8 @@ function OrdensPageContent() {
       empresa_id: empresaId,
       ordem_servico_id: ordemId,
       produto_id: item.produto_id || null,
-      produto_nome: up(item.produto_nome || ""),
+      nome: up(item.produto_nome || item.nome || ""),
+      produto_nome: up(item.produto_nome || item.nome || ""),
       codigo: up(item.codigo || ""),
       quantidade: toMoney(item.quantidade),
       valor_unitario: toMoney(item.valor_unitario),
@@ -692,6 +701,7 @@ function OrdensPageContent() {
       const { error } = await supabase
         .from("ordens_servico_produtos")
         .insert(produtosPayload);
+
       if (error) {
         alert("ERRO AO SALVAR PRODUTOS DA OS: " + error.message);
         return;
@@ -702,6 +712,7 @@ function OrdensPageContent() {
       const { error } = await supabase
         .from("ordens_servico_servicos")
         .insert(servicosPayload);
+
       if (error) {
         alert("ERRO AO SALVAR SERVIÇOS DA OS: " + error.message);
         return;
@@ -755,14 +766,12 @@ function OrdensPageContent() {
         .from("ordens_servico_produtos")
         .select("*")
         .eq("empresa_id", empresaId)
-        .eq("ordem_servico_id", item.id)
-        .order("created_at", { ascending: true }),
+        .eq("ordem_servico_id", item.id),
       supabase
         .from("ordens_servico_servicos")
         .select("*")
         .eq("empresa_id", empresaId)
-        .eq("ordem_servico_id", item.id)
-        .order("created_at", { ascending: true }),
+        .eq("ordem_servico_id", item.id),
     ]);
 
     if (prodResp.error) {
@@ -774,9 +783,11 @@ function OrdensPageContent() {
     }
 
     setProdutosOS(
-      ((prodResp.data || []) as OsProduto[]).map((p) => ({
+      ((prodResp.data || []) as any[]).map((p) => ({
         ...p,
         id: p.id || makeLocalId(),
+        nome: p.nome || p.produto_nome || "",
+        produto_nome: p.produto_nome || p.nome || "",
       }))
     );
 
@@ -1162,7 +1173,7 @@ function OrdensPageContent() {
                         <td>
                           <input
                             className="campo-tabela"
-                            value={item.produto_nome || ""}
+                            value={item.produto_nome || item.nome || ""}
                             onChange={(e) => atualizarProdutoOS(item.id, "produto_nome", e.target.value)}
                           />
                         </td>
