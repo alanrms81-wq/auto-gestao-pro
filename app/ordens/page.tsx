@@ -268,7 +268,6 @@ function OrdensPageContent() {
             empresa_id
           `)
           .eq("empresa_id", emp)
-          .eq("status", "ATIVO")
           .order("nome"),
 
         supabase
@@ -452,6 +451,7 @@ function OrdensPageContent() {
     if (!q || q.length < 2) return [];
 
     return produtosBase
+      .filter((p) => up((p.status || "ATIVO").trim()) !== "INATIVO")
       .filter((p) =>
         up(
           `${p.nome || ""} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""}`
