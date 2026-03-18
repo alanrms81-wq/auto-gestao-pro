@@ -6,10 +6,6 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
 
-type Cliente = {
-  id: string;
-};
-
 type Produto = {
   id: string;
   nome: string;
@@ -143,7 +139,9 @@ export default function DashboardPage() {
   const [ready, setReady] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
 
-  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [totalClientes, setTotalClientes] = useState(0);
+  const [totalProdutos, setTotalProdutos] = useState(0);
+
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
   const [titulos, setTitulos] = useState<FinanceiroTitulo[]>([]);
@@ -167,44 +165,69 @@ export default function DashboardPage() {
   }, [router]);
 
   async function carregarBase(empId: string) {
-    const [clientesResp, produtosResp, ordensResp, titulosResp, estoqueResp] =
-      await Promise.all([
-        supabase.from("clientes").select("id").eq("empresa_id", empId),
-        supabase
-          .from("produtos")
-          .select("id,nome,estoque_atual,estoque_minimo,controla_estoque")
-          .eq("empresa_id", empId),
-        supabase
-          .from("ordens_servico")
-          .select("id,numero,cliente_nome,veiculo_descricao,status,total,faturado,created_at,data_faturamento")
-          .eq("empresa_id", empId),
-        supabase
-          .from("financeiro_titulos")
-          .select(
-            "id,tipo,descricao,cliente_nome,valor_original,valor_pago,desconto,juros,multa,data_emissao,data_vencimento,data_pagamento,status"
-          )
-          .eq("empresa_id", empId),
-        supabase
-          .from("movimentacoes_estoque")
-          .select("id,tipo,quantidade,created_at")
-          .eq("empresa_id", empId),
-      ]);
+    const [
+      clientesCountResp,
+      produtosCountResp,
+      produtosResp,
+      ordensResp,
+      titulosResp,
+      estoqueResp,
+    ] = await Promise.all([
+      supabase
+        .from("clientes")
+        .select("id", { count: "exact", head: true })
+        .eq("empresa_id", empId),
 
-    if (clientesResp.error) alert("ERRO CLIENTES: " + clientesResp.error.message);
+      supabase
+        .from("produtos")
+        .select("id", { count: "exact", head: true })
+        .eq("empresa_id", empId),
+
+      supabase
+        .from("produtos")
+        .select("id,nome,estoque_atual,estoque_minimo,controla_estoque")
+        .eq("empresa_id", empId),
+
+      supabase
+        .from("ordens_servico")
+        .select("id,numero,cliente_nome,veiculo_descricao,status,total,faturado,created_at,data_faturamento")
+        .eq("empresa_id", empId),
+
+      supabase
+        .from("financeiro_titulos")
+        .select(
+          "id,tipo,descricao,cliente_nome,valor_original,valor_pago,desconto,juros,multa,data_emissao,data_vencimento,data_pagamento,status"
+        )
+        .eq("empresa_id", empId),
+
+      supabase
+        .from("movimentacoes_estoque")
+        .select("id,tipo,quantidade,created_at")
+        .eq("empresa_id", empId),
+    ]);
+
+    if (clientesCountResp.error) {
+      alert("ERRO AO CONTAR CLIENTES: " + clientesCountResp.error.message);
+    } else {
+      setTotalClientes(clientesCountResp.count || 0);
+    }
+
+    if (produtosCountResp.error) {
+      alert("ERRO AO CONTAR PRODUTOS: " + produtosCountResp.error.message);
+    } else {
+      setTotalProdutos(produtosCountResp.count || 0);
+    }
+
     if (produtosResp.error) alert("ERRO PRODUTOS: " + produtosResp.error.message);
     if (ordensResp.error) alert("ERRO ORDENS: " + ordensResp.error.message);
     if (titulosResp.error) alert("ERRO FINANCEIRO: " + titulosResp.error.message);
     if (estoqueResp.error) alert("ERRO ESTOQUE: " + estoqueResp.error.message);
 
-    setClientes((clientesResp.data || []) as Cliente[]);
     setProdutos((produtosResp.data || []) as Produto[]);
     setOrdens((ordensResp.data || []) as OrdemServico[]);
     setTitulos((titulosResp.data || []) as FinanceiroTitulo[]);
     setMovsEstoque((estoqueResp.data || []) as MovimentacaoEstoque[]);
   }
-
-  const clientesTotal = useMemo(() => clientes.length, [clientes]);
-  const produtosTotal = useMemo(() => produtos.length, [produtos]);
 
   const osAbertas = useMemo(
     () => ordens.filter((o) => up(o.status) === "ABERTA").length,
@@ -337,8 +360,8 @@ export default function DashboardPage() {
   }, [graficoMeses]);
 
   const cardsResumo = [
-    { titulo: "CLIENTES", valor: String(clientesTotal) },
-    { titulo: "PRODUTOS", valor: String(produtosTotal) },
+    { titulo: "CLIENTES", valor: String(totalClientes) },
+    { titulo: "PRODUTOS", valor: String(totalProdutos) },
     { titulo: "OS ABERTAS", valor: String(osAbertas) },
     { titulo: "OS EM ANDAMENTO", valor: String(osAndamento) },
     { titulo: "OS FINALIZADAS", valor: String(osFinalizadas) },
