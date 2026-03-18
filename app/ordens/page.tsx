@@ -170,7 +170,6 @@ function OrdensPageContent() {
   const [empresaId, setEmpresaId] = useState<string | null>(null);
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [produtosBase, setProdutosBase] = useState<Produto[]>([]);
   const [servicosBase, setServicosBase] = useState<ServicoBase[]>([]);
   const [veiculosCliente, setVeiculosCliente] = useState<Veiculo[]>([]);
   const [historico, setHistorico] = useState<OrdemServico[]>([]);
@@ -211,8 +210,6 @@ function OrdensPageContent() {
 
   const [produtosBusca, setProdutosBusca] = useState<Produto[]>([]);
   const [loadingProdutosBusca, setLoadingProdutosBusca] = useState(false);
-  const [ultimoErroBuscaProdutos, setUltimoErroBuscaProdutos] = useState("");
-  const [debugBuscaExecutada, setDebugBuscaExecutada] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -247,58 +244,34 @@ function OrdensPageContent() {
 
     setLoading(true);
 
-    const [clientesResp, produtosResp, servicosResp, historicoResp] =
-      await Promise.all([
-        supabase
-          .from("clientes")
-          .select("id,nome,telefone,celular,whatsapp,cpf_cnpj")
-          .eq("empresa_id", emp)
-          .order("nome"),
+    const [clientesResp, servicosResp, historicoResp] = await Promise.all([
+      supabase
+        .from("clientes")
+        .select("id,nome,telefone,celular,whatsapp,cpf_cnpj")
+        .eq("empresa_id", emp)
+        .order("nome"),
 
-        supabase
-          .from("produtos")
-          .select(`
-            id,
-            nome,
-            codigo_sku,
-            codigo_barras,
-            categoria,
-            subcategoria,
-            preco_balcao,
-            preco_instalacao,
-            preco_revenda,
-            controla_estoque,
-            estoque_atual,
-            status,
-            empresa_id
-          `)
-          .eq("empresa_id", emp)
-          .order("nome")
-          .limit(2000),
+      supabase
+        .from("servicos")
+        .select(
+          "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
+        )
+        .eq("empresa_id", emp)
+        .eq("status", "ATIVO")
+        .order("nome"),
 
-        supabase
-          .from("servicos")
-          .select(
-            "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
-          )
-          .eq("empresa_id", emp)
-          .eq("status", "ATIVO")
-          .order("nome"),
-
-        supabase
-          .from("ordens_servico")
-          .select("*")
-          .eq("empresa_id", emp)
-          .order("created_at", { ascending: false }),
-      ]);
+      supabase
+        .from("ordens_servico")
+        .select("*")
+        .eq("empresa_id", emp)
+        .order("created_at", { ascending: false }),
+    ]);
 
     if (clientesResp.error) alert("ERRO CLIENTES: " + clientesResp.error.message);
-    if (produtosResp.error) alert("ERRO PRODUTOS: " + produtosResp.error.message);
     if (servicosResp.error) alert("ERRO SERVIÇOS: " + servicosResp.error.message);
     if (historicoResp.error) alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
 
     setClientes((clientesResp.data || []) as Cliente[]);
-    setProdutosBase((produtosResp.data || []) as Produto[]);
     setServicosBase((servicosResp.data || []) as ServicoBase[]);
     setHistorico((historicoResp.data || []) as OrdemServico[]);
 
@@ -309,8 +282,6 @@ function OrdensPageContent() {
     if (!empresaId) return;
 
     const q = termo.trim();
-    setDebugBuscaExecutada(true);
-    setUltimoErroBuscaProdutos("");
 
     if (q.length < 2) {
       setProdutosBusca([]);
@@ -350,7 +321,7 @@ function OrdensPageContent() {
       .limit(50);
 
     if (error) {
-      setUltimoErroBuscaProdutos(error.message);
+      alert("ERRO AO BUSCAR PRODUTOS: " + error.message);
       setProdutosBusca([]);
       setLoadingProdutosBusca(false);
       return;
@@ -359,10 +330,6 @@ function OrdensPageContent() {
     const lista = ((data || []) as Produto[]).filter(
       (p) => up((p.status || "ATIVO").trim()) !== "INATIVO"
     );
-
-    console.log("EMPRESA ID:", empresaId);
-    console.log("BUSCA PRODUTO:", q);
-    console.log("RESULTADO BUSCA PRODUTOS:", lista);
 
     setProdutosBusca(lista);
     setLoadingProdutosBusca(false);
@@ -418,8 +385,6 @@ function OrdensPageContent() {
     setMostrarDropdownProduto(false);
     setMostrarDropdownServico(false);
     setProdutosBusca([]);
-    setDebugBuscaExecutada(false);
-    setUltimoErroBuscaProdutos("");
   }
 
   async function preencherFormularioOS(os: OrdemServico) {
@@ -1070,50 +1035,6 @@ function OrdensPageContent() {
           </div>
         </div>
 
-        <section className="card mb-6 debug-card">
-          <div className="section-header">
-            <div>
-              <h2 className="section-title">DEBUG DA BUSCA DE PRODUTOS</h2>
-              <p className="section-subtitle">
-                Use este bloco para descobrir exatamente por que um produto não aparece.
-              </p>
-            </div>
-          </div>
-
-          <div className="debug-grid">
-            <div><strong>EMPRESA ID:</strong> {empresaId || "-"}</div>
-            <div><strong>BUSCA DIGITADA:</strong> {buscaProduto || "-"}</div>
-            <div><strong>BUSCA EXECUTADA:</strong> {debugBuscaExecutada ? "SIM" : "NÃO"}</div>
-            <div><strong>CARREGANDO:</strong> {loadingProdutosBusca ? "SIM" : "NÃO"}</div>
-            <div><strong>QTD RETORNADA:</strong> {String(produtosBusca.length)}</div>
-            <div><strong>ERRO:</strong> {ultimoErroBuscaProdutos || "-"}</div>
-            <div><strong>PRODUTOS EM CACHE LOCAL:</strong> {String(produtosBase.length)}</div>
-          </div>
-
-          <div className="mt-4 text-xs text-[#475569]">
-            Dica: digite <strong>fio</strong> na busca de produto e veja quantos itens aparecem aqui.
-          </div>
-
-          <div className="mt-4 debug-list">
-            {produtosBusca.length === 0 ? (
-              <div className="debug-empty">NENHUM PRODUTO RETORNADO NESTA BUSCA.</div>
-            ) : (
-              produtosBusca.map((p) => (
-                <div key={p.id} className="debug-item">
-                  <div><strong>{p.nome}</strong></div>
-                  <div>ID: {p.id}</div>
-                  <div>SKU: {p.codigo_sku || "-"}</div>
-                  <div>BARRAS: {p.codigo_barras || "-"}</div>
-                  <div>CATEGORIA: {p.categoria || "-"}</div>
-                  <div>SUBCATEGORIA: {p.subcategoria || "-"}</div>
-                  <div>STATUS: {p.status || "-"}</div>
-                  <div>EMPRESA: {p.empresa_id || "-"}</div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
         <section className="card mb-6">
           <div className="section-header">
             <div>
@@ -1400,7 +1321,6 @@ function OrdensPageContent() {
                           {p.subcategoria ? ` / ${p.subcategoria}` : ""}
                           {" • "}
                           {moneyBR(toMoney(p.preco_balcao))}
-                          {` • STATUS ${p.status || "-"}`}
                         </div>
                       </button>
                     ))}
@@ -1410,7 +1330,6 @@ function OrdensPageContent() {
                 {mostrarDropdownProduto &&
                   buscaProduto.trim().length >= 2 &&
                   !loadingProdutosBusca &&
-                  debugBuscaExecutada &&
                   produtosBusca.length === 0 && (
                     <div className="dropdown top-full mt-2">
                       <div className="dropdown-item text-[#B91C1C]">
@@ -1711,44 +1630,6 @@ function OrdensPageContent() {
           padding: 20px;
           box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
           border: 1px solid #eef2f7;
-        }
-
-        .debug-card {
-          border: 2px solid #f59e0b;
-          background: #fffbeb;
-        }
-
-        .debug-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 8px 16px;
-          font-size: 13px;
-          color: #334155;
-        }
-
-        .debug-list {
-          max-height: 320px;
-          overflow: auto;
-          border: 1px solid #e2e8f0;
-          border-radius: 12px;
-          background: white;
-          padding: 10px;
-        }
-
-        .debug-item {
-          border-bottom: 1px solid #e2e8f0;
-          padding: 8px 0;
-          font-size: 12px;
-          color: #334155;
-        }
-
-        .debug-item:last-child {
-          border-bottom: none;
-        }
-
-        .debug-empty {
-          font-size: 12px;
-          color: #b91c1c;
         }
 
         .sticky-card {
@@ -2078,10 +1959,6 @@ function OrdensPageContent() {
         @media (max-width: 1279px) {
           .sticky-card {
             position: static;
-          }
-
-          .debug-grid {
-            grid-template-columns: 1fr;
           }
         }
       `}</style>
