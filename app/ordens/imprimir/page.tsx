@@ -158,8 +158,8 @@ function ImpressaoOSContent() {
     );
   }, [servicos]);
 
-  if (loading) return <div style={{ padding: 30 }}>CARREGANDO...</div>;
-  if (!ordem) return <div style={{ padding: 30 }}>OS NÃO ENCONTRADA.</div>;
+  if (loading) return <div style={{ padding: 24 }}>CARREGANDO...</div>;
+  if (!ordem) return <div style={{ padding: 24 }}>OS NÃO ENCONTRADA.</div>;
 
   return (
     <div className="page">
@@ -170,8 +170,8 @@ function ImpressaoOSContent() {
         <button onClick={() => window.close()}>FECHAR</button>
       </div>
 
-      <div className="sheet">
-        <header className="header">
+      <div className="sheet print-container">
+        <header className="header compact-block no-break">
           <div>
             <h1>AUTO GESTÃO PRO</h1>
             <span>ORDEM DE SERVIÇO</span>
@@ -185,25 +185,15 @@ function ImpressaoOSContent() {
           </div>
         </header>
 
-        <section className="block">
-          <h2>DADOS DO CLIENTE</h2>
-          <div className="grid two">
+        <section className="block compact-block no-break">
+          <h2>DADOS PRINCIPAIS</h2>
+
+          <div className="grid four compact-grid">
             <div className="cardinfo">
               <strong>CLIENTE</strong>
               <p>{ordem.cliente_nome || "-"}</p>
             </div>
 
-            <div className="cardinfo">
-              <strong>FORMA DE PAGAMENTO</strong>
-              <p>{ordem.forma_pagamento || "-"}</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="block">
-          <h2>DADOS DO VEÍCULO</h2>
-
-          <div className="grid four">
             <div className="cardinfo">
               <strong>VEÍCULO</strong>
               <p>{ordem.veiculo_descricao || "-"}</p>
@@ -218,37 +208,37 @@ function ImpressaoOSContent() {
               <strong>KM</strong>
               <p>{ordem.km || "-"}</p>
             </div>
+          </div>
 
+          <div className="grid four compact-grid mt8">
             <div className="cardinfo">
               <strong>TÉCNICO</strong>
               <p>{ordem.tecnico_responsavel || "-"}</p>
             </div>
-          </div>
 
-          <div className="grid three mt16">
             <div className="cardinfo">
               <strong>PRAZO</strong>
               <p>{formatDate(ordem.prazo_data)}</p>
             </div>
 
             <div className="cardinfo">
-              <strong>STATUS</strong>
-              <p>{ordem.status || "-"}</p>
+              <strong>PAGAMENTO</strong>
+              <p>{ordem.forma_pagamento || "-"}</p>
             </div>
 
             <div className="cardinfo">
-              <strong>TOTAL</strong>
-              <p>{moneyBR(toMoney(ordem.total))}</p>
+              <strong>STATUS</strong>
+              <p>{ordem.status || "-"}</p>
             </div>
           </div>
         </section>
 
-        <section className="block">
+        <section className="block compact-block no-break">
           <h2>DEFEITO RELATADO</h2>
-          <div className="textbox">{ordem.defeito_relatado || "-"}</div>
+          <div className="textbox compact-text">{ordem.defeito_relatado || "-"}</div>
         </section>
 
-        <section className="block">
+        <section className="block compact-block no-break">
           <h2>PRODUTOS</h2>
 
           <table>
@@ -284,7 +274,7 @@ function ImpressaoOSContent() {
           </table>
         </section>
 
-        <section className="block">
+        <section className="block compact-block no-break">
           <h2>SERVIÇOS</h2>
 
           <table>
@@ -318,20 +308,25 @@ function ImpressaoOSContent() {
           </table>
         </section>
 
-        <section className="block">
+        <section className="block compact-block no-break">
           <h2>OBSERVAÇÕES</h2>
-          <div className="textbox">{ordem.observacoes || "-"}</div>
+          <div className="textbox compact-text">{ordem.observacoes || "-"}</div>
         </section>
 
-        <section className="totals">
-          <div>PRODUTOS: {moneyBR(subtotalProdutos)}</div>
-          <div>SERVIÇOS: {moneyBR(subtotalServicos)}</div>
-          <div>DESCONTO: {moneyBR(toMoney(ordem.desconto))}</div>
-          <div>ACRÉSCIMO: {moneyBR(toMoney(ordem.acrescimo))}</div>
-          <div className="total">TOTAL: {moneyBR(toMoney(ordem.total))}</div>
+        <section className="totals compact-block no-break">
+          <div className="totals-grid">
+            <div>PRODUTOS: <strong>{moneyBR(subtotalProdutos)}</strong></div>
+            <div>SERVIÇOS: <strong>{moneyBR(subtotalServicos)}</strong></div>
+            <div>DESCONTO: <strong>{moneyBR(toMoney(ordem.desconto))}</strong></div>
+            <div>ACRÉSCIMO: <strong>{moneyBR(toMoney(ordem.acrescimo))}</strong></div>
+          </div>
+
+          <div className="total">
+            TOTAL: {moneyBR(toMoney(ordem.total))}
+          </div>
         </section>
 
-        <section className="assinaturas">
+        <section className="assinaturas no-break">
           <div>
             <div className="linha"></div>
             <span>ASSINATURA DO CLIENTE</span>
@@ -347,7 +342,7 @@ function ImpressaoOSContent() {
       <style jsx>{`
         .page {
           background: #f1f5f9;
-          padding: 30px;
+          padding: 20px;
           font-family: Arial, sans-serif;
           color: #0f172a;
         }
@@ -356,7 +351,7 @@ function ImpressaoOSContent() {
           display: flex;
           justify-content: center;
           gap: 10px;
-          margin-bottom: 20px;
+          margin-bottom: 14px;
         }
 
         .topbar button {
@@ -376,8 +371,8 @@ function ImpressaoOSContent() {
 
         .sheet {
           background: white;
-          padding: 30px;
-          max-width: 1100px;
+          padding: 18px;
+          max-width: 1050px;
           margin: auto;
           border-radius: 18px;
           box-shadow: 0 15px 40px rgba(15, 23, 42, 0.08);
@@ -386,58 +381,64 @@ function ImpressaoOSContent() {
         .header {
           display: flex;
           justify-content: space-between;
-          gap: 20px;
+          gap: 16px;
           border-bottom: 2px solid #e2e8f0;
-          padding-bottom: 20px;
+          padding-bottom: 12px;
         }
 
         .header h1 {
           margin: 0;
-          font-size: 28px;
+          font-size: 24px;
           color: #0456a3;
+          line-height: 1.1;
         }
 
         .header span {
           display: inline-block;
-          margin-top: 8px;
-          font-size: 13px;
+          margin-top: 6px;
+          font-size: 11px;
           font-weight: 700;
           color: #475569;
           letter-spacing: 0.08em;
         }
 
         .osbox {
-          min-width: 280px;
+          min-width: 250px;
           border: 1px solid #e2e8f0;
-          border-radius: 14px;
-          padding: 14px;
+          border-radius: 12px;
+          padding: 10px 12px;
           background: #f8fafc;
-          font-size: 13px;
-          line-height: 1.7;
+          font-size: 12px;
+          line-height: 1.5;
         }
 
         .osnum {
-          font-size: 22px;
+          font-size: 18px;
           font-weight: 900;
-          margin-bottom: 6px;
+          margin-bottom: 4px;
         }
 
         .block {
-          margin-top: 24px;
+          margin-top: 14px;
+        }
+
+        .compact-block {
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
 
         .block h2 {
-          font-size: 13px;
-          margin: 0 0 10px 0;
+          font-size: 12px;
+          margin: 0 0 8px 0;
           color: #334155;
           letter-spacing: 0.08em;
           border-bottom: 1px solid #e2e8f0;
-          padding-bottom: 6px;
+          padding-bottom: 4px;
         }
 
         .grid {
           display: grid;
-          gap: 12px;
+          gap: 8px;
         }
 
         .grid.two {
@@ -452,114 +453,136 @@ function ImpressaoOSContent() {
           grid-template-columns: repeat(4, minmax(0, 1fr));
         }
 
+        .compact-grid {
+          gap: 8px;
+        }
+
         .cardinfo {
           border: 1px solid #e2e8f0;
-          border-radius: 12px;
-          padding: 12px;
+          border-radius: 10px;
+          padding: 8px 10px;
           background: #fff;
+          min-height: 52px;
         }
 
         .cardinfo strong {
           display: block;
-          font-size: 11px;
+          font-size: 10px;
           color: #64748b;
-          margin-bottom: 6px;
+          margin-bottom: 4px;
         }
 
         .cardinfo p {
           margin: 0;
-          font-size: 14px;
+          font-size: 12px;
           font-weight: 700;
+          line-height: 1.25;
         }
 
         .textbox {
           border: 1px solid #e2e8f0;
-          padding: 14px;
-          min-height: 80px;
-          border-radius: 12px;
+          padding: 10px 12px;
+          min-height: 54px;
+          border-radius: 10px;
           background: #fff;
           white-space: pre-wrap;
-          font-size: 14px;
-          line-height: 1.5;
+          font-size: 12px;
+          line-height: 1.35;
+        }
+
+        .compact-text {
+          min-height: 52px;
         }
 
         table {
           width: 100%;
           border-collapse: collapse;
           border: 1px solid #e2e8f0;
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
 
         th,
         td {
           border-bottom: 1px solid #e2e8f0;
-          padding: 10px;
-          font-size: 13px;
+          padding: 7px 8px;
+          font-size: 12px;
           text-align: left;
+          line-height: 1.2;
         }
 
         th {
           background: #f8fafc;
           color: #334155;
-          font-size: 12px;
+          font-size: 11px;
         }
 
         .empty {
           text-align: center;
           color: #64748b;
-          padding: 18px;
+          padding: 12px;
         }
 
         .totals {
-          margin-top: 24px;
-          margin-left: auto;
-          max-width: 360px;
+          margin-top: 14px;
           border: 1px solid #e2e8f0;
-          border-radius: 14px;
-          padding: 16px;
+          border-radius: 12px;
+          padding: 10px 12px;
           background: #f8fafc;
-          font-size: 14px;
-          line-height: 1.9;
+          font-size: 12px;
           font-weight: 700;
+        }
+
+        .totals-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 6px 18px;
         }
 
         .totals .total {
           margin-top: 8px;
           padding-top: 8px;
           border-top: 2px solid #cbd5e1;
-          font-size: 18px;
+          font-size: 16px;
           color: #0456a3;
+          text-align: right;
         }
 
         .assinaturas {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 40px;
-          margin-top: 60px;
+          gap: 28px;
+          margin-top: 26px;
         }
 
         .assinaturas span {
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 700;
           color: #475569;
         }
 
         .linha {
           border-top: 1px solid #111827;
-          margin-bottom: 6px;
+          margin-bottom: 5px;
           width: 100%;
         }
 
-        .mt16 {
-          margin-top: 16px;
+        .mt8 {
+          margin-top: 8px;
+        }
+
+        .no-break {
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
 
         @media (max-width: 900px) {
           .page {
-            padding: 14px;
+            padding: 12px;
           }
 
           .sheet {
-            padding: 18px;
+            padding: 14px;
           }
 
           .header {
@@ -569,7 +592,8 @@ function ImpressaoOSContent() {
           .grid.two,
           .grid.three,
           .grid.four,
-          .assinaturas {
+          .assinaturas,
+          .totals-grid {
             grid-template-columns: 1fr;
           }
 
@@ -579,6 +603,17 @@ function ImpressaoOSContent() {
         }
 
         @media print {
+          @page {
+            size: A4;
+            margin: 8mm;
+          }
+
+          body {
+            margin: 0;
+            padding: 0;
+            background: white;
+          }
+
           .no-print {
             display: none !important;
           }
@@ -595,9 +630,121 @@ function ImpressaoOSContent() {
             padding: 0;
           }
 
-          @page {
-            size: A4;
-            margin: 12mm;
+          .print-container {
+            width: 100%;
+            font-size: 10.5px;
+            line-height: 1.15;
+          }
+
+          .header {
+            padding-bottom: 8px;
+            margin-bottom: 0;
+          }
+
+          .header h1 {
+            font-size: 19px;
+          }
+
+          .header span {
+            font-size: 10px;
+            margin-top: 3px;
+          }
+
+          .osbox {
+            font-size: 10px;
+            padding: 7px 9px;
+            line-height: 1.35;
+          }
+
+          .osnum {
+            font-size: 15px;
+            margin-bottom: 2px;
+          }
+
+          .block {
+            margin-top: 9px;
+          }
+
+          .block h2 {
+            font-size: 10px;
+            margin-bottom: 4px;
+            padding-bottom: 3px;
+          }
+
+          .grid,
+          .compact-grid {
+            gap: 5px;
+          }
+
+          .cardinfo {
+            padding: 6px 8px;
+            min-height: auto;
+          }
+
+          .cardinfo strong {
+            font-size: 8.5px;
+            margin-bottom: 2px;
+          }
+
+          .cardinfo p {
+            font-size: 10px;
+            line-height: 1.15;
+          }
+
+          .textbox {
+            padding: 7px 8px;
+            min-height: 34px;
+            font-size: 10px;
+            line-height: 1.2;
+          }
+
+          table {
+            font-size: 9.5px;
+          }
+
+          th,
+          td {
+            padding: 4px 5px;
+            font-size: 9px;
+            line-height: 1.1;
+          }
+
+          th {
+            font-size: 8.5px;
+          }
+
+          .empty {
+            padding: 8px;
+            font-size: 9px;
+          }
+
+          .totals {
+            margin-top: 8px;
+            padding: 7px 8px;
+            font-size: 9.5px;
+          }
+
+          .totals-grid {
+            gap: 4px 10px;
+          }
+
+          .totals .total {
+            margin-top: 5px;
+            padding-top: 5px;
+            font-size: 12px;
+          }
+
+          .assinaturas {
+            margin-top: 18px;
+            gap: 18px;
+          }
+
+          .assinaturas span {
+            font-size: 9px;
+          }
+
+          .linha {
+            margin-bottom: 4px;
           }
         }
       `}</style>
@@ -607,7 +754,7 @@ function ImpressaoOSContent() {
 
 export default function ImprimirOSPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 30 }}>CARREGANDO...</div>}>
+    <Suspense fallback={<div style={{ padding: 24 }}>CARREGANDO...</div>}>
       <ImpressaoOSContent />
     </Suspense>
   );
