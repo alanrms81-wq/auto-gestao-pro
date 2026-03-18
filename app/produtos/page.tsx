@@ -40,7 +40,13 @@ function up(v: any) {
 }
 
 function toMoney(v: any) {
-  const n = Number(v);
+  const s = String(v ?? "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+    .replace(",", ".");
+
+  const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -257,10 +263,12 @@ export default function ProdutosPage() {
   }
 
   const total = totalRegistros;
-  const ativos = produtos.filter((p) => (p.status || "ATIVO") !== "INATIVO").length;
+  const ativos = produtos.filter((p) => up(p.status || "ATIVO") !== "INATIVO").length;
   const estoqueTotal = produtos.reduce((acc, p) => acc + toMoney(p.estoque_atual), 0);
   const estoqueBaixo = produtos.filter(
-    (p) => !!p.controla_estoque && toMoney(p.estoque_atual) <= toMoney(p.estoque_minimo)
+    (p) =>
+      !!p.controla_estoque &&
+      toMoney(p.estoque_atual) <= toMoney(p.estoque_minimo)
   ).length;
 
   function resetForm() {
@@ -413,133 +421,175 @@ export default function ProdutosPage() {
   async function importarCSV(file: File) {
     if (!empresaId) return;
 
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
-    if (lines.length < 2) {
-      alert("CSV VAZIO OU INVÁLIDO.");
-      return;
-    }
+      if (lines.length < 2) {
+        alert("CSV VAZIO OU INVÁLIDO.");
+        return;
+      }
 
-    const delim = detectDelimiter(lines[0]);
-    const headers = splitCsvLine(lines[0], delim);
-    const map = mapHeaderIndex(headers);
+      const delim = detectDelimiter(lines[0]);
+      const headers = splitCsvLine(lines[0], delim);
+      const map = mapHeaderIndex(headers);
 
-    let created = 0;
-    let updated = 0;
+      let created = 0;
+      let updated = 0;
 
-    for (let i = 1; i < lines.length; i++) {
-      const row = splitCsvLine(lines[i], delim);
+      for (let i = 1; i < lines.length; i++) {
+        const row = splitCsvLine(lines[i], delim);
 
-      const nomeCsv = up(getCell(row, map, ["nome", "produto"]));
-      if (!nomeCsv) continue;
+        const nomeCsv = up(getCell(row, map, ["descricao", "nome", "produto"]));
+        if (!nomeCsv) continue;
 
-      const skuCsv = up(
-        getCell(row, map, ["sku", "codigosku", "codigo", "codigo_sku"])
-      );
-      const barrasCsv = up(
-        getCell(row, map, ["codigobarras", "codigo_barras", "ean", "barras"])
-      );
-      const categoriaCsv = up(getCell(row, map, ["categoria"]));
-      const subcategoriaCsv = up(getCell(row, map, ["subcategoria"]));
-      const ncmCsv = up(getCell(row, map, ["ncm"]));
-      const cestCsv = up(getCell(row, map, ["cest"]));
-      const cfopCsv = up(getCell(row, map, ["cfop"]) || "5102");
-      const unidadeCsv = up(getCell(row, map, ["unidade", "un"]) || "UN");
-      const origemCsv = up(getCell(row, map, ["origem"]) || "0");
-      const cstCsv = up(
-        getCell(row, map, ["cstcsosn", "cst_csosn", "csosn", "cst"]) || "102"
-      );
+        const skuCsv = up(
+          getCell(row, map, ["codigo", "sku", "codigosku", "codigo_sku"])
+        )
+          .replace(/\t/g, "")
+          .trim();
 
-      const icmsCsv = toMoney(
-        getCell(row, map, ["aliquotaicms", "aliquota_icms", "icms"])
-      );
-      const pisCsv = toMoney(
-        getCell(row, map, ["aliquotapis", "aliquota_pis", "pis"])
-      );
-      const cofinsCsv = toMoney(
-        getCell(row, map, ["aliquotacofins", "aliquota_cofins", "cofins"])
-      );
+        const barrasCsv = up(
+          getCell(row, map, [
+            "gtinean",
+            "gtin",
+            "ean",
+            "codigo_barras",
+            "codigobarras",
+            "barras",
+          ])
+        )
+          .replace(/\t/g, "")
+          .trim();
 
-      const precoBalcaoCsv = toMoney(
-        getCell(row, map, ["precobalcao", "preco_balcao", "balcao"])
-      );
-      const precoInstalacaoCsv = toMoney(
-        getCell(row, map, ["precoinstalacao", "preco_instalacao", "instalacao"])
-      );
-      const precoRevendaCsv = toMoney(
-        getCell(row, map, ["precorevenda", "preco_revenda", "revenda"])
-      );
+        const categoriaCsv = up(getCell(row, map, ["categoria"]));
+        const subcategoriaCsv = up(getCell(row, map, ["subcategoria"]));
+        const ncmCsv = up(getCell(row, map, ["ncm"]));
+        const cestCsv = up(getCell(row, map, ["cest"]));
+        const cfopCsv = up(getCell(row, map, ["cfop"]) || "5102");
+        const unidadeCsv = up(getCell(row, map, ["unidade", "un"]) || "UN");
+        const origemCsv = up(getCell(row, map, ["origem"]) || "0");
+        const cstCsv = up(
+          getCell(row, map, ["cstcsosn", "cst_csosn", "csosn", "cst"]) || "102"
+        );
 
-      const controlaEstoqueCsv =
-        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !== "NAO" &&
-        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !== "NÃO" &&
-        up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !== "FALSE";
+        const icmsCsv = toMoney(
+          getCell(row, map, ["aliquotaicms", "aliquota_icms", "icms"])
+        );
+        const pisCsv = toMoney(
+          getCell(row, map, ["aliquotapis", "aliquota_pis", "pis"])
+        );
+        const cofinsCsv = toMoney(
+          getCell(row, map, ["aliquotacofins", "aliquota_cofins", "cofins"])
+        );
 
-      const estoqueAtualCsv = toMoney(
-        getCell(row, map, ["estoque", "estoqueatual", "estoque_atual"])
-      );
-      const estoqueMinimoCsv = toMoney(
-        getCell(row, map, ["estoqueminimo", "estoque_minimo", "minimo"])
-      );
+        const precoBaseCsv = toMoney(
+          getCell(row, map, ["preco", "valor", "preco_balcao", "precobalcao", "balcao"])
+        );
 
-      const statusCsv = up(getCell(row, map, ["status"]) || "ATIVO");
-      const fotoUrlCsv = String(
-        getCell(row, map, ["fotourl", "foto_url", "imagem", "urlimagem", "imageurl"]) || ""
-      ).trim();
+        const precoBalcaoCsv = precoBaseCsv;
+        const precoInstalacaoCsv =
+          toMoney(
+            getCell(row, map, ["precoinstalacao", "preco_instalacao", "instalacao"])
+          ) || precoBaseCsv;
 
-      const { data: existente } = await supabase
-        .from("produtos")
-        .select("id")
-        .eq("empresa_id", empresaId)
-        .or(`nome.eq.${nomeCsv},codigo_sku.eq.${skuCsv},codigo_barras.eq.${barrasCsv}`)
-        .limit(1);
+        const precoRevendaCsv =
+          toMoney(
+            getCell(row, map, ["precorevenda", "preco_revenda", "revenda"])
+          ) || precoBaseCsv;
 
-      const payload = {
-        empresa_id: empresaId,
-        nome: nomeCsv,
-        codigo_sku: skuCsv,
-        codigo_barras: barrasCsv,
-        categoria: categoriaCsv,
-        subcategoria: subcategoriaCsv,
-        ncm: ncmCsv,
-        cest: cestCsv,
-        cfop: cfopCsv,
-        unidade: unidadeCsv,
-        origem: origemCsv,
-        cst_csosn: cstCsv,
-        aliquota_icms: icmsCsv,
-        aliquota_pis: pisCsv,
-        aliquota_cofins: cofinsCsv,
-        preco_balcao: precoBalcaoCsv,
-        preco_instalacao: precoInstalacaoCsv,
-        preco_revenda: precoRevendaCsv,
-        controla_estoque: controlaEstoqueCsv,
-        estoque_atual: estoqueAtualCsv,
-        estoque_minimo: estoqueMinimoCsv,
-        status: statusCsv === "INATIVO" ? "INATIVO" : "ATIVO",
-        foto_url: fotoUrlCsv,
-      };
+        const controlaEstoqueCsv =
+          up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !== "NAO" &&
+          up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !== "NÃO" &&
+          up(getCell(row, map, ["controlaestoque", "controla_estoque"]) || "SIM") !== "FALSE";
 
-      if (existente && existente.length > 0) {
-        const { error } = await supabase
+        const estoqueAtualCsv = toMoney(
+          getCell(row, map, ["estoque", "estoqueatual", "estoque_atual"])
+        );
+
+        const estoqueMinimoCsv = toMoney(
+          getCell(row, map, ["estoqueminimo", "estoque_minimo", "minimo", "estoque mínimo"])
+        );
+
+        const statusBruto = up(
+          getCell(row, map, ["situacao", "situação", "status"]) || "ATIVO"
+        ).trim();
+
+        const statusCsv = statusBruto === "INATIVO" ? "INATIVO" : "ATIVO";
+
+        const fotoUrlCsv = String(
+          getCell(row, map, ["fotourl", "foto_url", "imagem", "urlimagem", "imageurl"]) || ""
+        ).trim();
+
+        let existenteQuery = supabase
           .from("produtos")
-          .update(payload)
-          .eq("id", existente[0].id)
+          .select("id")
           .eq("empresa_id", empresaId);
 
-        if (!error) updated++;
-      } else {
-        const { error } = await supabase.from("produtos").insert([payload]);
-        if (!error) created++;
-      }
-    }
+        if (skuCsv) {
+          existenteQuery = existenteQuery.eq("codigo_sku", skuCsv);
+        } else if (barrasCsv) {
+          existenteQuery = existenteQuery.eq("codigo_barras", barrasCsv);
+        } else {
+          existenteQuery = existenteQuery.eq("nome", nomeCsv);
+        }
 
-    alert(`IMPORTAÇÃO CONCLUÍDA!\nCRIADOS: ${created}\nATUALIZADOS: ${updated}`);
-    setPage(1);
-    setBusca("");
-    setBuscaAplicada("");
-    await carregarProdutos(empresaId, "", 1);
+        const { data: existente, error: existenteError } = await existenteQuery.limit(1);
+
+        if (existenteError) {
+          console.error("ERRO AO BUSCAR PRODUTO EXISTENTE:", existenteError);
+          continue;
+        }
+
+        const payload = {
+          empresa_id: empresaId,
+          nome: nomeCsv,
+          codigo_sku: skuCsv,
+          codigo_barras: barrasCsv,
+          categoria: categoriaCsv,
+          subcategoria: subcategoriaCsv,
+          ncm: ncmCsv,
+          cest: cestCsv,
+          cfop: cfopCsv,
+          unidade: unidadeCsv,
+          origem: origemCsv,
+          cst_csosn: cstCsv,
+          aliquota_icms: icmsCsv,
+          aliquota_pis: pisCsv,
+          aliquota_cofins: cofinsCsv,
+          preco_balcao: precoBalcaoCsv,
+          preco_instalacao: precoInstalacaoCsv,
+          preco_revenda: precoRevendaCsv,
+          controla_estoque: controlaEstoqueCsv,
+          estoque_atual: estoqueAtualCsv,
+          estoque_minimo: estoqueMinimoCsv,
+          status: statusCsv,
+          foto_url: fotoUrlCsv,
+        };
+
+        if (existente && existente.length > 0) {
+          const { error } = await supabase
+            .from("produtos")
+            .update(payload)
+            .eq("id", existente[0].id)
+            .eq("empresa_id", empresaId);
+
+          if (!error) updated++;
+        } else {
+          const { error } = await supabase.from("produtos").insert([payload]);
+          if (!error) created++;
+        }
+      }
+
+      alert(`IMPORTAÇÃO CONCLUÍDA!\nCRIADOS: ${created}\nATUALIZADOS: ${updated}`);
+      setPage(1);
+      setBusca("");
+      setBuscaAplicada("");
+      await carregarProdutos(empresaId, "", 1);
+    } catch (error) {
+      console.error(error);
+      alert("ERRO AO IMPORTAR CSV.");
+    }
   }
 
   if (!ready) {
