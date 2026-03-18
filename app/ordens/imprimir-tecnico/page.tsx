@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
@@ -21,11 +21,6 @@ type OrdemServico = {
   defeito_relatado?: string | null;
   observacoes?: string | null;
   status?: string | null;
-  subtotal_produtos?: number | null;
-  subtotal_servicos?: number | null;
-  desconto?: number | null;
-  acrescimo?: number | null;
-  total?: number | null;
   faturado?: boolean | null;
   created_at?: string | null;
 };
@@ -36,28 +31,17 @@ type OsProduto = {
   produto_nome?: string | null;
   codigo?: string | null;
   quantidade?: number | null;
-  valor_unitario?: number | null;
-  subtotal?: number | null;
 };
 
 type OsServico = {
   id?: string;
   descricao?: string | null;
   quantidade?: number | null;
-  valor_unitario?: number | null;
-  subtotal?: number | null;
 };
 
-function toMoney(v: unknown) {
+function toNumber(v: unknown) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
-}
-
-function moneyBR(v: number) {
-  return v.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
 }
 
 function formatDate(v?: string | null) {
@@ -145,20 +129,6 @@ function ImpressaoTecnicoContent() {
     setServicos((servResp.data || []) as OsServico[]);
     setLoading(false);
   }
-
-  const subtotalProdutos = useMemo(() => {
-    return produtos.reduce(
-      (acc, p) => acc + toMoney(p.quantidade) * toMoney(p.valor_unitario),
-      0
-    );
-  }, [produtos]);
-
-  const subtotalServicos = useMemo(() => {
-    return servicos.reduce(
-      (acc, s) => acc + toMoney(s.quantidade) * toMoney(s.valor_unitario),
-      0
-    );
-  }, [servicos]);
 
   if (loading) return <div style={{ padding: 30 }}>CARREGANDO...</div>;
   if (!ordem) return <div style={{ padding: 30 }}>OS NÃO ENCONTRADA.</div>;
@@ -253,15 +223,13 @@ function ImpressaoTecnicoContent() {
                 <th>PRODUTO</th>
                 <th>CÓDIGO</th>
                 <th>QTD</th>
-                <th>VALOR</th>
-                <th>TOTAL</th>
               </tr>
             </thead>
 
             <tbody>
               {produtos.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="empty">
+                  <td colSpan={3} className="empty">
                     NENHUM PRODUTO LANÇADO.
                   </td>
                 </tr>
@@ -270,9 +238,7 @@ function ImpressaoTecnicoContent() {
                   <tr key={p.id}>
                     <td>{p.produto_nome || p.nome || "-"}</td>
                     <td>{p.codigo || "-"}</td>
-                    <td>{toMoney(p.quantidade)}</td>
-                    <td>{moneyBR(toMoney(p.valor_unitario))}</td>
-                    <td>{moneyBR(toMoney(p.subtotal))}</td>
+                    <td>{toNumber(p.quantidade)}</td>
                   </tr>
                 ))
               )}
@@ -288,15 +254,13 @@ function ImpressaoTecnicoContent() {
               <tr>
                 <th>DESCRIÇÃO</th>
                 <th>QTD</th>
-                <th>VALOR</th>
-                <th>TOTAL</th>
               </tr>
             </thead>
 
             <tbody>
               {servicos.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="empty">
+                  <td colSpan={2} className="empty">
                     NENHUM SERVIÇO LANÇADO.
                   </td>
                 </tr>
@@ -304,9 +268,7 @@ function ImpressaoTecnicoContent() {
                 servicos.map((s) => (
                   <tr key={s.id}>
                     <td>{s.descricao || "-"}</td>
-                    <td>{toMoney(s.quantidade)}</td>
-                    <td>{moneyBR(toMoney(s.valor_unitario))}</td>
-                    <td>{moneyBR(toMoney(s.subtotal))}</td>
+                    <td>{toNumber(s.quantidade)}</td>
                   </tr>
                 ))
               )}
@@ -342,20 +304,14 @@ function ImpressaoTecnicoContent() {
           </div>
         </section>
 
-        <section className="totals">
-          <div>PRODUTOS: {moneyBR(subtotalProdutos)}</div>
-          <div>SERVIÇOS: {moneyBR(subtotalServicos)}</div>
-          <div className="total">TOTAL DA OS: {moneyBR(toMoney(ordem.total))}</div>
-        </section>
-
         <section className="assinaturas">
           <div>
-            <div className="linha"></div>
+            <div className="linha" />
             <span>RESPONSÁVEL TÉCNICO</span>
           </div>
 
           <div>
-            <div className="linha"></div>
+            <div className="linha" />
             <span>CONFERÊNCIA / LIBERAÇÃO</span>
           </div>
         </section>
@@ -543,27 +499,6 @@ function ImpressaoTecnicoContent() {
           font-size: 14px;
           color: #334155;
           padding: 4px 0;
-        }
-
-        .totals {
-          margin-top: 24px;
-          margin-left: auto;
-          max-width: 360px;
-          border: 1px solid #e2e8f0;
-          border-radius: 14px;
-          padding: 16px;
-          background: #f8fafc;
-          font-size: 14px;
-          line-height: 1.9;
-          font-weight: 700;
-        }
-
-        .totals .total {
-          margin-top: 8px;
-          padding-top: 8px;
-          border-top: 2px solid #cbd5e1;
-          font-size: 18px;
-          color: #0456a3;
         }
 
         .assinaturas {

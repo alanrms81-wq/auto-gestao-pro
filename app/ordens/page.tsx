@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -20,10 +20,15 @@ type Produto = {
   nome: string;
   codigo_sku?: string | null;
   codigo_barras?: string | null;
+  categoria?: string | null;
+  subcategoria?: string | null;
   preco_balcao?: number | null;
+  preco_instalacao?: number | null;
+  preco_revenda?: number | null;
   controla_estoque?: boolean | null;
   estoque_atual?: number | null;
   status?: string | null;
+  empresa_id?: string | null;
 };
 
 type ServicoBase = {
@@ -87,8 +92,8 @@ type OsProduto = {
   empresa_id?: string;
   ordem_servico_id?: string;
   produto_id?: string | null;
-  produto_nome?: string | null;
   nome?: string | null;
+  produto_nome?: string | null;
   codigo?: string | null;
   quantidade?: number | null;
   valor_unitario?: number | null;
@@ -159,10 +164,6 @@ function OrdensPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const clienteBoxRef = useRef<HTMLDivElement | null>(null);
-  const produtoBoxRef = useRef<HTMLDivElement | null>(null);
-  const servicoBoxRef = useRef<HTMLDivElement | null>(null);
-
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [carregandoEdicao, setCarregandoEdicao] = useState(false);
@@ -178,7 +179,6 @@ function OrdensPageContent() {
   const [buscaProduto, setBuscaProduto] = useState("");
   const [buscaServico, setBuscaServico] = useState("");
   const [buscaHistorico, setBuscaHistorico] = useState("");
-  const [filtroStatusHistorico, setFiltroStatusHistorico] = useState("TODAS");
 
   const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false);
   const [mostrarDropdownProduto, setMostrarDropdownProduto] = useState(false);
@@ -227,27 +227,6 @@ function OrdensPageContent() {
   }, [router]);
 
   useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      const target = e.target as Node;
-
-      if (clienteBoxRef.current && !clienteBoxRef.current.contains(target)) {
-        setMostrarDropdownCliente(false);
-      }
-
-      if (produtoBoxRef.current && !produtoBoxRef.current.contains(target)) {
-        setMostrarDropdownProduto(false);
-      }
-
-      if (servicoBoxRef.current && !servicoBoxRef.current.contains(target)) {
-        setMostrarDropdownServico(false);
-      }
-    }
-
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
-
-  useEffect(() => {
     if (!ready || !empresaId || clientes.length === 0) return;
     if (editingId) return;
 
@@ -270,13 +249,28 @@ function OrdensPageContent() {
           .select("id,nome,telefone,celular,whatsapp,cpf_cnpj")
           .eq("empresa_id", emp)
           .order("nome"),
+
         supabase
           .from("produtos")
-          .select(
-            "id,nome,codigo_sku,codigo_barras,preco_balcao,controla_estoque,estoque_atual,status"
-          )
+          .select(`
+            id,
+            nome,
+            codigo_sku,
+            codigo_barras,
+            categoria,
+            subcategoria,
+            preco_balcao,
+            preco_instalacao,
+            preco_revenda,
+            controla_estoque,
+            estoque_atual,
+            status,
+            empresa_id
+          `)
           .eq("empresa_id", emp)
+          .eq("status", "ATIVO")
           .order("nome"),
+
         supabase
           .from("servicos")
           .select(
@@ -285,6 +279,7 @@ function OrdensPageContent() {
           .eq("empresa_id", emp)
           .eq("status", "ATIVO")
           .order("nome"),
+
         supabase
           .from("ordens_servico")
           .select("*")
@@ -457,11 +452,12 @@ function OrdensPageContent() {
     if (!q || q.length < 2) return [];
 
     return produtosBase
-      .filter((p) => up(p.status || "ATIVO") !== "INATIVO")
       .filter((p) =>
-        up(`${p.nome} ${p.codigo_sku || ""} ${p.codigo_barras || ""}`).includes(q)
+        up(
+          `${p.nome || ""} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""}`
+        ).includes(q)
       )
-      .slice(0, 10);
+      .slice(0, 20);
   }, [produtosBase, buscaProduto]);
 
   const servicosFiltrados = useMemo(() => {
@@ -474,34 +470,26 @@ function OrdensPageContent() {
           `${s.nome || ""} ${s.descricao || ""} ${s.categoria || ""} ${s.tempo_estimado || ""}`
         ).includes(q)
       )
-      .slice(0, 10);
+      .slice(0, 8);
   }, [servicosBase, buscaServico]);
 
-  const ordensAbertas = useMemo(() => {
-    return historico.filter((item) => {
-      const s = up(item.status || "");
-      return s === "ABERTA" || s === "EM ANDAMENTO" || s === "FINALIZADA";
-    });
-  }, [historico]);
-
   const historicoFiltrado = useMemo(() => {
-    let lista = historico;
-
-    if (filtroStatusHistorico !== "TODAS") {
-      lista = lista.filter(
-        (item) => up(item.status || "") === up(filtroStatusHistorico)
-      );
-    }
-
     const q = up(buscaHistorico.trim());
-    if (!q) return lista;
+    if (!q) return historico;
 
-    return lista.filter((item) =>
+    return historico.filter((item) =>
       up(
         `${item.numero || ""} ${item.cliente_nome || ""} ${item.veiculo_descricao || ""} ${item.status || ""} ${item.placa || ""}`
       ).includes(q)
     );
-  }, [historico, buscaHistorico, filtroStatusHistorico]);
+  }, [historico, buscaHistorico]);
+
+  const ordensAbertas = useMemo(() => {
+    return historicoFiltrado.filter((item) => {
+      const s = up(item.status || "");
+      return s !== "ENTREGUE" && s !== "CANCELADA";
+    });
+  }, [historicoFiltrado]);
 
   const subtotalProdutos = useMemo(() => {
     return produtosOS.reduce(
@@ -557,8 +545,8 @@ function OrdensPageContent() {
       {
         id: makeLocalId(),
         produto_id: p.id,
-        produto_nome: p.nome,
         nome: p.nome,
+        produto_nome: p.nome,
         codigo: p.codigo_sku || p.codigo_barras || "",
         quantidade: 1,
         valor_unitario: toMoney(p.preco_balcao),
@@ -599,10 +587,6 @@ function OrdensPageContent() {
 
         atualizado.subtotal =
           toMoney(atualizado.quantidade) * toMoney(atualizado.valor_unitario);
-
-        if (campo === "produto_nome") {
-          atualizado.nome = String(valor || "");
-        }
 
         return atualizado;
       })
@@ -724,19 +708,17 @@ function OrdensPageContent() {
       ordemId = data.id;
     }
 
-    const produtosPayload = produtosOS
-      .filter((item) => String(item.produto_nome || item.nome || "").trim())
-      .map((item) => ({
-        empresa_id: empresaId,
-        ordem_servico_id: ordemId,
-        produto_id: item.produto_id || null,
-        nome: up(item.produto_nome || item.nome || ""),
-        produto_nome: up(item.produto_nome || item.nome || ""),
-        codigo: up(item.codigo || ""),
-        quantidade: toMoney(item.quantidade),
-        valor_unitario: toMoney(item.valor_unitario),
-        subtotal: toMoney(item.quantidade) * toMoney(item.valor_unitario),
-      }));
+    const produtosPayload = produtosOS.map((item) => ({
+      empresa_id: empresaId,
+      ordem_servico_id: ordemId,
+      produto_id: item.produto_id || null,
+      nome: up(item.produto_nome || item.nome || ""),
+      produto_nome: up(item.produto_nome || item.nome || ""),
+      codigo: up(item.codigo || ""),
+      quantidade: toMoney(item.quantidade),
+      valor_unitario: toMoney(item.valor_unitario),
+      subtotal: toMoney(item.quantidade) * toMoney(item.valor_unitario),
+    }));
 
     const servicosPayload = servicosOS
       .filter((item) => String(item.descricao || "").trim())
@@ -753,7 +735,6 @@ function OrdensPageContent() {
       const { error } = await supabase
         .from("ordens_servico_produtos")
         .insert(produtosPayload);
-
       if (error) {
         alert("ERRO AO SALVAR PRODUTOS DA OS: " + error.message);
         return;
@@ -764,7 +745,6 @@ function OrdensPageContent() {
       const { error } = await supabase
         .from("ordens_servico_servicos")
         .insert(servicosPayload);
-
       if (error) {
         alert("ERRO AO SALVAR SERVIÇOS DA OS: " + error.message);
         return;
@@ -818,12 +798,14 @@ function OrdensPageContent() {
         .from("ordens_servico_produtos")
         .select("*")
         .eq("empresa_id", empresaId)
-        .eq("ordem_servico_id", item.id),
+        .eq("ordem_servico_id", item.id)
+        .order("created_at", { ascending: true }),
       supabase
         .from("ordens_servico_servicos")
         .select("*")
         .eq("empresa_id", empresaId)
-        .eq("ordem_servico_id", item.id),
+        .eq("ordem_servico_id", item.id)
+        .order("created_at", { ascending: true }),
     ]);
 
     if (prodResp.error) {
@@ -838,8 +820,6 @@ function OrdensPageContent() {
       ((prodResp.data || []) as OsProduto[]).map((p) => ({
         ...p,
         id: p.id || makeLocalId(),
-        produto_nome: p.produto_nome || p.nome || "",
-        nome: p.nome || p.produto_nome || "",
       }))
     );
 
@@ -852,6 +832,24 @@ function OrdensPageContent() {
 
     setCarregandoEdicao(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function atualizarStatusOS(item: OrdemServico, novoStatus: string) {
+    if (!empresaId) return;
+
+    const { error } = await supabase
+      .from("ordens_servico")
+      .update({ status: up(novoStatus) })
+      .eq("empresa_id", empresaId)
+      .eq("id", item.id);
+
+    if (error) {
+      alert("ERRO AO ATUALIZAR STATUS: " + error.message);
+      return;
+    }
+
+    alert(`OS MARCADA COMO ${up(novoStatus)}!`);
+    await carregarBase();
   }
 
   async function removerOS(id: string) {
@@ -883,62 +881,6 @@ function OrdensPageContent() {
 
     alert("OS REMOVIDA!");
     if (editingId === id) novaOS();
-    await carregarBase();
-  }
-
-  async function finalizarOS(item: OrdemServico) {
-    if (!empresaId) return;
-
-    if (
-      item.status === "FINALIZADA" ||
-      item.status === "ENTREGUE" ||
-      item.status === "CANCELADA"
-    ) {
-      return;
-    }
-
-    const { error } = await supabase
-      .from("ordens_servico")
-      .update({ status: "FINALIZADA" })
-      .eq("empresa_id", empresaId)
-      .eq("id", item.id);
-
-    if (error) {
-      alert("ERRO AO FINALIZAR OS: " + error.message);
-      return;
-    }
-
-    if (editingId === item.id) {
-      setStatus("FINALIZADA");
-    }
-
-    alert("OS FINALIZADA!");
-    await carregarBase();
-  }
-
-  async function entregarOS(item: OrdemServico) {
-    if (!empresaId) return;
-
-    if (item.status === "ENTREGUE" || item.status === "CANCELADA") {
-      return;
-    }
-
-    const { error } = await supabase
-      .from("ordens_servico")
-      .update({ status: "ENTREGUE" })
-      .eq("empresa_id", empresaId)
-      .eq("id", item.id);
-
-    if (error) {
-      alert("ERRO AO ENTREGAR OS: " + error.message);
-      return;
-    }
-
-    if (editingId === item.id) {
-      setStatus("ENTREGUE");
-    }
-
-    alert("OS MARCADA COMO ENTREGUE!");
     await carregarBase();
   }
 
@@ -1030,9 +972,7 @@ function OrdensPageContent() {
                 ) : (
                   <span className="pill pill-success">NOVA</span>
                 )}
-                {carregandoEdicao && (
-                  <span className="pill pill-white">CARREGANDO EDIÇÃO</span>
-                )}
+                {carregandoEdicao && <span className="pill pill-white">CARREGANDO EDIÇÃO</span>}
               </div>
             </div>
 
@@ -1076,309 +1016,92 @@ function OrdensPageContent() {
             <div>
               <h2 className="section-title">ORDENS ABERTAS</h2>
               <p className="section-subtitle">
-                Ordens que ainda estão em atendimento na oficina.
+                Acompanhe rapidamente as ordens ativas antes de lançar uma nova.
               </p>
             </div>
           </div>
 
-          <div className="space-y-4">
-            {ordensAbertas.length === 0 ? (
-              <div className="empty-card">NENHUMA ORDEM ABERTA NO MOMENTO.</div>
-            ) : (
-              ordensAbertas.map((item) => (
-                <div key={item.id} className="historico-card">
-                  <div className="historico-top-actions">
-                    <button
-                      className="botao-mini"
-                      onClick={() => editarOS(item)}
-                      type="button"
-                    >
-                      EDITAR
-                    </button>
+          <input
+            placeholder="BUSCAR POR NÚMERO, CLIENTE, VEÍCULO OU STATUS..."
+            className="campo mb-4"
+            value={buscaHistorico}
+            onChange={(e) => setBuscaHistorico(e.target.value)}
+          />
 
-                    <button
-                      className="botao-mini success"
-                      onClick={() => finalizarOS(item)}
-                      type="button"
-                      disabled={
-                        item.status === "FINALIZADA" ||
-                        item.status === "ENTREGUE" ||
-                        item.status === "CANCELADA"
-                      }
-                    >
-                      FINALIZAR
-                    </button>
+          <table className="tabela">
+            <thead>
+              <tr>
+                <th>NÚMERO</th>
+                <th>DATA</th>
+                <th>CLIENTE</th>
+                <th>VEÍCULO</th>
+                <th>STATUS</th>
+                <th>FAT.</th>
+                <th>TOTAL</th>
+                <th>AÇÕES</th>
+              </tr>
+            </thead>
 
-                    <button
-                      className="botao-mini warning"
-                      onClick={() => faturarOS(item)}
-                      type="button"
-                      disabled={!!item.faturado || item.status === "CANCELADA"}
-                    >
-                      {item.faturado ? "FATURADA" : "FATURAR"}
-                    </button>
-
-                    <button
-                      className="botao-mini info"
-                      onClick={() => entregarOS(item)}
-                      type="button"
-                      disabled={
-                        item.status === "ENTREGUE" || item.status === "CANCELADA"
-                      }
-                    >
-                      ENTREGAR
-                    </button>
-
-                    <button
-                      className="botao-mini"
-                      onClick={() => imprimirOS(item)}
-                      type="button"
-                    >
-                      IMPRIMIR OS
-                    </button>
-
-                    <button
-                      className="botao-mini"
-                      onClick={() => imprimirTecnico(item)}
-                      type="button"
-                    >
-                      FICHA TÉCNICO
-                    </button>
-                  </div>
-
-                  <div className="historico-grid">
-                    <div>
-                      <div className="historico-label">NÚMERO</div>
-                      <div className="historico-value historico-strong">
-                        {item.numero || "-"}
+            <tbody>
+              {ordensAbertas.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="empty-state">
+                    NENHUMA ORDEM ABERTA ENCONTRADA.
+                  </td>
+                </tr>
+              ) : (
+                ordensAbertas.map((item) => (
+                  <tr key={item.id}>
+                    <td className="font-bold">{item.numero || "-"}</td>
+                    <td>
+                      {item.created_at
+                        ? new Date(item.created_at).toLocaleDateString("pt-BR")
+                        : "-"}
+                    </td>
+                    <td>{item.cliente_nome || "-"}</td>
+                    <td>{item.veiculo_descricao || "-"}</td>
+                    <td>
+                      <span className={`status-chip ${statusClass(item.status || "ABERTA")}`}>
+                        {item.status || "-"}
+                      </span>
+                    </td>
+                    <td>{item.faturado ? "SIM" : "NÃO"}</td>
+                    <td className="font-bold">{moneyBR(toMoney(item.total || 0))}</td>
+                    <td>
+                      <div className="flex gap-1 flex-wrap">
+                        <button className="botao-mini" onClick={() => editarOS(item)} type="button">
+                          EDITAR
+                        </button>
+                        <button
+                          className="botao-mini"
+                          onClick={() => atualizarStatusOS(item, "FINALIZADA")}
+                          type="button"
+                        >
+                          FINALIZAR
+                        </button>
+                        <button
+                          className="botao-mini success"
+                          onClick={() => faturarOS(item)}
+                          type="button"
+                        >
+                          FATURAR
+                        </button>
+                        <button className="botao-mini" onClick={() => imprimirOS(item)} type="button">
+                          OS
+                        </button>
+                        <button className="botao-mini" onClick={() => imprimirTecnico(item)} type="button">
+                          TÉCNICO
+                        </button>
+                        <button className="botao-mini danger" onClick={() => removerOS(item.id)} type="button">
+                          REMOVER
+                        </button>
                       </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">DATA</div>
-                      <div className="historico-value">
-                        {item.created_at
-                          ? new Date(item.created_at).toLocaleDateString("pt-BR")
-                          : "-"}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">CLIENTE</div>
-                      <div className="historico-value">
-                        {item.cliente_nome || "-"}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">VEÍCULO</div>
-                      <div className="historico-value">
-                        {item.veiculo_descricao || "-"}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">STATUS</div>
-                      <div className="historico-value">
-                        <span className={`status-chip ${statusClass(item.status || "ABERTA")}`}>
-                          {item.status || "-"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">FATURADA</div>
-                      <div className="historico-value">
-                        {item.faturado ? "SIM" : "NÃO"}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">TOTAL</div>
-                      <div className="historico-value historico-strong">
-                        {moneyBR(toMoney(item.total || 0))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">PLACA</div>
-                      <div className="historico-value">{item.placa || "-"}</div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="card mb-6">
-          <div className="section-header">
-            <div>
-              <h2 className="section-title">HISTÓRICO DE ORDENS</h2>
-              <p className="section-subtitle">
-                Consulte ordens abertas, finalizadas, entregues ou canceladas.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-4 mb-4">
-            <input
-              placeholder="BUSCAR POR NÚMERO, CLIENTE, VEÍCULO OU STATUS..."
-              className="campo"
-              value={buscaHistorico}
-              onChange={(e) => setBuscaHistorico(e.target.value)}
-            />
-
-            <select
-              className="campo"
-              value={filtroStatusHistorico}
-              onChange={(e) => setFiltroStatusHistorico(e.target.value)}
-            >
-              <option value="TODAS">TODAS AS ORDENS</option>
-              <option value="ABERTA">ABERTAS</option>
-              <option value="EM ANDAMENTO">EM ANDAMENTO</option>
-              <option value="FINALIZADA">FINALIZADAS</option>
-              <option value="ENTREGUE">ENTREGUES</option>
-              <option value="CANCELADA">CANCELADAS</option>
-            </select>
-          </div>
-
-          <div className="space-y-4">
-            {historicoFiltrado.length === 0 ? (
-              <div className="empty-card">NENHUMA ORDEM DE SERVIÇO ENCONTRADA.</div>
-            ) : (
-              historicoFiltrado.map((item) => (
-                <div key={item.id} className="historico-card">
-                  <div className="historico-top-actions">
-                    <button
-                      className="botao-mini"
-                      onClick={() => editarOS(item)}
-                      type="button"
-                    >
-                      EDITAR
-                    </button>
-
-                    <button
-                      className="botao-mini success"
-                      onClick={() => finalizarOS(item)}
-                      type="button"
-                      disabled={
-                        item.status === "FINALIZADA" ||
-                        item.status === "ENTREGUE" ||
-                        item.status === "CANCELADA"
-                      }
-                    >
-                      FINALIZAR
-                    </button>
-
-                    <button
-                      className="botao-mini warning"
-                      onClick={() => faturarOS(item)}
-                      type="button"
-                      disabled={!!item.faturado || item.status === "CANCELADA"}
-                    >
-                      {item.faturado ? "FATURADA" : "FATURAR"}
-                    </button>
-
-                    <button
-                      className="botao-mini info"
-                      onClick={() => entregarOS(item)}
-                      type="button"
-                      disabled={
-                        item.status === "ENTREGUE" || item.status === "CANCELADA"
-                      }
-                    >
-                      ENTREGAR
-                    </button>
-
-                    <button
-                      className="botao-mini"
-                      onClick={() => imprimirOS(item)}
-                      type="button"
-                    >
-                      IMPRIMIR OS
-                    </button>
-
-                    <button
-                      className="botao-mini"
-                      onClick={() => imprimirTecnico(item)}
-                      type="button"
-                    >
-                      FICHA TÉCNICO
-                    </button>
-
-                    <button
-                      className="botao-mini danger"
-                      onClick={() => removerOS(item.id)}
-                      type="button"
-                    >
-                      REMOVER
-                    </button>
-                  </div>
-
-                  <div className="historico-grid">
-                    <div>
-                      <div className="historico-label">NÚMERO</div>
-                      <div className="historico-value historico-strong">
-                        {item.numero || "-"}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">DATA</div>
-                      <div className="historico-value">
-                        {item.created_at
-                          ? new Date(item.created_at).toLocaleDateString("pt-BR")
-                          : "-"}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">CLIENTE</div>
-                      <div className="historico-value">
-                        {item.cliente_nome || "-"}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">VEÍCULO</div>
-                      <div className="historico-value">
-                        {item.veiculo_descricao || "-"}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">STATUS</div>
-                      <div className="historico-value">
-                        <span className={`status-chip ${statusClass(item.status || "ABERTA")}`}>
-                          {item.status || "-"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">FATURADA</div>
-                      <div className="historico-value">
-                        {item.faturado ? "SIM" : "NÃO"}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">TOTAL</div>
-                      <div className="historico-value historico-strong">
-                        {moneyBR(toMoney(item.total || 0))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="historico-label">PLACA</div>
-                      <div className="historico-value">{item.placa || "-"}</div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </section>
 
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6">
@@ -1386,17 +1109,15 @@ function OrdensPageContent() {
             <section className="card">
               <div className="section-header">
                 <div>
-                  <h2 className="section-title">
-                    {editingId ? "EDITAR ORDEM DE SERVIÇO" : "NOVA ORDEM DE SERVIÇO"}
-                  </h2>
+                  <h2 className="section-title">CLIENTE E VEÍCULO</h2>
                   <p className="section-subtitle">
-                    Cadastre a ordem abaixo depois de consultar as ordens abertas.
+                    Identifique rapidamente o cliente, veículo e dados principais da OS.
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-2 relative" ref={clienteBoxRef}>
+                <div className="md:col-span-2 relative">
                   <label className="label">CLIENTE</label>
                   <input
                     placeholder="DIGITE NOME, TELEFONE OU DOCUMENTO..."
@@ -1531,47 +1252,52 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busque por nome, código interno ou código de barras.
+                    Busque por nome, SKU, código de barras, categoria ou subcategoria.
                   </p>
                 </div>
                 <div className="helper-badge">DIGITE 2 LETRAS</div>
               </div>
 
-              <div className="relative mb-4" ref={produtoBoxRef}>
+              <div className="relative mb-4">
                 <input
-                  placeholder="BUSCAR PRODUTO POR NOME, CÓDIGO OU BARRAS..."
+                  placeholder="BUSCAR PRODUTO..."
                   className="campo"
                   value={buscaProduto}
                   onChange={(e) => {
                     setBuscaProduto(e.target.value);
                     setMostrarDropdownProduto(true);
                   }}
-                  onFocus={() => {
+                  onFocus={async () => {
+                    if (empresaId) {
+                      await carregarBase(empresaId);
+                    }
                     if (buscaProduto.trim().length >= 2) {
                       setMostrarDropdownProduto(true);
                     }
                   }}
                 />
 
-                {mostrarDropdownProduto &&
-                  buscaProduto.trim().length >= 2 &&
-                  produtosFiltrados.length > 0 && (
-                    <div className="dropdown top-full mt-2">
-                      {produtosFiltrados.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => adicionarProdutoDoBanco(p)}
-                          className="dropdown-item"
-                        >
-                          <div className="font-semibold text-[#111827]">{p.nome}</div>
-                          <div className="text-xs text-[#6B7280]">
-                            {p.codigo_sku || p.codigo_barras || "-"} • {moneyBR(toMoney(p.preco_balcao))}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                {mostrarDropdownProduto && buscaProduto.trim().length >= 2 && produtosFiltrados.length > 0 && (
+                  <div className="dropdown top-full mt-2">
+                    {produtosFiltrados.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => adicionarProdutoDoBanco(p)}
+                        className="dropdown-item"
+                      >
+                        <div className="font-semibold text-[#111827]">{p.nome}</div>
+                        <div className="text-xs text-[#6B7280]">
+                          {p.codigo_sku || p.codigo_barras || "-"}
+                          {p.categoria ? ` • ${p.categoria}` : ""}
+                          {p.subcategoria ? ` / ${p.subcategoria}` : ""}
+                          {" • "}
+                          {moneyBR(toMoney(p.preco_balcao))}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <table className="tabela">
@@ -1599,53 +1325,38 @@ function OrdensPageContent() {
                         <td>
                           <input
                             className="campo-tabela"
-                            value={item.produto_nome || ""}
-                            onChange={(e) =>
-                              atualizarProdutoOS(item.id, "produto_nome", e.target.value)
-                            }
+                            value={item.produto_nome || item.nome || ""}
+                            onChange={(e) => atualizarProdutoOS(item.id, "produto_nome", e.target.value)}
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             value={item.codigo || ""}
-                            onChange={(e) =>
-                              atualizarProdutoOS(item.id, "codigo", e.target.value)
-                            }
+                            onChange={(e) => atualizarProdutoOS(item.id, "codigo", e.target.value)}
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             type="number"
-                            min="1"
                             value={toMoney(item.quantidade)}
-                            onChange={(e) =>
-                              atualizarProdutoOS(item.id, "quantidade", e.target.value)
-                            }
+                            onChange={(e) => atualizarProdutoOS(item.id, "quantidade", e.target.value)}
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             type="number"
-                            min="0"
-                            step="0.01"
                             value={toMoney(item.valor_unitario)}
-                            onChange={(e) =>
-                              atualizarProdutoOS(item.id, "valor_unitario", e.target.value)
-                            }
+                            onChange={(e) => atualizarProdutoOS(item.id, "valor_unitario", e.target.value)}
                           />
                         </td>
                         <td className="font-bold text-[#0F172A]">
                           {moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}
                         </td>
                         <td>
-                          <button
-                            className="botao-mini danger"
-                            onClick={() => removerProdutoOS(item.id)}
-                            type="button"
-                          >
+                          <button className="botao-mini danger" onClick={() => removerProdutoOS(item.id)} type="button">
                             REMOVER
                           </button>
                         </td>
@@ -1661,7 +1372,7 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">SERVIÇOS / MÃO DE OBRA</h2>
                   <p className="section-subtitle">
-                    Adicione serviços cadastrados ou lance um item manual.
+                    Adicione serviços cadastrados ou lance um serviço manual.
                   </p>
                 </div>
 
@@ -1670,7 +1381,7 @@ function OrdensPageContent() {
                 </button>
               </div>
 
-              <div className="relative mb-4" ref={servicoBoxRef}>
+              <div className="relative mb-4">
                 <input
                   placeholder="BUSCAR SERVIÇO CADASTRADO..."
                   className="campo"
@@ -1680,32 +1391,28 @@ function OrdensPageContent() {
                     setMostrarDropdownServico(true);
                   }}
                   onFocus={() => {
-                    if (buscaServico.trim().length >= 2) {
-                      setMostrarDropdownServico(true);
-                    }
+                    if (buscaServico.trim().length >= 2) setMostrarDropdownServico(true);
                   }}
                 />
 
-                {mostrarDropdownServico &&
-                  buscaServico.trim().length >= 2 &&
-                  servicosFiltrados.length > 0 && (
-                    <div className="dropdown top-full mt-2">
-                      {servicosFiltrados.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => adicionarServicoDoCadastro(s)}
-                          className="dropdown-item"
-                        >
-                          <div className="font-semibold text-[#111827]">{s.nome}</div>
-                          <div className="text-xs text-[#6B7280]">
-                            {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
-                            {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                {mostrarDropdownServico && buscaServico.trim().length >= 2 && servicosFiltrados.length > 0 && (
+                  <div className="dropdown top-full mt-2">
+                    {servicosFiltrados.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => adicionarServicoDoCadastro(s)}
+                        className="dropdown-item"
+                      >
+                        <div className="font-semibold text-[#111827]">{s.nome}</div>
+                        <div className="text-xs text-[#6B7280]">
+                          {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
+                          {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <table className="tabela">
@@ -1733,43 +1440,30 @@ function OrdensPageContent() {
                           <input
                             className="campo-tabela"
                             value={item.descricao || ""}
-                            onChange={(e) =>
-                              atualizarServicoOS(item.id, "descricao", e.target.value)
-                            }
+                            onChange={(e) => atualizarServicoOS(item.id, "descricao", e.target.value)}
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             type="number"
-                            min="1"
                             value={toMoney(item.quantidade)}
-                            onChange={(e) =>
-                              atualizarServicoOS(item.id, "quantidade", e.target.value)
-                            }
+                            onChange={(e) => atualizarServicoOS(item.id, "quantidade", e.target.value)}
                           />
                         </td>
                         <td>
                           <input
                             className="campo-tabela"
                             type="number"
-                            min="0"
-                            step="0.01"
                             value={toMoney(item.valor_unitario)}
-                            onChange={(e) =>
-                              atualizarServicoOS(item.id, "valor_unitario", e.target.value)
-                            }
+                            onChange={(e) => atualizarServicoOS(item.id, "valor_unitario", e.target.value)}
                           />
                         </td>
                         <td className="font-bold text-[#0F172A]">
                           {moneyBR(toMoney(item.quantidade) * toMoney(item.valor_unitario))}
                         </td>
                         <td>
-                          <button
-                            className="botao-mini danger"
-                            onClick={() => removerServicoOS(item.id)}
-                            type="button"
-                          >
+                          <button className="botao-mini danger" onClick={() => removerServicoOS(item.id)} type="button">
                             REMOVER
                           </button>
                         </td>
@@ -1993,7 +1687,7 @@ function OrdensPageContent() {
         .botao-mini {
           border: 1px solid #cbd5e1;
           border-radius: 10px;
-          padding: 8px 12px;
+          padding: 6px 10px;
           font-size: 11px;
           background: white;
           color: #1e293b;
@@ -2004,18 +1698,6 @@ function OrdensPageContent() {
           border-color: #bbf7d0;
           background: #f0fdf4;
           color: #166534;
-        }
-
-        .botao-mini.warning {
-          border-color: #fde68a;
-          background: #fffbeb;
-          color: #b45309;
-        }
-
-        .botao-mini.info {
-          border-color: #bfdbfe;
-          background: #eff6ff;
-          color: #1d4ed8;
         }
 
         .botao-mini.danger {
@@ -2082,7 +1764,7 @@ function OrdensPageContent() {
           border: 1px solid #dbe4ee;
           background: white;
           box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
-          max-height: 240px;
+          max-height: 260px;
           overflow: auto;
         }
 
@@ -2235,75 +1917,9 @@ function OrdensPageContent() {
           font-weight: 900;
         }
 
-        .empty-card {
-          border: 1px dashed #cbd5e1;
-          border-radius: 18px;
-          padding: 30px 16px;
-          text-align: center;
-          color: #64748b;
-          background: #f8fafc;
-        }
-
-        .historico-card {
-          border: 1px solid #e2e8f0;
-          border-radius: 20px;
-          background: #fff;
-          overflow: hidden;
-          box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
-        }
-
-        .historico-top-actions {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          padding: 14px;
-          border-bottom: 1px solid #eef2f7;
-          background: #f8fafc;
-        }
-
-        .historico-grid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 16px;
-          padding: 16px;
-        }
-
-        .historico-label {
-          font-size: 11px;
-          font-weight: 800;
-          color: #64748b;
-          margin-bottom: 6px;
-          letter-spacing: 0.03em;
-        }
-
-        .historico-value {
-          font-size: 14px;
-          color: #0f172a;
-        }
-
-        .historico-strong {
-          font-weight: 900;
-        }
-
         @media (max-width: 1279px) {
           .sticky-card {
             position: static;
-          }
-        }
-
-        @media (max-width: 900px) {
-          .historico-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-        }
-
-        @media (max-width: 640px) {
-          .historico-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .historico-top-actions {
-            flex-direction: column;
           }
         }
       `}</style>
@@ -2323,14 +1939,10 @@ function KpiMini({
   return (
     <div
       className={`rounded-[18px] px-4 py-3 ${
-        destaque
-          ? "bg-white text-[#0456A3]"
-          : "bg-white/12 text-white border border-white/15"
+        destaque ? "bg-white text-[#0456A3]" : "bg-white/12 text-white border border-white/15"
       }`}
     >
-      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">
-        {titulo}
-      </div>
+      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">{titulo}</div>
       <div className="mt-1 text-[18px] font-black leading-none">{valor}</div>
     </div>
   );
