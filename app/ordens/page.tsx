@@ -209,6 +209,11 @@ function OrdensPageContent() {
   const [produtosOS, setProdutosOS] = useState<OsProduto[]>([]);
   const [servicosOS, setServicosOS] = useState<OsServico[]>([]);
 
+  const [produtosBusca, setProdutosBusca] = useState<Produto[]>([]);
+  const [loadingProdutosBusca, setLoadingProdutosBusca] = useState(false);
+  const [ultimoErroBuscaProdutos, setUltimoErroBuscaProdutos] = useState("");
+  const [debugBuscaExecutada, setDebugBuscaExecutada] = useState(false);
+
   useEffect(() => {
     async function init() {
       const user = await getSessionUser();
@@ -268,7 +273,8 @@ function OrdensPageContent() {
             empresa_id
           `)
           .eq("empresa_id", emp)
-          .order("nome"),
+          .order("nome")
+          .limit(2000),
 
         supabase
           .from("servicos")
@@ -297,6 +303,69 @@ function OrdensPageContent() {
     setHistorico((historicoResp.data || []) as OrdemServico[]);
 
     setLoading(false);
+  }
+
+  async function buscarProdutosNoBanco(termo: string) {
+    if (!empresaId) return;
+
+    const q = termo.trim();
+    setDebugBuscaExecutada(true);
+    setUltimoErroBuscaProdutos("");
+
+    if (q.length < 2) {
+      setProdutosBusca([]);
+      return;
+    }
+
+    setLoadingProdutosBusca(true);
+
+    const { data, error } = await supabase
+      .from("produtos")
+      .select(`
+        id,
+        nome,
+        codigo_sku,
+        codigo_barras,
+        categoria,
+        subcategoria,
+        preco_balcao,
+        preco_instalacao,
+        preco_revenda,
+        controla_estoque,
+        estoque_atual,
+        status,
+        empresa_id
+      `)
+      .eq("empresa_id", empresaId)
+      .or(
+        [
+          `nome.ilike.%${q}%`,
+          `codigo_sku.ilike.%${q}%`,
+          `codigo_barras.ilike.%${q}%`,
+          `categoria.ilike.%${q}%`,
+          `subcategoria.ilike.%${q}%`,
+        ].join(",")
+      )
+      .order("nome")
+      .limit(50);
+
+    if (error) {
+      setUltimoErroBuscaProdutos(error.message);
+      setProdutosBusca([]);
+      setLoadingProdutosBusca(false);
+      return;
+    }
+
+    const lista = ((data || []) as Produto[]).filter(
+      (p) => up((p.status || "ATIVO").trim()) !== "INATIVO"
+    );
+
+    console.log("EMPRESA ID:", empresaId);
+    console.log("BUSCA PRODUTO:", q);
+    console.log("RESULTADO BUSCA PRODUTOS:", lista);
+
+    setProdutosBusca(lista);
+    setLoadingProdutosBusca(false);
   }
 
   async function carregarVeiculosDoCliente(idCliente: string) {
@@ -348,6 +417,9 @@ function OrdensPageContent() {
     setMostrarDropdownCliente(false);
     setMostrarDropdownProduto(false);
     setMostrarDropdownServico(false);
+    setProdutosBusca([]);
+    setDebugBuscaExecutada(false);
+    setUltimoErroBuscaProdutos("");
   }
 
   async function preencherFormularioOS(os: OrdemServico) {
@@ -446,20 +518,6 @@ function OrdensPageContent() {
       .slice(0, 8);
   }, [clientes, buscaCliente]);
 
-  const produtosFiltrados = useMemo(() => {
-    const q = up(buscaProduto.trim());
-    if (!q || q.length < 2) return [];
-
-    return produtosBase
-      .filter((p) => up((p.status || "ATIVO").trim()) !== "INATIVO")
-      .filter((p) =>
-        up(
-          `${p.nome || ""} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""}`
-        ).includes(q)
-      )
-      .slice(0, 20);
-  }, [produtosBase, buscaProduto]);
-
   const servicosFiltrados = useMemo(() => {
     const q = up(buscaServico.trim());
     if (!q || q.length < 2) return [];
@@ -555,6 +613,7 @@ function OrdensPageContent() {
     ]);
     setBuscaProduto("");
     setMostrarDropdownProduto(false);
+    setProdutosBusca([]);
   }
 
   function adicionarServicoDoCadastro(servico: ServicoBase) {
@@ -1011,6 +1070,50 @@ function OrdensPageContent() {
           </div>
         </div>
 
+        <section className="card mb-6 debug-card">
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">DEBUG DA BUSCA DE PRODUTOS</h2>
+              <p className="section-subtitle">
+                Use este bloco para descobrir exatamente por que um produto não aparece.
+              </p>
+            </div>
+          </div>
+
+          <div className="debug-grid">
+            <div><strong>EMPRESA ID:</strong> {empresaId || "-"}</div>
+            <div><strong>BUSCA DIGITADA:</strong> {buscaProduto || "-"}</div>
+            <div><strong>BUSCA EXECUTADA:</strong> {debugBuscaExecutada ? "SIM" : "NÃO"}</div>
+            <div><strong>CARREGANDO:</strong> {loadingProdutosBusca ? "SIM" : "NÃO"}</div>
+            <div><strong>QTD RETORNADA:</strong> {String(produtosBusca.length)}</div>
+            <div><strong>ERRO:</strong> {ultimoErroBuscaProdutos || "-"}</div>
+            <div><strong>PRODUTOS EM CACHE LOCAL:</strong> {String(produtosBase.length)}</div>
+          </div>
+
+          <div className="mt-4 text-xs text-[#475569]">
+            Dica: digite <strong>fio</strong> na busca de produto e veja quantos itens aparecem aqui.
+          </div>
+
+          <div className="mt-4 debug-list">
+            {produtosBusca.length === 0 ? (
+              <div className="debug-empty">NENHUM PRODUTO RETORNADO NESTA BUSCA.</div>
+            ) : (
+              produtosBusca.map((p) => (
+                <div key={p.id} className="debug-item">
+                  <div><strong>{p.nome}</strong></div>
+                  <div>ID: {p.id}</div>
+                  <div>SKU: {p.codigo_sku || "-"}</div>
+                  <div>BARRAS: {p.codigo_barras || "-"}</div>
+                  <div>CATEGORIA: {p.categoria || "-"}</div>
+                  <div>SUBCATEGORIA: {p.subcategoria || "-"}</div>
+                  <div>STATUS: {p.status || "-"}</div>
+                  <div>EMPRESA: {p.empresa_id || "-"}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
         <section className="card mb-6">
           <div className="section-header">
             <div>
@@ -1252,7 +1355,7 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busque por nome, SKU, código de barras, categoria ou subcategoria.
+                    Busca direta no banco por nome, SKU, código de barras, categoria e subcategoria.
                   </p>
                 </div>
                 <div className="helper-badge">DIGITE 2 LETRAS</div>
@@ -1263,23 +1366,27 @@ function OrdensPageContent() {
                   placeholder="BUSCAR PRODUTO..."
                   className="campo"
                   value={buscaProduto}
-                  onChange={(e) => {
-                    setBuscaProduto(e.target.value);
+                  onChange={async (e) => {
+                    const valor = e.target.value;
+                    setBuscaProduto(valor);
                     setMostrarDropdownProduto(true);
+                    await buscarProdutosNoBanco(valor);
                   }}
                   onFocus={async () => {
-                    if (empresaId) {
-                      await carregarBase(empresaId);
-                    }
                     if (buscaProduto.trim().length >= 2) {
                       setMostrarDropdownProduto(true);
+                      await buscarProdutosNoBanco(buscaProduto);
                     }
                   }}
                 />
 
-                {mostrarDropdownProduto && buscaProduto.trim().length >= 2 && produtosFiltrados.length > 0 && (
+                {loadingProdutosBusca && (
+                  <div className="text-xs text-[#64748B] mt-2">BUSCANDO PRODUTOS...</div>
+                )}
+
+                {mostrarDropdownProduto && buscaProduto.trim().length >= 2 && produtosBusca.length > 0 && (
                   <div className="dropdown top-full mt-2">
-                    {produtosFiltrados.map((p) => (
+                    {produtosBusca.map((p) => (
                       <button
                         key={p.id}
                         type="button"
@@ -1293,11 +1400,24 @@ function OrdensPageContent() {
                           {p.subcategoria ? ` / ${p.subcategoria}` : ""}
                           {" • "}
                           {moneyBR(toMoney(p.preco_balcao))}
+                          {` • STATUS ${p.status || "-"}`}
                         </div>
                       </button>
                     ))}
                   </div>
                 )}
+
+                {mostrarDropdownProduto &&
+                  buscaProduto.trim().length >= 2 &&
+                  !loadingProdutosBusca &&
+                  debugBuscaExecutada &&
+                  produtosBusca.length === 0 && (
+                    <div className="dropdown top-full mt-2">
+                      <div className="dropdown-item text-[#B91C1C]">
+                        NENHUM PRODUTO ENCONTRADO PARA: <strong>{buscaProduto}</strong>
+                      </div>
+                    </div>
+                  )}
               </div>
 
               <table className="tabela">
@@ -1593,6 +1713,44 @@ function OrdensPageContent() {
           border: 1px solid #eef2f7;
         }
 
+        .debug-card {
+          border: 2px solid #f59e0b;
+          background: #fffbeb;
+        }
+
+        .debug-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px 16px;
+          font-size: 13px;
+          color: #334155;
+        }
+
+        .debug-list {
+          max-height: 320px;
+          overflow: auto;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          background: white;
+          padding: 10px;
+        }
+
+        .debug-item {
+          border-bottom: 1px solid #e2e8f0;
+          padding: 8px 0;
+          font-size: 12px;
+          color: #334155;
+        }
+
+        .debug-item:last-child {
+          border-bottom: none;
+        }
+
+        .debug-empty {
+          font-size: 12px;
+          color: #b91c1c;
+        }
+
         .sticky-card {
           position: sticky;
           top: 20px;
@@ -1764,7 +1922,7 @@ function OrdensPageContent() {
           border: 1px solid #dbe4ee;
           background: white;
           box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
-          max-height: 260px;
+          max-height: 320px;
           overflow: auto;
         }
 
@@ -1920,6 +2078,10 @@ function OrdensPageContent() {
         @media (max-width: 1279px) {
           .sticky-card {
             position: static;
+          }
+
+          .debug-grid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
