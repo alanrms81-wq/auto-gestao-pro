@@ -40,6 +40,9 @@ type Produto = {
   estoque_atual?: number | null;
   controla_estoque?: boolean | null;
   status?: string | null;
+  categoria?: string | null;
+  subcategoria?: string | null;
+  codigo_barras?: string | null;
 };
 
 type VendaItem = {
@@ -171,6 +174,9 @@ export default function VendasPage() {
   const [loadingClientesBusca, setLoadingClientesBusca] = useState(false);
 
   const [buscaProduto, setBuscaProduto] = useState("");
+  const [produtosBusca, setProdutosBusca] = useState<Produto[]>([]);
+  const [loadingProdutosBusca, setLoadingProdutosBusca] = useState(false);
+
   const [itens, setItens] = useState<VendaItem[]>([]);
 
   const [desconto, setDesconto] = useState("0");
@@ -258,7 +264,7 @@ export default function VendasPage() {
       supabase
         .from("produtos")
         .select(
-          "id,nome,codigo_sku,ncm,cfop,cest,unidade,origem,cst_csosn,aliquota_icms,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status"
+          "id,nome,codigo_sku,ncm,cfop,cest,unidade,origem,cst_csosn,aliquota_icms,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status,categoria,subcategoria,codigo_barras"
         )
         .eq("empresa_id", eid)
         .order("nome"),
@@ -328,14 +334,51 @@ export default function VendasPage() {
     setLoadingClientesBusca(false);
   }
 
-  const produtosSugestao = useMemo(() => {
-    const q = up(buscaProduto.trim());
-    if (q.length < 3) return [];
-    return produtos
-      .filter((p) => (p.status || "ATIVO") !== "INATIVO")
-      .filter((p) => up(`${p.nome} ${p.codigo_sku || ""} ${p.ncm || ""}`).includes(q))
-      .slice(0, 12);
-  }, [produtos, buscaProduto]);
+  async function buscarProdutosNoBanco(termo: string) {
+    if (!empresaId) return;
+
+    const q = termo.trim();
+
+    if (q.length < 2) {
+      setProdutosBusca([]);
+      return;
+    }
+
+    setLoadingProdutosBusca(true);
+
+    const { data, error } = await supabase
+      .from("produtos")
+      .select(
+        "id,nome,codigo_sku,ncm,cfop,cest,unidade,origem,cst_csosn,aliquota_icms,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status,categoria,subcategoria,codigo_barras"
+      )
+      .eq("empresa_id", empresaId)
+      .or(
+        [
+          `nome.ilike.%${q}%`,
+          `codigo_sku.ilike.%${q}%`,
+          `codigo_barras.ilike.%${q}%`,
+          `ncm.ilike.%${q}%`,
+          `categoria.ilike.%${q}%`,
+          `subcategoria.ilike.%${q}%`,
+        ].join(",")
+      )
+      .order("nome")
+      .limit(40);
+
+    if (error) {
+      alert("ERRO AO BUSCAR PRODUTOS: " + error.message);
+      setProdutosBusca([]);
+      setLoadingProdutosBusca(false);
+      return;
+    }
+
+    const lista = ((data || []) as Produto[]).filter(
+      (p) => up(p.status || "ATIVO") !== "INATIVO"
+    );
+
+    setProdutosBusca(lista);
+    setLoadingProdutosBusca(false);
+  }
 
   const subtotal = useMemo(() => {
     return itens.reduce((acc, item) => acc + toMoney(item.total), 0);
@@ -373,7 +416,7 @@ export default function VendasPage() {
         id: Date.now() + Math.floor(Math.random() * 1000),
         produtoId: p.id,
         nome: up(p.nome),
-        codigo: up(p.codigo_sku || ""),
+        codigo: up(p.codigo_sku || p.codigo_barras || ""),
         ncm: up(p.ncm || ""),
         cfop: up(p.cfop || "5102"),
         cest: up(p.cest || ""),
@@ -389,6 +432,7 @@ export default function VendasPage() {
 
     setBuscaProduto("");
     setOpenProdutos(false);
+    setProdutosBusca([]);
   }
 
   function atualizarItem(
@@ -437,6 +481,7 @@ export default function VendasPage() {
     setClienteSelecionado(null);
     setClientesBusca([]);
     setBuscaProduto("");
+    setProdutosBusca([]);
     setItens([]);
     setDesconto("0");
     setObservacoes("");
@@ -1015,27 +1060,38 @@ export default function VendasPage() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busque por nome, código ou NCM e adicione os itens da venda.
+                    Busque por nome, SKU, código de barras, NCM, categoria ou subcategoria.
                   </p>
                 </div>
-                <div className="helper-badge">DIGITE 3 LETRAS</div>
+                <div className="helper-badge">DIGITE 2 LETRAS</div>
               </div>
 
               <div className="relative">
                 <input
                   value={buscaProduto}
-                  onChange={(e) => {
-                    setBuscaProduto(e.target.value);
+                  onChange={async (e) => {
+                    const valor = e.target.value;
+                    setBuscaProduto(valor);
                     setOpenProdutos(true);
+                    await buscarProdutosNoBanco(valor);
                   }}
-                  onFocus={() => setOpenProdutos(true)}
+                  onFocus={async () => {
+                    setOpenProdutos(true);
+                    if (buscaProduto.trim().length >= 2) {
+                      await buscarProdutosNoBanco(buscaProduto);
+                    }
+                  }}
                   placeholder="BUSCAR PRODUTO..."
                   className="campo"
                 />
 
-                {openProdutos && produtosSugestao.length > 0 && (
+                {loadingProdutosBusca && (
+                  <div className="text-xs text-[#64748B] mt-2">BUSCANDO PRODUTOS...</div>
+                )}
+
+                {openProdutos && produtosBusca.length > 0 && (
                   <div className="dropdown top-full mt-2">
-                    {produtosSugestao.map((p) => (
+                    {produtosBusca.map((p) => (
                       <button
                         key={p.id}
                         type="button"
@@ -1046,8 +1102,11 @@ export default function VendasPage() {
                           <div>
                             <div className="font-bold text-[#0F172A]">{up(p.nome)}</div>
                             <div className="text-xs text-[#64748B]">
-                              {up(p.codigo_sku || "-")} • NCM {up(p.ncm || "-")} • ESTOQUE{" "}
-                              {toMoney(p.estoque_atual)}
+                              {up(p.codigo_sku || p.codigo_barras || "-")} • NCM {up(p.ncm || "-")} • ESTOQUE {toMoney(p.estoque_atual)}
+                            </div>
+                            <div className="text-xs text-[#64748B] mt-1">
+                              {up(p.categoria || "-")}
+                              {p.subcategoria ? ` / ${up(p.subcategoria)}` : ""}
                             </div>
                             <div className="text-xs text-[#64748B] mt-1">
                               BALCÃO {moneyBR(toMoney(p.preco_balcao))} • INSTALAÇÃO {moneyBR(toMoney(p.preco_instalacao))} • REVENDA {moneyBR(toMoney(p.preco_revenda))}
@@ -1061,6 +1120,17 @@ export default function VendasPage() {
                     ))}
                   </div>
                 )}
+
+                {openProdutos &&
+                  buscaProduto.trim().length >= 2 &&
+                  !loadingProdutosBusca &&
+                  produtosBusca.length === 0 && (
+                    <div className="dropdown top-full mt-2">
+                      <div className="dropdown-item text-[#B91C1C]">
+                        NENHUM PRODUTO ENCONTRADO PARA: <strong>{buscaProduto}</strong>
+                      </div>
+                    </div>
+                  )}
               </div>
 
               <div className="mt-4 overflow-auto">
