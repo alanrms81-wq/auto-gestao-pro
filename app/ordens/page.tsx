@@ -13,6 +13,7 @@ type Cliente = {
   celular?: string | null;
   whatsapp?: string | null;
   cpf_cnpj?: string | null;
+  status?: string | null;
 };
 
 type Produto = {
@@ -172,6 +173,9 @@ function OrdensPageContent() {
   const [empresaId, setEmpresaId] = useState<string | null>(null);
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [clientesBusca, setClientesBusca] = useState<Cliente[]>([]);
+  const [loadingClientesBusca, setLoadingClientesBusca] = useState(false);
+
   const [produtosBase, setProdutosBase] = useState<Produto[]>([]);
   const [servicosBase, setServicosBase] = useState<ServicoBase[]>([]);
   const [veiculosCliente, setVeiculosCliente] = useState<Veiculo[]>([]);
@@ -249,7 +253,7 @@ function OrdensPageContent() {
       await Promise.all([
         supabase
           .from("clientes")
-          .select("id,nome,telefone,celular,whatsapp,cpf_cnpj")
+          .select("id,nome,telefone,celular,whatsapp,cpf_cnpj,status")
           .eq("empresa_id", emp)
           .order("nome"),
 
@@ -303,6 +307,49 @@ function OrdensPageContent() {
     setLoading(false);
   }
 
+  async function buscarClientesNoBanco(termo: string) {
+    if (!empresaId) return;
+
+    const q = termo.trim();
+
+    if (q.length < 2) {
+      setClientesBusca([]);
+      return;
+    }
+
+    setLoadingClientesBusca(true);
+
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("id,nome,telefone,celular,whatsapp,cpf_cnpj,status")
+      .eq("empresa_id", empresaId)
+      .or(
+        [
+          `nome.ilike.%${q}%`,
+          `telefone.ilike.%${q}%`,
+          `celular.ilike.%${q}%`,
+          `whatsapp.ilike.%${q}%`,
+          `cpf_cnpj.ilike.%${q}%`,
+        ].join(",")
+      )
+      .order("nome")
+      .limit(20);
+
+    if (error) {
+      alert("ERRO AO BUSCAR CLIENTES: " + error.message);
+      setClientesBusca([]);
+      setLoadingClientesBusca(false);
+      return;
+    }
+
+    const lista = ((data || []) as Cliente[]).filter(
+      (c) => up(c.status || "ATIVO") !== "INATIVO"
+    );
+
+    setClientesBusca(lista);
+    setLoadingClientesBusca(false);
+  }
+
   async function carregarVeiculosDoCliente(idCliente: string) {
     if (!empresaId || !idCliente) {
       setVeiculosCliente([]);
@@ -331,6 +378,7 @@ function OrdensPageContent() {
     setClienteNome("");
     setClienteTelefone("");
     setBuscaCliente("");
+    setClientesBusca([]);
     setVeiculoId("");
     setVeiculo("");
     setPlaca("");
@@ -363,6 +411,7 @@ function OrdensPageContent() {
     setClienteNome(nomeClienteTela);
     setClienteTelefone(os.cliente_telefone || "");
     setBuscaCliente(nomeClienteTela);
+    setClientesBusca([]);
     setMostrarDropdownCliente(false);
 
     if (os.cliente_id) {
@@ -444,19 +493,6 @@ function OrdensPageContent() {
     }
   }
 
-  const clientesFiltrados = useMemo(() => {
-    const q = up(buscaCliente.trim());
-    if (!q) return clientes.slice(0, 8);
-
-    return clientes
-      .filter((c) =>
-        up(
-          `${c.nome} ${c.telefone || ""} ${c.celular || ""} ${c.whatsapp || ""} ${c.cpf_cnpj || ""}`
-        ).includes(q)
-      )
-      .slice(0, 8);
-  }, [clientes, buscaCliente]);
-
   const produtosFiltrados = useMemo(() => {
     const q = up(buscaProduto.trim());
     if (!q || q.length < 2) return [];
@@ -531,6 +567,7 @@ function OrdensPageContent() {
     setClienteNome(c.nome);
     setClienteTelefone(telefoneFinal);
     setBuscaCliente(c.nome);
+    setClientesBusca([]);
     setMostrarDropdownCliente(false);
 
     setVeiculoId("");
@@ -1148,10 +1185,11 @@ function OrdensPageContent() {
                     placeholder="DIGITE O NOME DO CLIENTE OU BUSQUE UM CADASTRADO..."
                     className="campo"
                     value={buscaCliente}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const valor = e.target.value;
                       setBuscaCliente(valor);
                       setClienteNome(valor);
+
                       if (!valor.trim()) {
                         setClienteId("");
                         setClienteTelefone("");
@@ -1160,31 +1198,56 @@ function OrdensPageContent() {
                         setPlaca("");
                         setKm("");
                         setVeiculosCliente([]);
+                        setClientesBusca([]);
+                        setMostrarDropdownCliente(false);
+                        return;
                       }
+
                       setMostrarDropdownCliente(true);
+                      await buscarClientesNoBanco(valor);
                     }}
-                    onFocus={() => {
-                      if (buscaCliente.trim()) setMostrarDropdownCliente(true);
+                    onFocus={async () => {
+                      if (buscaCliente.trim().length >= 2) {
+                        setMostrarDropdownCliente(true);
+                        await buscarClientesNoBanco(buscaCliente);
+                      }
                     }}
                   />
 
-                  {mostrarDropdownCliente && buscaCliente.trim() && clientesFiltrados.length > 0 && (
-                    <div className="dropdown">
-                      {clientesFiltrados.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => selecionarCliente(c)}
-                          className="dropdown-item"
-                        >
-                          <div className="font-semibold text-[#111827]">{c.nome}</div>
-                          <div className="text-xs text-[#6B7280]">
-                            {c.telefone || c.celular || c.whatsapp || c.cpf_cnpj || "-"}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                  {loadingClientesBusca && (
+                    <div className="text-xs text-[#64748B] mt-2">BUSCANDO CLIENTES...</div>
                   )}
+
+                  {mostrarDropdownCliente &&
+                    buscaCliente.trim().length >= 2 &&
+                    clientesBusca.length > 0 && (
+                      <div className="dropdown">
+                        {clientesBusca.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => selecionarCliente(c)}
+                            className="dropdown-item"
+                          >
+                            <div className="font-semibold text-[#111827]">{c.nome}</div>
+                            <div className="text-xs text-[#6B7280]">
+                              {c.telefone || c.celular || c.whatsapp || c.cpf_cnpj || "-"}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                  {mostrarDropdownCliente &&
+                    buscaCliente.trim().length >= 2 &&
+                    !loadingClientesBusca &&
+                    clientesBusca.length === 0 && (
+                      <div className="dropdown">
+                        <div className="dropdown-item text-[#B91C1C]">
+                          NENHUM CLIENTE ENCONTRADO PARA: <strong>{buscaCliente}</strong>
+                        </div>
+                      </div>
+                    )}
                 </div>
 
                 <div>
