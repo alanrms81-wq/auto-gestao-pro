@@ -163,6 +163,15 @@ function statusClass(status: string) {
   return "status-aberta";
 }
 
+function normalizarTexto(texto: unknown) {
+  return String(texto || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function OrdensPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -494,39 +503,54 @@ function OrdensPageContent() {
   }
 
   const produtosFiltrados = useMemo(() => {
-    const q = up(buscaProduto.trim());
-    if (!q || q.length < 2) return [];
+    const q = normalizarTexto(buscaProduto);
+    if (!q) return [];
 
     return produtosBase
-      .filter((p) =>
-        up(
-          `${p.nome || ""} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""}`
-        ).includes(q)
-      )
-      .slice(0, 20);
+      .filter((p) => {
+        const texto = normalizarTexto(`
+          ${p.nome}
+          ${p.codigo_sku}
+          ${p.codigo_barras}
+          ${p.categoria}
+          ${p.subcategoria}
+        `);
+        return texto.includes(q);
+      })
+      .slice(0, 30);
   }, [produtosBase, buscaProduto]);
 
   const servicosFiltrados = useMemo(() => {
-    const q = up(buscaServico.trim());
-    if (!q || q.length < 2) return [];
+    const q = normalizarTexto(buscaServico);
+    if (!q) return [];
 
     return servicosBase
-      .filter((s) =>
-        up(
-          `${s.nome || ""} ${s.descricao || ""} ${s.categoria || ""} ${s.tempo_estimado || ""}`
-        ).includes(q)
-      )
-      .slice(0, 8);
+      .filter((s) => {
+        const texto = normalizarTexto(`
+          ${s.nome}
+          ${s.descricao}
+          ${s.categoria}
+          ${s.tempo_estimado}
+          ${s.observacoes}
+        `);
+        return texto.includes(q);
+      })
+      .slice(0, 12);
   }, [servicosBase, buscaServico]);
 
   const historicoFiltrado = useMemo(() => {
-    const q = up(buscaHistorico.trim());
+    const q = normalizarTexto(buscaHistorico);
     if (!q) return historico;
 
     return historico.filter((item) =>
-      up(
-        `${item.numero || ""} ${item.cliente_nome || ""} ${item.cliente_telefone || ""} ${item.veiculo_descricao || ""} ${item.status || ""} ${item.placa || ""}`
-      ).includes(q)
+      normalizarTexto(`
+        ${item.numero}
+        ${item.cliente_nome}
+        ${item.cliente_telefone}
+        ${item.veiculo_descricao}
+        ${item.status}
+        ${item.placa}
+      `).includes(q)
     );
   }, [historico, buscaHistorico]);
 
@@ -1384,7 +1408,7 @@ function OrdensPageContent() {
                     Busque por nome, SKU, código de barras, categoria ou subcategoria.
                   </p>
                 </div>
-                <div className="helper-badge">DIGITE 2 LETRAS</div>
+                <div className="helper-badge">BUSCA INTELIGENTE</div>
               </div>
 
               <div className="relative mb-4">
@@ -1400,13 +1424,13 @@ function OrdensPageContent() {
                     if (empresaId) {
                       await carregarBase(empresaId);
                     }
-                    if (buscaProduto.trim().length >= 2) {
+                    if (buscaProduto.trim()) {
                       setMostrarDropdownProduto(true);
                     }
                   }}
                 />
 
-                {mostrarDropdownProduto && buscaProduto.trim().length >= 2 && produtosFiltrados.length > 0 && (
+                {mostrarDropdownProduto && normalizarTexto(buscaProduto) && produtosFiltrados.length > 0 && (
                   <div className="dropdown top-full mt-2">
                     {produtosFiltrados.map((p) => (
                       <button
@@ -1427,6 +1451,16 @@ function OrdensPageContent() {
                     ))}
                   </div>
                 )}
+
+                {mostrarDropdownProduto &&
+                  normalizarTexto(buscaProduto) &&
+                  produtosFiltrados.length === 0 && (
+                    <div className="dropdown top-full mt-2">
+                      <div className="dropdown-item text-[#B91C1C]">
+                        NENHUM PRODUTO ENCONTRADO PARA: <strong>{buscaProduto}</strong>
+                      </div>
+                    </div>
+                  )}
               </div>
 
               <table className="tabela">
@@ -1520,11 +1554,11 @@ function OrdensPageContent() {
                     setMostrarDropdownServico(true);
                   }}
                   onFocus={() => {
-                    if (buscaServico.trim().length >= 2) setMostrarDropdownServico(true);
+                    if (buscaServico.trim()) setMostrarDropdownServico(true);
                   }}
                 />
 
-                {mostrarDropdownServico && buscaServico.trim().length >= 2 && servicosFiltrados.length > 0 && (
+                {mostrarDropdownServico && normalizarTexto(buscaServico) && servicosFiltrados.length > 0 && (
                   <div className="dropdown top-full mt-2">
                     {servicosFiltrados.map((s) => (
                       <button
@@ -1542,6 +1576,16 @@ function OrdensPageContent() {
                     ))}
                   </div>
                 )}
+
+                {mostrarDropdownServico &&
+                  normalizarTexto(buscaServico) &&
+                  servicosFiltrados.length === 0 && (
+                    <div className="dropdown top-full mt-2">
+                      <div className="dropdown-item text-[#B91C1C]">
+                        NENHUM SERVIÇO ENCONTRADO PARA: <strong>{buscaServico}</strong>
+                      </div>
+                    </div>
+                  )}
               </div>
 
               <table className="tabela">
