@@ -11,6 +11,8 @@ type Cliente = {
   id: string;
   empresa_id: string;
   nome: string;
+  codigo_cliente?: string | null;
+  data_nascimento?: string | null;
   telefone?: string | null;
   celular?: string | null;
   whatsapp?: string | null;
@@ -150,6 +152,13 @@ function statusClass(status: string) {
   return "status-ativo";
 }
 
+function formatDateBR(value?: string | null) {
+  if (!value) return "-";
+  const d = new Date(`${value}T00:00:00`);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("pt-BR");
+}
+
 export default function ClientesPage() {
   const router = useRouter();
   const csvInputRef = useRef<HTMLInputElement | null>(null);
@@ -173,6 +182,8 @@ export default function ClientesPage() {
   const [clienteSelecionadoNome, setClienteSelecionadoNome] = useState<string>("");
 
   const [nome, setNome] = useState("");
+  const [codigoCliente, setCodigoCliente] = useState("");
+  const [dataNascimento, setDataNascimento] = useState("");
   const [telefone, setTelefone] = useState("");
   const [celular, setCelular] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -262,6 +273,7 @@ export default function ClientesPage() {
     if (termoBusca) {
       const filtro = [
         `nome.ilike.%${termoBusca}%`,
+        `codigo_cliente.ilike.%${termoBusca}%`,
         `telefone.ilike.%${termoBusca}%`,
         `celular.ilike.%${termoBusca}%`,
         `whatsapp.ilike.%${termoBusca}%`,
@@ -323,6 +335,8 @@ export default function ClientesPage() {
   function resetForm() {
     setEditingId(null);
     setNome("");
+    setCodigoCliente("");
+    setDataNascimento("");
     setTelefone("");
     setCelular("");
     setWhatsapp("");
@@ -386,9 +400,38 @@ export default function ClientesPage() {
       return;
     }
 
+    const codigoFinal = up(codigoCliente.trim());
+
+    if (codigoFinal) {
+      let query = supabase
+        .from("clientes")
+        .select("id")
+        .eq("empresa_id", empresaId)
+        .eq("codigo_cliente", codigoFinal)
+        .limit(1);
+
+      if (editingId) {
+        query = query.neq("id", editingId);
+      }
+
+      const { data: codigoExistente, error: codigoError } = await query;
+
+      if (codigoError) {
+        alert("ERRO AO VALIDAR CÓDIGO DO CLIENTE: " + codigoError.message);
+        return;
+      }
+
+      if (codigoExistente && codigoExistente.length > 0) {
+        alert("JÁ EXISTE UM CLIENTE COM ESSE CÓDIGO.");
+        return;
+      }
+    }
+
     const payload = {
       empresa_id: empresaId,
       nome: up(nome.trim()),
+      codigo_cliente: codigoFinal || null,
+      data_nascimento: dataNascimento || null,
       telefone: telefone.trim(),
       celular: celular.trim(),
       whatsapp: whatsapp.trim(),
@@ -453,6 +496,8 @@ export default function ClientesPage() {
     setClienteSelecionadoNome(c.nome || "");
 
     setNome(c.nome || "");
+    setCodigoCliente(c.codigo_cliente || "");
+    setDataNascimento(c.data_nascimento || "");
     setTelefone(c.telefone || "");
     setCelular(c.celular || "");
     setWhatsapp(c.whatsapp || "");
@@ -617,6 +662,8 @@ export default function ClientesPage() {
       const row = splitCsvLine(lines[i], delim);
 
       const nomeCsv = up(getCell(row, map, ["nome", "cliente"]));
+      const codigoClienteCsv = up(getCell(row, map, ["codigocliente", "codigo_cliente", "codigo"]));
+      const dataNascimentoCsv = getCell(row, map, ["datanascimento", "data_nascimento", "nascimento"]);
       const telefoneCsv = getCell(row, map, ["telefone", "fone"]);
       const celularCsv = getCell(row, map, ["celular"]);
       const whatsappCsv = getCell(row, map, ["whatsapp"]);
@@ -646,6 +693,8 @@ export default function ClientesPage() {
       const payload = {
         empresa_id: empresaId,
         nome: nomeCsv,
+        codigo_cliente: codigoClienteCsv || null,
+        data_nascimento: dataNascimentoCsv || null,
         telefone: telefoneCsv,
         celular: celularCsv,
         whatsapp: whatsappCsv,
@@ -780,6 +829,20 @@ export default function ClientesPage() {
               value={nome}
               onChange={(e) => setNome(e.target.value)}
               className="campo md:col-span-2"
+            />
+
+            <input
+              placeholder="CÓDIGO DO CLIENTE"
+              value={codigoCliente}
+              onChange={(e) => setCodigoCliente(e.target.value)}
+              className="campo"
+            />
+
+            <input
+              type="date"
+              value={dataNascimento}
+              onChange={(e) => setDataNascimento(e.target.value)}
+              className="campo"
             />
 
             <input
@@ -1077,10 +1140,12 @@ export default function ClientesPage() {
           </div>
 
           <div className="overflow-auto">
-            <table className="tabela min-w-[1100px]">
+            <table className="tabela min-w-[1300px]">
               <thead>
                 <tr>
+                  <th>CÓDIGO</th>
                   <th>CLIENTE</th>
+                  <th>NASCIMENTO</th>
                   <th>CONTATO</th>
                   <th>DOCUMENTO</th>
                   <th>ENDEREÇO</th>
@@ -1092,23 +1157,27 @@ export default function ClientesPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="empty-state">
+                    <td colSpan={8} className="empty-state">
                       CARREGANDO...
                     </td>
                   </tr>
                 ) : clientes.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="empty-state">
+                    <td colSpan={8} className="empty-state">
                       NENHUM CLIENTE ENCONTRADO.
                     </td>
                   </tr>
                 ) : (
                   clientes.map((c) => (
                     <tr key={c.id}>
+                      <td className="font-bold">{c.codigo_cliente || "-"}</td>
+
                       <td>
                         <div className="font-bold text-[#111]">{c.nome}</div>
                         <div className="text-xs text-[#64748B]">{c.email || "-"}</div>
                       </td>
+
+                      <td>{formatDateBR(c.data_nascimento)}</td>
 
                       <td>
                         <div>{c.telefone || "-"}</div>
