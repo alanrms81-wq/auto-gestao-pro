@@ -515,18 +515,49 @@ function OrdensPageContent() {
     const q = normalizarTexto(buscaProduto);
     if (!q) return [];
 
-    return produtosBase
-      .filter((p) => {
-        const texto = normalizarTexto(`
+    const resultados = produtosBase
+      .map((p) => {
+        const nome = normalizarTexto(p.nome);
+        const sku = normalizarTexto(p.codigo_sku);
+        const barras = normalizarTexto(p.codigo_barras);
+        const categoria = normalizarTexto(p.categoria);
+        const subcategoria = normalizarTexto(p.subcategoria);
+
+        const textoCompleto = normalizarTexto(`
           ${p.nome}
           ${p.codigo_sku}
           ${p.codigo_barras}
           ${p.categoria}
           ${p.subcategoria}
         `);
-        return texto.includes(q);
+
+        if (!textoCompleto.includes(q)) return null;
+
+        let score = 0;
+
+        if (sku === q || barras === q) score += 1000;
+        if (nome === q) score += 900;
+        if (nome.startsWith(q)) score += 700;
+        if (sku.startsWith(q) || barras.startsWith(q)) score += 650;
+        if (nome.includes(q)) score += 500;
+        if (sku.includes(q) || barras.includes(q)) score += 450;
+        if (categoria.includes(q) || subcategoria.includes(q)) score += 200;
+
+        return {
+          produto: p,
+          score,
+          nome,
+        };
       })
-      .slice(0, 30);
+      .filter(Boolean) as { produto: Produto; score: number; nome: string }[];
+
+    return resultados
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.nome.localeCompare(b.nome, "pt-BR");
+      })
+      .map((item) => item.produto)
+      .slice(0, 120);
   }, [produtosBase, buscaProduto]);
 
   const servicosFiltrados = useMemo(() => {
@@ -1414,10 +1445,10 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busca inteligente por nome, SKU, código de barras, categoria e subcategoria.
+                    Busca inteligente com ranking por código exato, começo do nome e relevância.
                   </p>
                 </div>
-                <div className="helper-badge">STATUS NORMALIZADO</div>
+                <div className="helper-badge">BUSCA INTELIGENTE</div>
               </div>
 
               <div className="relative mb-4">
@@ -1439,27 +1470,37 @@ function OrdensPageContent() {
                   }}
                 />
 
-                {mostrarDropdownProduto && normalizarTexto(buscaProduto) && produtosFiltrados.length > 0 && (
-                  <div className="dropdown top-full mt-2">
-                    {produtosFiltrados.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => adicionarProdutoDoBanco(p)}
-                        className="dropdown-item"
-                      >
-                        <div className="font-semibold text-[#111827]">{p.nome}</div>
-                        <div className="text-xs text-[#6B7280]">
-                          {p.codigo_sku || p.codigo_barras || "-"}
-                          {p.categoria ? ` • ${p.categoria}` : ""}
-                          {p.subcategoria ? ` / ${p.subcategoria}` : ""}
-                          {" • "}
-                          {moneyBR(toMoney(p.preco_balcao))}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {mostrarDropdownProduto &&
+                  normalizarTexto(buscaProduto) &&
+                  produtosFiltrados.length > 0 && (
+                    <div className="text-xs text-[#64748B] mt-2">
+                      {produtosFiltrados.length} PRODUTO(S) ENCONTRADO(S)
+                    </div>
+                  )}
+
+                {mostrarDropdownProduto &&
+                  normalizarTexto(buscaProduto) &&
+                  produtosFiltrados.length > 0 && (
+                    <div className="dropdown top-full mt-2">
+                      {produtosFiltrados.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => adicionarProdutoDoBanco(p)}
+                          className="dropdown-item"
+                        >
+                          <div className="font-semibold text-[#111827]">{p.nome}</div>
+                          <div className="text-xs text-[#6B7280]">
+                            {p.codigo_sku || p.codigo_barras || "-"}
+                            {p.categoria ? ` • ${p.categoria}` : ""}
+                            {p.subcategoria ? ` / ${p.subcategoria}` : ""}
+                            {" • "}
+                            {moneyBR(toMoney(p.preco_balcao))}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                 {mostrarDropdownProduto &&
                   normalizarTexto(buscaProduto) &&
@@ -1567,24 +1608,26 @@ function OrdensPageContent() {
                   }}
                 />
 
-                {mostrarDropdownServico && normalizarTexto(buscaServico) && servicosFiltrados.length > 0 && (
-                  <div className="dropdown top-full mt-2">
-                    {servicosFiltrados.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => adicionarServicoDoCadastro(s)}
-                        className="dropdown-item"
-                      >
-                        <div className="font-semibold text-[#111827]">{s.nome}</div>
-                        <div className="text-xs text-[#6B7280]">
-                          {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
-                          {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {mostrarDropdownServico &&
+                  normalizarTexto(buscaServico) &&
+                  servicosFiltrados.length > 0 && (
+                    <div className="dropdown top-full mt-2">
+                      {servicosFiltrados.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => adicionarServicoDoCadastro(s)}
+                          className="dropdown-item"
+                        >
+                          <div className="font-semibold text-[#111827]">{s.nome}</div>
+                          <div className="text-xs text-[#6B7280]">
+                            {s.categoria || "-"} • {moneyBR(toMoney(s.valor))}
+                            {s.tempo_estimado ? ` • ${s.tempo_estimado}` : ""}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                 {mostrarDropdownServico &&
                   normalizarTexto(buscaServico) &&
@@ -1954,7 +1997,7 @@ function OrdensPageContent() {
           border: 1px solid #dbe4ee;
           background: white;
           box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
-          max-height: 240px;
+          max-height: 340px;
           overflow: auto;
         }
 
