@@ -65,6 +65,8 @@ type OrdemServico = {
   numero?: string | null;
   cliente_id?: string | null;
   cliente_nome?: string | null;
+  cliente_telefone?: string | null;
+  cliente_avulso?: boolean | null;
   veiculo_id?: string | null;
   veiculo_descricao?: string | null;
   placa?: string | null;
@@ -170,6 +172,7 @@ function OrdensPageContent() {
   const [empresaId, setEmpresaId] = useState<string | null>(null);
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [produtosBase, setProdutosBase] = useState<Produto[]>([]);
   const [servicosBase, setServicosBase] = useState<ServicoBase[]>([]);
   const [veiculosCliente, setVeiculosCliente] = useState<Veiculo[]>([]);
   const [historico, setHistorico] = useState<OrdemServico[]>([]);
@@ -188,6 +191,7 @@ function OrdensPageContent() {
   const [numeroOS, setNumeroOS] = useState(gerarNumeroOS());
   const [clienteId, setClienteId] = useState("");
   const [clienteNome, setClienteNome] = useState("");
+  const [clienteTelefone, setClienteTelefone] = useState("");
 
   const [veiculoId, setVeiculoId] = useState("");
   const [veiculo, setVeiculo] = useState("");
@@ -207,9 +211,6 @@ function OrdensPageContent() {
 
   const [produtosOS, setProdutosOS] = useState<OsProduto[]>([]);
   const [servicosOS, setServicosOS] = useState<OsServico[]>([]);
-
-  const [produtosBusca, setProdutosBusca] = useState<Produto[]>([]);
-  const [loadingProdutosBusca, setLoadingProdutosBusca] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -244,95 +245,62 @@ function OrdensPageContent() {
 
     setLoading(true);
 
-    const [clientesResp, servicosResp, historicoResp] = await Promise.all([
-      supabase
-        .from("clientes")
-        .select("id,nome,telefone,celular,whatsapp,cpf_cnpj")
-        .eq("empresa_id", emp)
-        .order("nome"),
+    const [clientesResp, produtosResp, servicosResp, historicoResp] =
+      await Promise.all([
+        supabase
+          .from("clientes")
+          .select("id,nome,telefone,celular,whatsapp,cpf_cnpj")
+          .eq("empresa_id", emp)
+          .order("nome"),
 
-      supabase
-        .from("servicos")
-        .select(
-          "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
-        )
-        .eq("empresa_id", emp)
-        .eq("status", "ATIVO")
-        .order("nome"),
+        supabase
+          .from("produtos")
+          .select(`
+            id,
+            nome,
+            codigo_sku,
+            codigo_barras,
+            categoria,
+            subcategoria,
+            preco_balcao,
+            preco_instalacao,
+            preco_revenda,
+            controla_estoque,
+            estoque_atual,
+            status,
+            empresa_id
+          `)
+          .eq("empresa_id", emp)
+          .eq("status", "ATIVO")
+          .order("nome"),
 
-      supabase
-        .from("ordens_servico")
-        .select("*")
-        .eq("empresa_id", emp)
-        .order("created_at", { ascending: false }),
-    ]);
+        supabase
+          .from("servicos")
+          .select(
+            "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
+          )
+          .eq("empresa_id", emp)
+          .eq("status", "ATIVO")
+          .order("nome"),
+
+        supabase
+          .from("ordens_servico")
+          .select("*")
+          .eq("empresa_id", emp)
+          .order("created_at", { ascending: false }),
+      ]);
 
     if (clientesResp.error) alert("ERRO CLIENTES: " + clientesResp.error.message);
+    if (produtosResp.error) alert("ERRO PRODUTOS: " + produtosResp.error.message);
     if (servicosResp.error) alert("ERRO SERVIÇOS: " + servicosResp.error.message);
     if (historicoResp.error) alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
 
     setClientes((clientesResp.data || []) as Cliente[]);
+    setProdutosBase((produtosResp.data || []) as Produto[]);
     setServicosBase((servicosResp.data || []) as ServicoBase[]);
     setHistorico((historicoResp.data || []) as OrdemServico[]);
 
     setLoading(false);
-  }
-
-  async function buscarProdutosNoBanco(termo: string) {
-    if (!empresaId) return;
-
-    const q = termo.trim();
-
-    if (q.length < 2) {
-      setProdutosBusca([]);
-      return;
-    }
-
-    setLoadingProdutosBusca(true);
-
-    const { data, error } = await supabase
-      .from("produtos")
-      .select(`
-        id,
-        nome,
-        codigo_sku,
-        codigo_barras,
-        categoria,
-        subcategoria,
-        preco_balcao,
-        preco_instalacao,
-        preco_revenda,
-        controla_estoque,
-        estoque_atual,
-        status,
-        empresa_id
-      `)
-      .eq("empresa_id", empresaId)
-      .or(
-        [
-          `nome.ilike.%${q}%`,
-          `codigo_sku.ilike.%${q}%`,
-          `codigo_barras.ilike.%${q}%`,
-          `categoria.ilike.%${q}%`,
-          `subcategoria.ilike.%${q}%`,
-        ].join(",")
-      )
-      .order("nome")
-      .limit(50);
-
-    if (error) {
-      alert("ERRO AO BUSCAR PRODUTOS: " + error.message);
-      setProdutosBusca([]);
-      setLoadingProdutosBusca(false);
-      return;
-    }
-
-    const lista = ((data || []) as Produto[]).filter(
-      (p) => up((p.status || "ATIVO").trim()) !== "INATIVO"
-    );
-
-    setProdutosBusca(lista);
-    setLoadingProdutosBusca(false);
   }
 
   async function carregarVeiculosDoCliente(idCliente: string) {
@@ -361,6 +329,7 @@ function OrdensPageContent() {
     setNumeroOS(gerarNumeroOS());
     setClienteId("");
     setClienteNome("");
+    setClienteTelefone("");
     setBuscaCliente("");
     setVeiculoId("");
     setVeiculo("");
@@ -384,14 +353,16 @@ function OrdensPageContent() {
     setMostrarDropdownCliente(false);
     setMostrarDropdownProduto(false);
     setMostrarDropdownServico(false);
-    setProdutosBusca([]);
   }
 
   async function preencherFormularioOS(os: OrdemServico) {
+    const nomeClienteTela = os.cliente_nome || "";
+
     setNumeroOS(os.numero || gerarNumeroOS());
     setClienteId(os.cliente_id || "");
-    setClienteNome(os.cliente_nome || "");
-    setBuscaCliente(os.cliente_nome || "");
+    setClienteNome(nomeClienteTela);
+    setClienteTelefone(os.cliente_telefone || "");
+    setBuscaCliente(nomeClienteTela);
     setMostrarDropdownCliente(false);
 
     if (os.cliente_id) {
@@ -430,8 +401,11 @@ function OrdensPageContent() {
     const cliente = clientes.find((c) => c.id === clienteIdParam);
 
     if (cliente) {
+      const telefoneFinal = cliente.telefone || cliente.celular || cliente.whatsapp || "";
+
       setClienteId(cliente.id);
       setClienteNome(cliente.nome);
+      setClienteTelefone(telefoneFinal);
       setBuscaCliente(cliente.nome);
       setMostrarDropdownCliente(false);
     }
@@ -483,6 +457,19 @@ function OrdensPageContent() {
       .slice(0, 8);
   }, [clientes, buscaCliente]);
 
+  const produtosFiltrados = useMemo(() => {
+    const q = up(buscaProduto.trim());
+    if (!q || q.length < 2) return [];
+
+    return produtosBase
+      .filter((p) =>
+        up(
+          `${p.nome || ""} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""}`
+        ).includes(q)
+      )
+      .slice(0, 20);
+  }, [produtosBase, buscaProduto]);
+
   const servicosFiltrados = useMemo(() => {
     const q = up(buscaServico.trim());
     if (!q || q.length < 2) return [];
@@ -502,7 +489,7 @@ function OrdensPageContent() {
 
     return historico.filter((item) =>
       up(
-        `${item.numero || ""} ${item.cliente_nome || ""} ${item.veiculo_descricao || ""} ${item.status || ""} ${item.placa || ""}`
+        `${item.numero || ""} ${item.cliente_nome || ""} ${item.cliente_telefone || ""} ${item.veiculo_descricao || ""} ${item.status || ""} ${item.placa || ""}`
       ).includes(q)
     );
   }, [historico, buscaHistorico]);
@@ -538,8 +525,11 @@ function OrdensPageContent() {
   }
 
   async function selecionarCliente(c: Cliente) {
+    const telefoneFinal = c.telefone || c.celular || c.whatsapp || "";
+
     setClienteId(c.id);
     setClienteNome(c.nome);
+    setClienteTelefone(telefoneFinal);
     setBuscaCliente(c.nome);
     setMostrarDropdownCliente(false);
 
@@ -578,7 +568,6 @@ function OrdensPageContent() {
     ]);
     setBuscaProduto("");
     setMostrarDropdownProduto(false);
-    setProdutosBusca([]);
   }
 
   function adicionarServicoDoCadastro(servico: ServicoBase) {
@@ -662,8 +651,10 @@ function OrdensPageContent() {
   async function salvarOS() {
     if (!empresaId) return;
 
-    if (!clienteNome.trim()) {
-      alert("SELECIONE UM CLIENTE.");
+    const nomeClienteFinal = up((clienteNome || buscaCliente).trim());
+
+    if (!nomeClienteFinal) {
+      alert("PREENCHA O NOME DO CLIENTE OU SELECIONE UM CLIENTE CADASTRADO.");
       return;
     }
 
@@ -671,7 +662,9 @@ function OrdensPageContent() {
       empresa_id: empresaId,
       numero: up(numeroOS),
       cliente_id: clienteId || null,
-      cliente_nome: up(clienteNome),
+      cliente_nome: nomeClienteFinal,
+      cliente_telefone: clienteTelefone.trim() || null,
+      cliente_avulso: !clienteId,
       veiculo_id: veiculoId || null,
       veiculo_descricao: up(veiculo),
       placa: up(placa),
@@ -732,17 +725,19 @@ function OrdensPageContent() {
       ordemId = data.id;
     }
 
-    const produtosPayload = produtosOS.map((item) => ({
-      empresa_id: empresaId,
-      ordem_servico_id: ordemId,
-      produto_id: item.produto_id || null,
-      nome: up(item.produto_nome || item.nome || ""),
-      produto_nome: up(item.produto_nome || item.nome || ""),
-      codigo: up(item.codigo || ""),
-      quantidade: toMoney(item.quantidade),
-      valor_unitario: toMoney(item.valor_unitario),
-      subtotal: toMoney(item.quantidade) * toMoney(item.valor_unitario),
-    }));
+    const produtosPayload = produtosOS
+      .filter((item) => String(item.produto_nome || item.nome || "").trim())
+      .map((item) => ({
+        empresa_id: empresaId,
+        ordem_servico_id: ordemId,
+        produto_id: item.produto_id || null,
+        nome: up(item.produto_nome || item.nome || ""),
+        produto_nome: up(item.produto_nome || item.nome || ""),
+        codigo: up(item.codigo || ""),
+        quantidade: toMoney(item.quantidade),
+        valor_unitario: toMoney(item.valor_unitario),
+        subtotal: toMoney(item.quantidade) * toMoney(item.valor_unitario),
+      }));
 
     const servicosPayload = servicosOS
       .filter((item) => String(item.descricao || "").trim())
@@ -1046,7 +1041,7 @@ function OrdensPageContent() {
           </div>
 
           <input
-            placeholder="BUSCAR POR NÚMERO, CLIENTE, VEÍCULO OU STATUS..."
+            placeholder="BUSCAR POR NÚMERO, CLIENTE, TELEFONE, VEÍCULO OU STATUS..."
             className="campo mb-4"
             value={buscaHistorico}
             onChange={(e) => setBuscaHistorico(e.target.value)}
@@ -1082,7 +1077,13 @@ function OrdensPageContent() {
                         ? new Date(item.created_at).toLocaleDateString("pt-BR")
                         : "-"}
                     </td>
-                    <td>{item.cliente_nome || "-"}</td>
+                    <td>
+                      <div>{item.cliente_nome || "-"}</div>
+                      <div className="text-xs text-[#64748B]">
+                        {item.cliente_telefone || "-"}
+                        {item.cliente_avulso ? " • AVULSO" : ""}
+                      </div>
+                    </td>
                     <td>{item.veiculo_descricao || "-"}</td>
                     <td>
                       <span className={`status-chip ${statusClass(item.status || "ABERTA")}`}>
@@ -1144,11 +1145,22 @@ function OrdensPageContent() {
                 <div className="md:col-span-2 relative">
                   <label className="label">CLIENTE</label>
                   <input
-                    placeholder="DIGITE NOME, TELEFONE OU DOCUMENTO..."
+                    placeholder="DIGITE O NOME DO CLIENTE OU BUSQUE UM CADASTRADO..."
                     className="campo"
                     value={buscaCliente}
                     onChange={(e) => {
-                      setBuscaCliente(e.target.value);
+                      const valor = e.target.value;
+                      setBuscaCliente(valor);
+                      setClienteNome(valor);
+                      if (!valor.trim()) {
+                        setClienteId("");
+                        setClienteTelefone("");
+                        setVeiculoId("");
+                        setVeiculo("");
+                        setPlaca("");
+                        setKm("");
+                        setVeiculosCliente([]);
+                      }
                       setMostrarDropdownCliente(true);
                     }}
                     onFocus={() => {
@@ -1176,6 +1188,16 @@ function OrdensPageContent() {
                 </div>
 
                 <div>
+                  <label className="label">TELEFONE DO CLIENTE</label>
+                  <input
+                    placeholder="TELEFONE PARA CONTATO"
+                    className="campo"
+                    value={clienteTelefone}
+                    onChange={(e) => setClienteTelefone(e.target.value)}
+                  />
+                </div>
+
+                <div>
                   <label className="label">VEÍCULO</label>
                   <select
                     className="campo"
@@ -1190,6 +1212,16 @@ function OrdensPageContent() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="label">VEÍCULO MANUAL</label>
+                  <input
+                    placeholder="MARCA / MODELO / ANO"
+                    className="campo"
+                    value={veiculo}
+                    onChange={(e) => setVeiculo(e.target.value)}
+                  />
                 </div>
 
                 <div>
@@ -1229,6 +1261,16 @@ function OrdensPageContent() {
                 <div className="placa-card">
                   <span className="placa-label">PLACA</span>
                   <span className="placa-valor">{placa || "--- ----"}</span>
+                </div>
+
+                <div>
+                  <label className="label">PLACA</label>
+                  <input
+                    className="campo"
+                    value={placa}
+                    onChange={(e) => setPlaca(e.target.value)}
+                    placeholder="PLACA DO VEÍCULO"
+                  />
                 </div>
 
                 <div>
@@ -1276,7 +1318,7 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busca direta no banco por nome, SKU, código de barras, categoria e subcategoria.
+                    Busque por nome, SKU, código de barras, categoria ou subcategoria.
                   </p>
                 </div>
                 <div className="helper-badge">DIGITE 2 LETRAS</div>
@@ -1287,27 +1329,23 @@ function OrdensPageContent() {
                   placeholder="BUSCAR PRODUTO..."
                   className="campo"
                   value={buscaProduto}
-                  onChange={async (e) => {
-                    const valor = e.target.value;
-                    setBuscaProduto(valor);
+                  onChange={(e) => {
+                    setBuscaProduto(e.target.value);
                     setMostrarDropdownProduto(true);
-                    await buscarProdutosNoBanco(valor);
                   }}
                   onFocus={async () => {
+                    if (empresaId) {
+                      await carregarBase(empresaId);
+                    }
                     if (buscaProduto.trim().length >= 2) {
                       setMostrarDropdownProduto(true);
-                      await buscarProdutosNoBanco(buscaProduto);
                     }
                   }}
                 />
 
-                {loadingProdutosBusca && (
-                  <div className="text-xs text-[#64748B] mt-2">BUSCANDO PRODUTOS...</div>
-                )}
-
-                {mostrarDropdownProduto && buscaProduto.trim().length >= 2 && produtosBusca.length > 0 && (
+                {mostrarDropdownProduto && buscaProduto.trim().length >= 2 && produtosFiltrados.length > 0 && (
                   <div className="dropdown top-full mt-2">
-                    {produtosBusca.map((p) => (
+                    {produtosFiltrados.map((p) => (
                       <button
                         key={p.id}
                         type="button"
@@ -1326,17 +1364,6 @@ function OrdensPageContent() {
                     ))}
                   </div>
                 )}
-
-                {mostrarDropdownProduto &&
-                  buscaProduto.trim().length >= 2 &&
-                  !loadingProdutosBusca &&
-                  produtosBusca.length === 0 && (
-                    <div className="dropdown top-full mt-2">
-                      <div className="dropdown-item text-[#B91C1C]">
-                        NENHUM PRODUTO ENCONTRADO PARA: <strong>{buscaProduto}</strong>
-                      </div>
-                    </div>
-                  )}
               </div>
 
               <table className="tabela">
@@ -1521,7 +1548,15 @@ function OrdensPageContent() {
               <div className="resumo-box">
                 <div className="resumo-linha">
                   <span>CLIENTE</span>
-                  <strong>{clienteNome || "-"}</strong>
+                  <strong>{(clienteNome || buscaCliente) || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>TELEFONE</span>
+                  <strong>{clienteTelefone || "-"}</strong>
+                </div>
+                <div className="resumo-linha">
+                  <span>TIPO</span>
+                  <strong>{clienteId ? "CADASTRADO" : "AVULSO"}</strong>
                 </div>
                 <div className="resumo-linha">
                   <span>VEÍCULO</span>
@@ -1803,7 +1838,7 @@ function OrdensPageContent() {
           border: 1px solid #dbe4ee;
           background: white;
           box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
-          max-height: 320px;
+          max-height: 240px;
           overflow: auto;
         }
 
