@@ -11,6 +11,11 @@ type SessionUser = {
   role?: string | null;
 };
 
+type MenuItem = {
+  nome: string;
+  rota: string;
+};
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -24,14 +29,14 @@ export default function Sidebar() {
     loadUser();
   }, []);
 
-  const menu = [
+  const menu: MenuItem[] = [
     { nome: "DASHBOARD", rota: "/dashboard" },
     { nome: "CLIENTES", rota: "/clientes" },
     { nome: "AGENDAMENTOS", rota: "/agendamentos" },
     { nome: "ORDEM DE SERVIÇO", rota: "/ordens" },
     { nome: "PRODUTOS", rota: "/produtos" },
     { nome: "CATEGORIAS", rota: "/categorias" },
-    { name: "Serviços", href: "/servicos" },
+    { nome: "SERVIÇOS", rota: "/servicos" },
     { nome: "FORNECEDORES", rota: "/fornecedores" },
     { nome: "VENDAS", rota: "/vendas" },
     { nome: "FINANCEIRO", rota: "/financeiro" },
