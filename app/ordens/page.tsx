@@ -185,10 +185,12 @@ function OrdensPageContent() {
   const [clientesBusca, setClientesBusca] = useState<Cliente[]>([]);
   const [loadingClientesBusca, setLoadingClientesBusca] = useState(false);
 
-  const [produtosBase, setProdutosBase] = useState<Produto[]>([]);
   const [servicosBase, setServicosBase] = useState<ServicoBase[]>([]);
   const [veiculosCliente, setVeiculosCliente] = useState<Veiculo[]>([]);
   const [historico, setHistorico] = useState<OrdemServico[]>([]);
+
+  const [produtosBusca, setProdutosBusca] = useState<Produto[]>([]);
+  const [loadingProdutosBusca, setLoadingProdutosBusca] = useState(false);
 
   const [buscaCliente, setBuscaCliente] = useState("");
   const [buscaProduto, setBuscaProduto] = useState("");
@@ -258,61 +260,33 @@ function OrdensPageContent() {
 
     setLoading(true);
 
-    const [clientesResp, produtosResp, servicosResp, historicoResp] =
-      await Promise.all([
-        supabase
-          .from("clientes")
-          .select("id,nome,telefone,celular,whatsapp,cpf_cnpj,status")
-          .eq("empresa_id", emp)
-          .order("nome"),
+    const [clientesResp, servicosResp, historicoResp] = await Promise.all([
+      supabase
+        .from("clientes")
+        .select("id,nome,telefone,celular,whatsapp,cpf_cnpj,status")
+        .eq("empresa_id", emp)
+        .order("nome"),
 
-        supabase
-          .from("produtos")
-          .select(`
-            id,
-            nome,
-            codigo_sku,
-            codigo_barras,
-            categoria,
-            subcategoria,
-            preco_balcao,
-            preco_instalacao,
-            preco_revenda,
-            controla_estoque,
-            estoque_atual,
-            status,
-            empresa_id
-          `)
-          .eq("empresa_id", emp)
-          .order("nome"),
+      supabase
+        .from("servicos")
+        .select(
+          "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
+        )
+        .eq("empresa_id", emp)
+        .order("nome"),
 
-        supabase
-          .from("servicos")
-          .select(
-            "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
-          )
-          .eq("empresa_id", emp)
-          .order("nome"),
-
-        supabase
-          .from("ordens_servico")
-          .select("*")
-          .eq("empresa_id", emp)
-          .order("created_at", { ascending: false }),
-      ]);
+      supabase
+        .from("ordens_servico")
+        .select("*")
+        .eq("empresa_id", emp)
+        .order("created_at", { ascending: false }),
+    ]);
 
     if (clientesResp.error) alert("ERRO CLIENTES: " + clientesResp.error.message);
-    if (produtosResp.error) alert("ERRO PRODUTOS: " + produtosResp.error.message);
     if (servicosResp.error) alert("ERRO SERVIÇOS: " + servicosResp.error.message);
     if (historicoResp.error) alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
 
     setClientes((clientesResp.data || []) as Cliente[]);
-
-    setProdutosBase(
-      ((produtosResp.data || []) as Produto[]).filter(
-        (p) => normalizarTexto(p.status || "ATIVO") !== "INATIVO"
-      )
-    );
 
     setServicosBase(
       ((servicosResp.data || []) as ServicoBase[]).filter(
@@ -368,6 +342,55 @@ function OrdensPageContent() {
     setLoadingClientesBusca(false);
   }
 
+  async function buscarProdutosNoBanco(termo: string) {
+    if (!empresaId) return;
+
+    const q = termo.trim();
+
+    if (!q) {
+      setProdutosBusca([]);
+      return;
+    }
+
+    setLoadingProdutosBusca(true);
+
+    const { data, error } = await supabase
+      .from("produtos")
+      .select(`
+        id,
+        nome,
+        codigo_sku,
+        codigo_barras,
+        categoria,
+        subcategoria,
+        preco_balcao,
+        preco_instalacao,
+        preco_revenda,
+        controla_estoque,
+        estoque_atual,
+        status,
+        empresa_id
+      `)
+      .eq("empresa_id", empresaId)
+      .ilike("nome", `%${q}%`)
+      .order("nome")
+      .limit(200);
+
+    if (error) {
+      alert("ERRO AO BUSCAR PRODUTOS: " + error.message);
+      setProdutosBusca([]);
+      setLoadingProdutosBusca(false);
+      return;
+    }
+
+    const ativos = ((data || []) as Produto[]).filter(
+      (p) => normalizarTexto(p.status || "ATIVO") !== "INATIVO"
+    );
+
+    setProdutosBusca(ativos);
+    setLoadingProdutosBusca(false);
+  }
+
   async function carregarVeiculosDoCliente(idCliente: string) {
     if (!empresaId || !idCliente) {
       setVeiculosCliente([]);
@@ -416,6 +439,7 @@ function OrdensPageContent() {
     setAcrescimo("0");
     setProdutosOS([]);
     setServicosOS([]);
+    setProdutosBusca([]);
     setMostrarDropdownCliente(false);
     setMostrarDropdownProduto(false);
     setMostrarDropdownServico(false);
@@ -510,55 +534,6 @@ function OrdensPageContent() {
       }
     }
   }
-
-  const produtosFiltrados = useMemo(() => {
-    const q = normalizarTexto(buscaProduto);
-    if (!q) return [];
-
-    const resultados = produtosBase
-      .map((p) => {
-        const nome = normalizarTexto(p.nome);
-        const sku = normalizarTexto(p.codigo_sku);
-        const barras = normalizarTexto(p.codigo_barras);
-        const categoria = normalizarTexto(p.categoria);
-        const subcategoria = normalizarTexto(p.subcategoria);
-
-        const textoCompleto = normalizarTexto(`
-          ${p.nome}
-          ${p.codigo_sku}
-          ${p.codigo_barras}
-          ${p.categoria}
-          ${p.subcategoria}
-        `);
-
-        if (!textoCompleto.includes(q)) return null;
-
-        let score = 0;
-
-        if (sku === q || barras === q) score += 1000;
-        if (nome === q) score += 900;
-        if (nome.startsWith(q)) score += 700;
-        if (sku.startsWith(q) || barras.startsWith(q)) score += 650;
-        if (nome.includes(q)) score += 500;
-        if (sku.includes(q) || barras.includes(q)) score += 450;
-        if (categoria.includes(q) || subcategoria.includes(q)) score += 200;
-
-        return {
-          produto: p,
-          score,
-          nome,
-        };
-      })
-      .filter(Boolean) as { produto: Produto; score: number; nome: string }[];
-
-    return resultados
-      .sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        return a.nome.localeCompare(b.nome, "pt-BR");
-      })
-      .map((item) => item.produto)
-      .slice(0, 120);
-  }, [produtosBase, buscaProduto]);
 
   const servicosFiltrados = useMemo(() => {
     const q = normalizarTexto(buscaServico);
@@ -668,6 +643,7 @@ function OrdensPageContent() {
       },
     ]);
     setBuscaProduto("");
+    setProdutosBusca([]);
     setMostrarDropdownProduto(false);
   }
 
@@ -1445,44 +1421,48 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busca inteligente com ranking por código exato, começo do nome e relevância.
+                    Busca direta no banco por nome, do jeito mais confiável possível.
                   </p>
                 </div>
-                <div className="helper-badge">BUSCA INTELIGENTE</div>
+                <div className="helper-badge">BUSCA DIRETA</div>
               </div>
 
               <div className="relative mb-4">
                 <input
-                  placeholder="BUSCAR PRODUTO..."
+                  placeholder="BUSCAR PRODUTO PELO NOME..."
                   className="campo"
                   value={buscaProduto}
-                  onChange={(e) => {
-                    setBuscaProduto(e.target.value);
+                  onChange={async (e) => {
+                    const valor = e.target.value;
+                    setBuscaProduto(valor);
                     setMostrarDropdownProduto(true);
+                    await buscarProdutosNoBanco(valor);
                   }}
                   onFocus={async () => {
-                    if (empresaId) {
-                      await carregarBase(empresaId);
-                    }
                     if (buscaProduto.trim()) {
                       setMostrarDropdownProduto(true);
+                      await buscarProdutosNoBanco(buscaProduto);
                     }
                   }}
                 />
 
+                {loadingProdutosBusca && (
+                  <div className="text-xs text-[#64748B] mt-2">BUSCANDO PRODUTOS...</div>
+                )}
+
                 {mostrarDropdownProduto &&
-                  normalizarTexto(buscaProduto) &&
-                  produtosFiltrados.length > 0 && (
+                  buscaProduto.trim() &&
+                  produtosBusca.length > 0 && (
                     <div className="text-xs text-[#64748B] mt-2">
-                      {produtosFiltrados.length} PRODUTO(S) ENCONTRADO(S)
+                      {produtosBusca.length} PRODUTO(S) ENCONTRADO(S)
                     </div>
                   )}
 
                 {mostrarDropdownProduto &&
-                  normalizarTexto(buscaProduto) &&
-                  produtosFiltrados.length > 0 && (
+                  buscaProduto.trim() &&
+                  produtosBusca.length > 0 && (
                     <div className="dropdown top-full mt-2">
-                      {produtosFiltrados.map((p) => (
+                      {produtosBusca.map((p) => (
                         <button
                           key={p.id}
                           type="button"
@@ -1503,8 +1483,9 @@ function OrdensPageContent() {
                   )}
 
                 {mostrarDropdownProduto &&
-                  normalizarTexto(buscaProduto) &&
-                  produtosFiltrados.length === 0 && (
+                  buscaProduto.trim() &&
+                  !loadingProdutosBusca &&
+                  produtosBusca.length === 0 && (
                     <div className="dropdown top-full mt-2">
                       <div className="dropdown-item text-[#B91C1C]">
                         NENHUM PRODUTO ENCONTRADO PARA: <strong>{buscaProduto}</strong>
