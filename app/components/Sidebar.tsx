@@ -31,6 +31,7 @@ export default function Sidebar() {
     { nome: "ORDEM DE SERVIÇO", rota: "/ordens" },
     { nome: "PRODUTOS", rota: "/produtos" },
     { nome: "CATEGORIAS", rota: "/categorias" },
+    { name: "Serviços", href: "/servicos" },
     { nome: "FORNECEDORES", rota: "/fornecedores" },
     { nome: "VENDAS", rota: "/vendas" },
     { nome: "FINANCEIRO", rota: "/financeiro" },
