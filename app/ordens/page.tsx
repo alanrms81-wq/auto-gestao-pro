@@ -284,7 +284,6 @@ function OrdensPageContent() {
             empresa_id
           `)
           .eq("empresa_id", emp)
-          .eq("status", "ATIVO")
           .order("nome"),
 
         supabase
@@ -293,7 +292,6 @@ function OrdensPageContent() {
             "id,nome,descricao,categoria,valor,tempo_estimado,observacoes,status"
           )
           .eq("empresa_id", emp)
-          .eq("status", "ATIVO")
           .order("nome"),
 
         supabase
@@ -309,8 +307,19 @@ function OrdensPageContent() {
     if (historicoResp.error) alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
 
     setClientes((clientesResp.data || []) as Cliente[]);
-    setProdutosBase((produtosResp.data || []) as Produto[]);
-    setServicosBase((servicosResp.data || []) as ServicoBase[]);
+
+    setProdutosBase(
+      ((produtosResp.data || []) as Produto[]).filter(
+        (p) => normalizarTexto(p.status || "ATIVO") !== "INATIVO"
+      )
+    );
+
+    setServicosBase(
+      ((servicosResp.data || []) as ServicoBase[]).filter(
+        (s) => normalizarTexto(s.status || "ATIVO") !== "INATIVO"
+      )
+    );
+
     setHistorico((historicoResp.data || []) as OrdemServico[]);
 
     setLoading(false);
@@ -352,7 +361,7 @@ function OrdensPageContent() {
     }
 
     const lista = ((data || []) as Cliente[]).filter(
-      (c) => up(c.status || "ATIVO") !== "INATIVO"
+      (c) => normalizarTexto(c.status || "ATIVO") !== "INATIVO"
     );
 
     setClientesBusca(lista);
@@ -1405,10 +1414,10 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busque por nome, SKU, código de barras, categoria ou subcategoria.
+                    Busca inteligente por nome, SKU, código de barras, categoria e subcategoria.
                   </p>
                 </div>
-                <div className="helper-badge">BUSCA INTELIGENTE</div>
+                <div className="helper-badge">STATUS NORMALIZADO</div>
               </div>
 
               <div className="relative mb-4">
