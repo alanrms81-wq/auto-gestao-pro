@@ -129,15 +129,6 @@ function moneyBR(v: number) {
   });
 }
 
-function gerarNumeroOS() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const rnd = String(Math.floor(Math.random() * 9000) + 1000);
-  return `OS-${y}${m}${day}-${rnd}`;
-}
-
 function hojeISO() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -172,6 +163,48 @@ function normalizarTexto(texto: unknown) {
     .trim();
 }
 
+function extrairInfoNumero(numero: string) {
+  const valor = String(numero || "").trim();
+  const match = valor.match(/^(.*?)(\d+)([^\d]*)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    prefixo: match[1] || "",
+    numero: Number(match[2] || 0),
+    tamanho: match[2]?.length || 0,
+    sufixo: match[3] || "",
+  };
+}
+
+function gerarNumeroOSPadrao() {
+  return "OS-000001";
+}
+
+function calcularProximoNumero(lista: OrdemServico[]) {
+  let melhorNumero = 0;
+  let melhorPrefixo = "OS-";
+  let melhorSufixo = "";
+  let melhorTamanho = 6;
+
+  for (const item of lista) {
+    const info = extrairInfoNumero(item.numero || "");
+    if (!info) continue;
+
+    if (info.numero >= melhorNumero) {
+      melhorNumero = info.numero;
+      melhorPrefixo = info.prefixo || "OS-";
+      melhorSufixo = info.sufixo || "";
+      melhorTamanho = info.tamanho || 6;
+    }
+  }
+
+  const proximo = melhorNumero + 1;
+  return `${melhorPrefixo}${String(proximo).padStart(melhorTamanho, "0")}${melhorSufixo}`;
+}
+
 function OrdensPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -200,10 +233,11 @@ function OrdensPageContent() {
   const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false);
   const [mostrarDropdownProduto, setMostrarDropdownProduto] = useState(false);
   const [mostrarDropdownServico, setMostrarDropdownServico] = useState(false);
+  const [mostrarOrdensAbertas, setMostrarOrdensAbertas] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [numeroOS, setNumeroOS] = useState(gerarNumeroOS());
+  const [numeroOS, setNumeroOS] = useState(gerarNumeroOSPadrao());
   const [clienteId, setClienteId] = useState("");
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTelefone, setClienteTelefone] = useState("");
@@ -286,15 +320,23 @@ function OrdensPageContent() {
     if (servicosResp.error) alert("ERRO SERVIÇOS: " + servicosResp.error.message);
     if (historicoResp.error) alert("ERRO HISTÓRICO OS: " + historicoResp.error.message);
 
-    setClientes((clientesResp.data || []) as Cliente[]);
+    const listaClientes = (clientesResp.data || []) as Cliente[];
+    const listaServicos = (servicosResp.data || []) as ServicoBase[];
+    const listaHistorico = (historicoResp.data || []) as OrdemServico[];
+
+    setClientes(listaClientes);
 
     setServicosBase(
-      ((servicosResp.data || []) as ServicoBase[]).filter(
+      listaServicos.filter(
         (s) => normalizarTexto(s.status || "ATIVO") !== "INATIVO"
       )
     );
 
-    setHistorico((historicoResp.data || []) as OrdemServico[]);
+    setHistorico(listaHistorico);
+
+    if (!editingId) {
+      setNumeroOS(calcularProximoNumero(listaHistorico));
+    }
 
     setLoading(false);
   }
@@ -372,7 +414,9 @@ function OrdensPageContent() {
         empresa_id
       `)
       .eq("empresa_id", empresaId)
-      .ilike("nome", `%${q}%`)
+      .or(
+        `nome.ilike.%${q}%,codigo_sku.ilike.%${q}%,codigo_barras.ilike.%${q}%`
+      )
       .order("nome")
       .limit(200);
 
@@ -386,6 +430,28 @@ function OrdensPageContent() {
     const ativos = ((data || []) as Produto[]).filter(
       (p) => normalizarTexto(p.status || "ATIVO") !== "INATIVO"
     );
+
+    ativos.sort((a, b) => {
+      const qa = q.toUpperCase();
+      const nomeA = String(a.nome || "").toUpperCase();
+      const nomeB = String(b.nome || "").toUpperCase();
+      const skuA = String(a.codigo_sku || "").toUpperCase();
+      const skuB = String(b.codigo_sku || "").toUpperCase();
+      const cbA = String(a.codigo_barras || "").toUpperCase();
+      const cbB = String(b.codigo_barras || "").toUpperCase();
+
+      const score = (nome: string, sku: string, cb: string) => {
+        if (sku === qa || cb === qa) return 1000;
+        if (nome === qa) return 900;
+        if (nome.startsWith(qa)) return 700;
+        if (sku.startsWith(qa) || cb.startsWith(qa)) return 650;
+        if (nome.includes(qa)) return 500;
+        if (sku.includes(qa) || cb.includes(qa)) return 450;
+        return 100;
+      };
+
+      return score(nomeB, skuB, cbB) - score(nomeA, skuA, cbA);
+    });
 
     setProdutosBusca(ativos);
     setLoadingProdutosBusca(false);
@@ -414,7 +480,6 @@ function OrdensPageContent() {
   }
 
   function limparFormularioBase() {
-    setNumeroOS(gerarNumeroOS());
     setClienteId("");
     setClienteNome("");
     setClienteTelefone("");
@@ -443,12 +508,13 @@ function OrdensPageContent() {
     setMostrarDropdownCliente(false);
     setMostrarDropdownProduto(false);
     setMostrarDropdownServico(false);
+    setNumeroOS(calcularProximoNumero(historico));
   }
 
   async function preencherFormularioOS(os: OrdemServico) {
     const nomeClienteTela = os.cliente_nome || "";
 
-    setNumeroOS(os.numero || gerarNumeroOS());
+    setNumeroOS(os.numero || gerarNumeroOSPadrao());
     setClienteId(os.cliente_id || "");
     setClienteNome(nomeClienteTela);
     setClienteTelefone(os.cliente_telefone || "");
@@ -599,6 +665,10 @@ function OrdensPageContent() {
     limparFormularioBase();
   }
 
+  function usarProximoNumero() {
+    setNumeroOS(calcularProximoNumero(historico));
+  }
+
   async function selecionarCliente(c: Cliente) {
     const telefoneFinal = c.telefone || c.celular || c.whatsapp || "";
 
@@ -728,7 +798,13 @@ function OrdensPageContent() {
   async function salvarOS() {
     if (!empresaId) return;
 
+    const numeroFinal = String(numeroOS || "").trim();
     const nomeClienteFinal = up((clienteNome || buscaCliente).trim());
+
+    if (!numeroFinal) {
+      alert("PREENCHA O NÚMERO DA ORDEM DE SERVIÇO.");
+      return;
+    }
 
     if (!nomeClienteFinal) {
       alert("PREENCHA O NOME DO CLIENTE OU SELECIONE UM CLIENTE CADASTRADO.");
@@ -737,7 +813,7 @@ function OrdensPageContent() {
 
     const payload = {
       empresa_id: empresaId,
-      numero: up(numeroOS),
+      numero: up(numeroFinal),
       cliente_id: clienteId || null,
       cliente_nome: nomeClienteFinal,
       cliente_telefone: clienteTelefone.trim() || null,
@@ -858,8 +934,19 @@ function OrdensPageContent() {
     }
 
     alert(editingId ? "OS ATUALIZADA!" : "OS SALVA COM SUCESSO!");
-    novaOS();
+    setEditingId(null);
     await carregarBase();
+
+    const numeroSalvo = up(numeroFinal);
+    const info = extrairInfoNumero(numeroSalvo);
+
+    if (info) {
+      const proximoNumero = `${info.prefixo}${String(info.numero + 1).padStart(info.tamanho, "0")}${info.sufixo}`;
+      limparFormularioBase();
+      setNumeroOS(proximoNumero);
+    } else {
+      limparFormularioBase();
+    }
   }
 
   async function editarOS(item: OrdemServico) {
@@ -1061,7 +1148,7 @@ function OrdensPageContent() {
                 ORDEM DE SERVIÇO
               </h1>
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-                <span className="pill pill-white">NÚMERO {numeroOS}</span>
+                <span className="pill pill-white">NÚMERO {numeroOS || "-"}</span>
                 <span className={`pill ${statusClass(status)}`}>{status}</span>
                 {editingId ? (
                   <span className="pill pill-warning">EDITANDO</span>
@@ -1091,6 +1178,14 @@ function OrdensPageContent() {
 
             <button
               className="botao-header"
+              onClick={() => setMostrarOrdensAbertas((v) => !v)}
+              type="button"
+            >
+              {mostrarOrdensAbertas ? "OCULTAR ORDENS" : "VER ORDENS ABERTAS"}
+            </button>
+
+            <button
+              className="botao-header"
               onClick={() => editingId && imprimirOS({ id: editingId } as OrdemServico)}
               type="button"
             >
@@ -1107,107 +1202,138 @@ function OrdensPageContent() {
           </div>
         </div>
 
-        <section className="card mb-6">
-          <div className="section-header">
-            <div>
-              <h2 className="section-title">ORDENS ABERTAS</h2>
-              <p className="section-subtitle">
-                Acompanhe rapidamente as ordens ativas antes de lançar uma nova.
-              </p>
+        {mostrarOrdensAbertas && (
+          <section className="card mb-6">
+            <div className="section-header">
+              <div>
+                <h2 className="section-title">ORDENS ABERTAS</h2>
+                <p className="section-subtitle">
+                  Visualize as ordens ativas sem atrapalhar o cadastro de uma nova.
+                </p>
+              </div>
             </div>
-          </div>
 
-          <input
-            placeholder="BUSCAR POR NÚMERO, CLIENTE, TELEFONE, VEÍCULO OU STATUS..."
-            className="campo mb-4"
-            value={buscaHistorico}
-            onChange={(e) => setBuscaHistorico(e.target.value)}
-          />
+            <input
+              placeholder="BUSCAR POR NÚMERO, CLIENTE, TELEFONE, VEÍCULO OU STATUS..."
+              className="campo mb-4"
+              value={buscaHistorico}
+              onChange={(e) => setBuscaHistorico(e.target.value)}
+            />
 
-          <table className="tabela">
-            <thead>
-              <tr>
-                <th>NÚMERO</th>
-                <th>DATA</th>
-                <th>CLIENTE</th>
-                <th>VEÍCULO</th>
-                <th>STATUS</th>
-                <th>FAT.</th>
-                <th>TOTAL</th>
-                <th>AÇÕES</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {ordensAbertas.length === 0 ? (
+            <table className="tabela">
+              <thead>
                 <tr>
-                  <td colSpan={8} className="empty-state">
-                    NENHUMA ORDEM ABERTA ENCONTRADA.
-                  </td>
+                  <th>NÚMERO</th>
+                  <th>DATA</th>
+                  <th>CLIENTE</th>
+                  <th>VEÍCULO</th>
+                  <th>STATUS</th>
+                  <th>FAT.</th>
+                  <th>TOTAL</th>
+                  <th>AÇÕES</th>
                 </tr>
-              ) : (
-                ordensAbertas.map((item) => (
-                  <tr key={item.id}>
-                    <td className="font-bold">{item.numero || "-"}</td>
-                    <td>
-                      {item.created_at
-                        ? new Date(item.created_at).toLocaleDateString("pt-BR")
-                        : "-"}
-                    </td>
-                    <td>
-                      <div>{item.cliente_nome || "-"}</div>
-                      <div className="text-xs text-[#64748B]">
-                        {item.cliente_telefone || "-"}
-                        {item.cliente_avulso ? " • AVULSO" : ""}
-                      </div>
-                    </td>
-                    <td>{item.veiculo_descricao || "-"}</td>
-                    <td>
-                      <span className={`status-chip ${statusClass(item.status || "ABERTA")}`}>
-                        {item.status || "-"}
-                      </span>
-                    </td>
-                    <td>{item.faturado ? "SIM" : "NÃO"}</td>
-                    <td className="font-bold">{moneyBR(toMoney(item.total || 0))}</td>
-                    <td>
-                      <div className="flex gap-1 flex-wrap">
-                        <button className="botao-mini" onClick={() => editarOS(item)} type="button">
-                          EDITAR
-                        </button>
-                        <button
-                          className="botao-mini"
-                          onClick={() => atualizarStatusOS(item, "FINALIZADA")}
-                          type="button"
-                        >
-                          FINALIZAR
-                        </button>
-                        <button
-                          className="botao-mini success"
-                          onClick={() => faturarOS(item)}
-                          type="button"
-                        >
-                          FATURAR
-                        </button>
-                        <button className="botao-mini" onClick={() => imprimirOS(item)} type="button">
-                          OS
-                        </button>
-                        <button className="botao-mini" onClick={() => imprimirTecnico(item)} type="button">
-                          TÉCNICO
-                        </button>
-                        <button className="botao-mini danger" onClick={() => removerOS(item.id)} type="button">
-                          REMOVER
-                        </button>
-                      </div>
+              </thead>
+
+              <tbody>
+                {ordensAbertas.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="empty-state">
+                      NENHUMA ORDEM ABERTA ENCONTRADA.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </section>
+                ) : (
+                  ordensAbertas.map((item) => (
+                    <tr key={item.id}>
+                      <td className="font-bold">{item.numero || "-"}</td>
+                      <td>
+                        {item.created_at
+                          ? new Date(item.created_at).toLocaleDateString("pt-BR")
+                          : "-"}
+                      </td>
+                      <td>
+                        <div>{item.cliente_nome || "-"}</div>
+                        <div className="text-xs text-[#64748B]">
+                          {item.cliente_telefone || "-"}
+                          {item.cliente_avulso ? " • AVULSO" : ""}
+                        </div>
+                      </td>
+                      <td>{item.veiculo_descricao || "-"}</td>
+                      <td>
+                        <span className={`status-chip ${statusClass(item.status || "ABERTA")}`}>
+                          {item.status || "-"}
+                        </span>
+                      </td>
+                      <td>{item.faturado ? "SIM" : "NÃO"}</td>
+                      <td className="font-bold">{moneyBR(toMoney(item.total || 0))}</td>
+                      <td>
+                        <div className="flex gap-1 flex-wrap">
+                          <button className="botao-mini" onClick={() => editarOS(item)} type="button">
+                            EDITAR
+                          </button>
+                          <button
+                            className="botao-mini"
+                            onClick={() => atualizarStatusOS(item, "FINALIZADA")}
+                            type="button"
+                          >
+                            FINALIZAR
+                          </button>
+                          <button
+                            className="botao-mini success"
+                            onClick={() => faturarOS(item)}
+                            type="button"
+                          >
+                            FATURAR
+                          </button>
+                          <button className="botao-mini" onClick={() => imprimirOS(item)} type="button">
+                            OS
+                          </button>
+                          <button className="botao-mini" onClick={() => imprimirTecnico(item)} type="button">
+                            TÉCNICO
+                          </button>
+                          <button className="botao-mini danger" onClick={() => removerOS(item.id)} type="button">
+                            REMOVER
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </section>
+        )}
 
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6">
           <div className="space-y-6">
+            <section className="card">
+              <div className="section-header">
+                <div>
+                  <h2 className="section-title">DADOS GERAIS DA OS</h2>
+                  <p className="section-subtitle">
+                    Edite a numeração livremente e continue a sequência do sistema antigo.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2">
+                  <label className="label">NÚMERO DA OS</label>
+                  <input
+                    className="campo"
+                    value={numeroOS}
+                    onChange={(e) => setNumeroOS(e.target.value)}
+                    placeholder="EX.: OS-000123"
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <button className="botao w-full" onClick={usarProximoNumero} type="button">
+                    USAR PRÓXIMO NÚMERO
+                  </button>
+                </div>
+              </div>
+            </section>
+
             <section className="card">
               <div className="section-header">
                 <div>
@@ -1421,7 +1547,7 @@ function OrdensPageContent() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busca direta no banco por nome, do jeito mais confiável possível.
+                    Busca direta no banco por nome, SKU e código de barras.
                   </p>
                 </div>
                 <div className="helper-badge">BUSCA DIRETA</div>
@@ -1429,7 +1555,7 @@ function OrdensPageContent() {
 
               <div className="relative mb-4">
                 <input
-                  placeholder="BUSCAR PRODUTO PELO NOME..."
+                  placeholder="BUSCAR PRODUTO POR NOME, SKU OU CÓDIGO DE BARRAS..."
                   className="campo"
                   value={buscaProduto}
                   onChange={async (e) => {
@@ -1471,7 +1597,7 @@ function OrdensPageContent() {
                         >
                           <div className="font-semibold text-[#111827]">{p.nome}</div>
                           <div className="text-xs text-[#6B7280]">
-                            {p.codigo_sku || p.codigo_barras || "-"}
+                            {p.codigo_sku || "-"} {p.codigo_barras ? `• ${p.codigo_barras}` : ""}
                             {p.categoria ? ` • ${p.categoria}` : ""}
                             {p.subcategoria ? ` / ${p.subcategoria}` : ""}
                             {" • "}
@@ -1686,6 +1812,10 @@ function OrdensPageContent() {
               <h2 className="section-title mb-4">RESUMO DA OS</h2>
 
               <div className="resumo-box">
+                <div className="resumo-linha">
+                  <span>NÚMERO</span>
+                  <strong>{numeroOS || "-"}</strong>
+                </div>
                 <div className="resumo-linha">
                   <span>CLIENTE</span>
                   <strong>{(clienteNome || buscaCliente) || "-"}</strong>
