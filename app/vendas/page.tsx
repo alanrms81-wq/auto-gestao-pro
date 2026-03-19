@@ -20,6 +20,7 @@ type Cliente = {
   rua?: string | null;
   numero?: string | null;
   bairro?: string | null;
+  status?: string | null;
 };
 
 type Produto = {
@@ -156,7 +157,6 @@ export default function VendasPage() {
   const [loading, setLoading] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
 
-  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [historico, setHistorico] = useState<Venda[]>([]);
 
@@ -166,6 +166,9 @@ export default function VendasPage() {
 
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clienteId, setClienteId] = useState<string | null>(null);
+  const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
+  const [clientesBusca, setClientesBusca] = useState<Cliente[]>([]);
+  const [loadingClientesBusca, setLoadingClientesBusca] = useState(false);
 
   const [buscaProduto, setBuscaProduto] = useState("");
   const [itens, setItens] = useState<VendaItem[]>([]);
@@ -251,12 +254,7 @@ export default function VendasPage() {
 
     setLoading(true);
 
-    const [clientesResp, produtosResp, vendasResp] = await Promise.all([
-      supabase
-        .from("clientes")
-        .select("id,nome,telefone,email,cpf_cnpj,cidade,estado,cep,rua,numero,bairro")
-        .eq("empresa_id", eid)
-        .order("nome"),
+    const [produtosResp, vendasResp] = await Promise.all([
       supabase
         .from("produtos")
         .select(
@@ -271,10 +269,6 @@ export default function VendasPage() {
         .order("created_at", { ascending: false }),
     ]);
 
-    if (clientesResp.error) {
-      alert("ERRO CLIENTES: " + clientesResp.error.message);
-    }
-
     if (produtosResp.error) {
       alert("ERRO PRODUTOS: " + produtosResp.error.message);
     }
@@ -283,7 +277,6 @@ export default function VendasPage() {
       alert("ERRO VENDAS: " + vendasResp.error.message);
     }
 
-    setClientes((clientesResp.data || []) as Cliente[]);
     setProdutos((produtosResp.data || []) as Produto[]);
     setHistorico((vendasResp.data || []) as Venda[]);
 
@@ -291,19 +284,49 @@ export default function VendasPage() {
     setLoading(false);
   }
 
-  const clienteSelecionado = useMemo(() => {
-    return clientes.find((c) => c.id === clienteId) || null;
-  }, [clientes, clienteId]);
+  async function buscarClientesNoBanco(termo: string) {
+    if (!empresaId) return;
 
-  const clientesSugestao = useMemo(() => {
-    const q = up(buscaCliente.trim());
-    if (q.length < 2) return [];
-    return clientes
-      .filter((c) =>
-        up(`${c.nome} ${c.telefone || ""} ${c.email || ""} ${c.cpf_cnpj || ""}`).includes(q)
+    const q = termo.trim();
+
+    if (q.length < 2) {
+      setClientesBusca([]);
+      return;
+    }
+
+    setLoadingClientesBusca(true);
+
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("id,nome,telefone,email,cpf_cnpj,cidade,estado,cep,rua,numero,bairro,status")
+      .eq("empresa_id", empresaId)
+      .or(
+        [
+          `nome.ilike.%${q}%`,
+          `telefone.ilike.%${q}%`,
+          `email.ilike.%${q}%`,
+          `cpf_cnpj.ilike.%${q}%`,
+          `cidade.ilike.%${q}%`,
+          `estado.ilike.%${q}%`,
+        ].join(",")
       )
-      .slice(0, 10);
-  }, [clientes, buscaCliente]);
+      .order("nome")
+      .limit(30);
+
+    if (error) {
+      alert("ERRO AO BUSCAR CLIENTES: " + error.message);
+      setClientesBusca([]);
+      setLoadingClientesBusca(false);
+      return;
+    }
+
+    const lista = ((data || []) as Cliente[]).filter(
+      (c) => up(c.status || "ATIVO") !== "INATIVO"
+    );
+
+    setClientesBusca(lista);
+    setLoadingClientesBusca(false);
+  }
 
   const produtosSugestao = useMemo(() => {
     const q = up(buscaProduto.trim());
@@ -335,8 +358,10 @@ export default function VendasPage() {
 
   function selecionarCliente(c: Cliente) {
     setClienteId(c.id);
+    setClienteSelecionado(c);
     setBuscaCliente(c.nome);
     setOpenClientes(false);
+    setClientesBusca([]);
   }
 
   function adicionarProduto(p: Produto) {
@@ -409,6 +434,8 @@ export default function VendasPage() {
     setFormaPagamento("DINHEIRO");
     setBuscaCliente("");
     setClienteId(null);
+    setClienteSelecionado(null);
+    setClientesBusca([]);
     setBuscaProduto("");
     setItens([]);
     setDesconto("0");
@@ -877,18 +904,29 @@ export default function VendasPage() {
                   <label className="label">CLIENTE</label>
                   <input
                     value={buscaCliente}
-                    onChange={(e) => {
-                      setBuscaCliente(e.target.value);
+                    onChange={async (e) => {
+                      const valor = e.target.value;
+                      setBuscaCliente(valor);
                       setOpenClientes(true);
+                      await buscarClientesNoBanco(valor);
                     }}
-                    onFocus={() => setOpenClientes(true)}
-                    placeholder="DIGITE O NOME, TELEFONE OU DOCUMENTO..."
+                    onFocus={async () => {
+                      setOpenClientes(true);
+                      if (buscaCliente.trim().length >= 2) {
+                        await buscarClientesNoBanco(buscaCliente);
+                      }
+                    }}
+                    placeholder="DIGITE O NOME, TELEFONE, EMAIL, DOCUMENTO OU CIDADE..."
                     className="campo"
                   />
 
-                  {openClientes && clientesSugestao.length > 0 && (
+                  {loadingClientesBusca && (
+                    <div className="text-xs text-[#64748B] mt-2">BUSCANDO CLIENTES...</div>
+                  )}
+
+                  {openClientes && clientesBusca.length > 0 && (
                     <div className="dropdown">
-                      {clientesSugestao.map((c) => (
+                      {clientesBusca.map((c) => (
                         <button
                           key={c.id}
                           type="button"
@@ -897,13 +935,26 @@ export default function VendasPage() {
                         >
                           <div className="font-bold text-[#0F172A]">{c.nome}</div>
                           <div className="text-xs text-[#64748B]">
-                            {c.telefone || "-"}{" "}
-                            {c.cidade ? `— ${c.cidade}/${c.estado || ""}` : ""}
+                            {c.telefone || "-"} {c.email ? `• ${c.email}` : ""}
+                          </div>
+                          <div className="text-xs text-[#64748B]">
+                            {c.cpf_cnpj || "-"} {c.cidade ? `• ${c.cidade}/${c.estado || ""}` : ""}
                           </div>
                         </button>
                       ))}
                     </div>
                   )}
+
+                  {openClientes &&
+                    buscaCliente.trim().length >= 2 &&
+                    !loadingClientesBusca &&
+                    clientesBusca.length === 0 && (
+                      <div className="dropdown">
+                        <div className="dropdown-item text-[#B91C1C]">
+                          NENHUM CLIENTE ENCONTRADO PARA: <strong>{buscaCliente}</strong>
+                        </div>
+                      </div>
+                    )}
                 </div>
 
                 <div>
