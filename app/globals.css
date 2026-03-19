@@ -3,6 +3,8 @@
 :root {
   --background: #eef2f7;
   --foreground: #111827;
+  --app-scale: 0.92;
+  --app-font-size: 15px;
 }
 
 @theme inline {
@@ -14,15 +16,53 @@
 
 html,
 body {
+  width: 100%;
   max-width: 100%;
+  margin: 0;
+  padding: 0;
   overflow-x: hidden;
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  font-size: var(--app-font-size);
 }
 
-* {
+body {
+  zoom: var(--app-scale);
+}
+
+@supports not (zoom: 1) {
+  body {
+    transform: scale(var(--app-scale));
+    transform-origin: top left;
+    width: calc(100% / var(--app-scale));
+  }
+}
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+  min-width: 0;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+main {
+  min-width: 0;
+  width: 100%;
+}
+
+section,
+article,
+div {
+  min-width: 0;
 }
 
 h1,
@@ -32,12 +72,24 @@ h4,
 h5,
 h6 {
   color: #1f2937;
+  line-height: 1.15;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
 }
 
 input,
 select,
 textarea {
-  font: inherit;
+  max-width: 100%;
+}
+
+textarea {
+  resize: vertical;
 }
 
 button {
@@ -46,6 +98,11 @@ button {
 
 button:hover {
   filter: brightness(0.98);
+}
+
+table {
+  width: 100%;
+  max-width: 100%;
 }
 
 table th {
@@ -62,4 +119,17 @@ aside {
 
 aside * {
   color: inherit;
+}
+
+@media (max-width: 1400px) {
+  :root {
+    --app-scale: 0.9;
+  }
+}
+
+@media (max-width: 1200px) {
+  :root {
+    --app-scale: 1;
+    --app-font-size: 14px;
+  }
 }
