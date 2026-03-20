@@ -6,15 +6,6 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
 
-type ClienteAniversario = {
-  id: string;
-  nome?: string | null;
-  telefone?: string | null;
-  celular?: string | null;
-  whatsapp?: string | null;
-  data_nascimento?: string | null;
-};
-
 type Produto = {
   id: string;
   nome: string;
@@ -142,31 +133,11 @@ function last6MonthKeys() {
   return out;
 }
 
-function formatDateBR(dateStr?: string | null) {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "-";
-  return d.toLocaleDateString("pt-BR");
-}
-
-function dayMonth(dateStr?: string | null) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "";
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function isBirthdayToday(dateStr?: string | null) {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const now = new Date();
-  return d.getDate() === now.getDate() && d.getMonth() === now.getMonth();
-}
-
 export default function DashboardPage() {
   const router = useRouter();
 
   const [ready, setReady] = useState(false);
+  const [empresaId, setEmpresaId] = useState<string | null>(null);
 
   const [totalClientes, setTotalClientes] = useState(0);
   const [totalProdutos, setTotalProdutos] = useState(0);
@@ -175,7 +146,6 @@ export default function DashboardPage() {
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
   const [titulos, setTitulos] = useState<FinanceiroTitulo[]>([]);
   const [movsEstoque, setMovsEstoque] = useState<MovimentacaoEstoque[]>([]);
-  const [aniversariantesMes, setAniversariantesMes] = useState<ClienteAniversario[]>([]);
 
   useEffect(() => {
     async function init() {
@@ -186,6 +156,7 @@ export default function DashboardPage() {
         return;
       }
 
+      setEmpresaId(user.empresa_id);
       await carregarBase(user.empresa_id);
       setReady(true);
     }
@@ -194,8 +165,6 @@ export default function DashboardPage() {
   }, [router]);
 
   async function carregarBase(empId: string) {
-    const mesAtual = new Date().getMonth() + 1;
-
     const [
       clientesCountResp,
       produtosCountResp,
@@ -203,7 +172,6 @@ export default function DashboardPage() {
       ordensResp,
       titulosResp,
       estoqueResp,
-      aniversariantesResp,
     ] = await Promise.all([
       supabase
         .from("clientes")
@@ -236,12 +204,6 @@ export default function DashboardPage() {
         .from("movimentacoes_estoque")
         .select("id,tipo,quantidade,created_at")
         .eq("empresa_id", empId),
-
-      supabase
-        .from("clientes")
-        .select("id,nome,telefone,celular,whatsapp,data_nascimento")
-        .eq("empresa_id", empId)
-        .not("data_nascimento", "is", null),
     ]);
 
     if (clientesCountResp.error) {
@@ -260,38 +222,12 @@ export default function DashboardPage() {
     if (ordensResp.error) alert("ERRO ORDENS: " + ordensResp.error.message);
     if (titulosResp.error) alert("ERRO FINANCEIRO: " + titulosResp.error.message);
     if (estoqueResp.error) alert("ERRO ESTOQUE: " + estoqueResp.error.message);
-    if (aniversariantesResp.error) {
-      alert(
-        "ERRO ANIVERSARIANTES: " +
-          aniversariantesResp.error.message +
-          " — verifique se a coluna data_nascimento existe."
-      );
-    }
 
     setProdutos((produtosResp.data || []) as Produto[]);
     setOrdens((ordensResp.data || []) as OrdemServico[]);
     setTitulos((titulosResp.data || []) as FinanceiroTitulo[]);
     setMovsEstoque((estoqueResp.data || []) as MovimentacaoEstoque[]);
-
-    const aniversariantes = ((aniversariantesResp.data || []) as ClienteAniversario[])
-      .filter((c) => {
-        if (!c.data_nascimento) return false;
-        const d = new Date(c.data_nascimento);
-        return !isNaN(d.getTime()) && d.getMonth() + 1 === mesAtual;
-      })
-      .sort((a, b) => {
-        const da = new Date(a.data_nascimento || "");
-        const db = new Date(b.data_nascimento || "");
-        return da.getDate() - db.getDate();
-      });
-
-    setAniversariantesMes(aniversariantes);
   }
-
-  const aniversariantesHoje = useMemo(
-    () => aniversariantesMes.filter((c) => isBirthdayToday(c.data_nascimento)).length,
-    [aniversariantesMes]
-  );
 
   const osAbertas = useMemo(
     () => ordens.filter((o) => up(o.status) === "ABERTA").length,
@@ -455,7 +391,7 @@ export default function DashboardPage() {
               DASHBOARD ERP
             </h1>
             <p className="text-sm text-[#6C757D] mt-1">
-              VISÃO OPERACIONAL, FATURAMENTO, RECEBIMENTO, ESTOQUE E RELACIONAMENTO
+              VISÃO OPERACIONAL, FATURAMENTO, RECEBIMENTO E ESTOQUE
             </p>
           </div>
 
@@ -470,63 +406,6 @@ export default function DashboardPage() {
           {cardsResumo.map((item) => (
             <CardKpi key={item.titulo} titulo={item.titulo} valor={item.valor} />
           ))}
-        </div>
-
-        <div className="grid grid-cols-1 2xl:grid-cols-[1.2fr_0.8fr] gap-6 mb-6">
-          <section className="card">
-            <h2 className="titulo-azul mb-5">ANIVERSARIANTES DO MÊS</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-              <ResumoCardInterno titulo="ANIVERSARIANTES DO MÊS" valor={String(aniversariantesMes.length)} />
-              <ResumoCardInterno titulo="ANIVERSARIANTES DE HOJE" valor={String(aniversariantesHoje)} />
-              <ResumoCardInterno titulo="AÇÃO SUGERIDA" valor="PROMOÇÃO" destaque />
-            </div>
-
-            <div className="space-y-3">
-              {aniversariantesMes.length === 0 ? (
-                <div className="text-sm text-[#6B7280]">NENHUM ANIVERSARIANTE NESTE MÊS.</div>
-              ) : (
-                aniversariantesMes.slice(0, 8).map((c) => {
-                  const contato = c.whatsapp || c.celular || c.telefone || "-";
-                  const hoje = isBirthdayToday(c.data_nascimento);
-
-                  return (
-                    <div
-                      key={c.id}
-                      className={`flex items-center justify-between rounded-[16px] border p-3 ${
-                        hoje ? "border-[#86EFAC] bg-[#F0FDF4]" : "border-[#E5E7EB] bg-white"
-                      }`}
-                    >
-                      <div>
-                        <div className="font-semibold text-[#111827]">{c.nome || "-"}</div>
-                        <div className="text-xs text-[#6B7280]">
-                          ANIVERSÁRIO: {dayMonth(c.data_nascimento)} • CONTATO: {contato}
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <div className={`font-black ${hoje ? "text-[#15803D]" : "text-[#111827]"}`}>
-                          {hoje ? "HOJE" : formatDateBR(c.data_nascimento)}
-                        </div>
-                        <div className="text-xs text-[#6B7280]">
-                          {hoje ? "ENVIE PROMOÇÃO" : "ANIVERSARIANTE"}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </section>
-
-          <section className="card">
-            <h2 className="titulo-azul mb-5">FUNIL OPERACIONAL</h2>
-
-            <ResumoLinha label="ABERTAS" valor={String(osAbertas)} />
-            <ResumoLinha label="ANDAMENTO" valor={String(osAndamento)} />
-            <ResumoLinha label="FINALIZADAS" valor={String(osFinalizadas)} />
-            <ResumoLinha label="ENTREGUES" valor={String(osEntregues)} />
-          </section>
         </div>
 
         <div className="grid grid-cols-1 2xl:grid-cols-[1.5fr_1fr] gap-6 mb-6">
@@ -547,6 +426,32 @@ export default function DashboardPage() {
                   <Barra label="OS FATURADAS" valor={item.faturado} max={maxGraficoFinanceiro} />
                   <Barra label="RECEBIDO" valor={item.recebido} max={maxGraficoFinanceiro} />
                 </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="card">
+            <h2 className="titulo-azul mb-5">FUNIL OPERACIONAL</h2>
+
+            <ResumoLinha label="ABERTAS" valor={String(osAbertas)} />
+            <ResumoLinha label="ANDAMENTO" valor={String(osAndamento)} />
+            <ResumoLinha label="FINALIZADAS" valor={String(osFinalizadas)} />
+            <ResumoLinha label="ENTREGUES" valor={String(osEntregues)} />
+          </section>
+        </div>
+
+        <div className="grid grid-cols-1 2xl:grid-cols-[1.2fr_0.8fr] gap-6 mb-6">
+          <section className="card">
+            <h2 className="titulo-azul mb-5">SAÍDA DE ESTOQUE POR MÊS</h2>
+
+            <div className="space-y-4">
+              {graficoMeses.map((item) => (
+                <Barra
+                  key={item.mes}
+                  label={item.label}
+                  valor={item.saidaEstoque}
+                  max={maxGraficoEstoque}
+                />
               ))}
             </div>
           </section>
@@ -578,31 +483,6 @@ export default function DashboardPage() {
                 ))
               )}
             </div>
-          </section>
-        </div>
-
-        <div className="grid grid-cols-1 2xl:grid-cols-[1.2fr_0.8fr] gap-6 mb-6">
-          <section className="card">
-            <h2 className="titulo-azul mb-5">SAÍDA DE ESTOQUE POR MÊS</h2>
-
-            <div className="space-y-4">
-              {graficoMeses.map((item) => (
-                <Barra
-                  key={item.mes}
-                  label={item.label}
-                  valor={item.saidaEstoque}
-                  max={maxGraficoEstoque}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section className="card">
-            <h2 className="titulo-azul mb-5">RELACIONAMENTO</h2>
-
-            <ResumoLinha label="ANIVERSARIANTES MÊS" valor={String(aniversariantesMes.length)} />
-            <ResumoLinha label="ANIVERSARIANTES HOJE" valor={String(aniversariantesHoje)} />
-            <ResumoLinha label="CLIENTES CADASTRADOS" valor={String(totalClientes)} />
           </section>
         </div>
 
@@ -728,31 +608,6 @@ function CardKpi({ titulo, valor }: { titulo: string; valor: string }) {
     <div className="bg-white rounded-[22px] shadow-sm p-5 min-h-[110px]">
       <div className="text-[14px] font-bold text-[#6C757D]">{titulo}</div>
       <div className="mt-3 text-[24px] font-black text-[#111] break-words">{valor}</div>
-    </div>
-  );
-}
-
-function ResumoCardInterno({
-  titulo,
-  valor,
-  destaque = false,
-}: {
-  titulo: string;
-  valor: string;
-  destaque?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-[18px] p-4 ${
-        destaque ? "bg-[#0456A3] text-white" : "bg-[#F8FAFC] border border-[#E5E7EB]"
-      }`}
-    >
-      <div className={`text-[12px] font-bold ${destaque ? "text-white/85" : "text-[#6B7280]"}`}>
-        {titulo}
-      </div>
-      <div className={`mt-2 text-[24px] font-black ${destaque ? "text-white" : "text-[#111827]"}`}>
-        {valor}
-      </div>
     </div>
   );
 }
