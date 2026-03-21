@@ -3,10 +3,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/app/components/Sidebar";
-import { canAccess, isLogged } from "@/lib/authGuard";
+import { canAccess } from "@/lib/authGuard";
 import { getEmpresaFiscal } from "@/lib/fiscal";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
+
+/* =========================
+   TIPOS
+========================= */
+
+type SessionUser = {
+  id?: string;
+  empresa_id: string;
+  role?: string | null;
+  nome?: string | null;
+};
 
 type Cliente = {
   id: string;
@@ -16,10 +27,6 @@ type Cliente = {
   cpf_cnpj?: string | null;
   cidade?: string | null;
   estado?: string | null;
-  cep?: string | null;
-  rua?: string | null;
-  numero?: string | null;
-  bairro?: string | null;
   status?: string | null;
 };
 
@@ -27,22 +34,25 @@ type Produto = {
   id: string;
   nome: string;
   codigo_sku?: string | null;
-  ncm?: string | null;
-  cfop?: string | null;
-  cest?: string | null;
-  unidade?: string | null;
-  origem?: string | null;
-  cst_csosn?: string | null;
-  aliquota_icms?: number | null;
+  codigo_barras?: string | null;
+  categoria?: string | null;
+  subcategoria?: string | null;
   preco_balcao?: number | null;
   preco_instalacao?: number | null;
   preco_revenda?: number | null;
   estoque_atual?: number | null;
   controla_estoque?: boolean | null;
   status?: string | null;
-  categoria?: string | null;
-  subcategoria?: string | null;
-  codigo_barras?: string | null;
+};
+
+type Venda = {
+  id: string;
+  numero?: string | null;
+  cliente_nome?: string | null;
+  forma_pagamento?: string | null;
+  total?: number | null;
+  created_at?: string | null;
+  status?: string | null;
 };
 
 type VendaItem = {
@@ -50,52 +60,16 @@ type VendaItem = {
   produtoId: string | null;
   nome: string;
   codigo?: string;
-  ncm?: string;
-  cfop?: string;
-  cest?: string;
-  unidade?: string;
-  origem?: string;
-  cstCsosn?: string;
-  aliquotaIcms?: number;
   quantidade: number;
   valorUnitario: number;
   total: number;
+  estoqueAtual?: number;
+  controlaEstoque?: boolean;
 };
 
-type Venda = {
-  id: string;
-  empresa_id: string;
-  numero: string;
-  data_venda?: string | null;
-  cliente_id?: string | null;
-  cliente_nome?: string | null;
-  cliente_telefone?: string | null;
-  forma_pagamento?: string | null;
-  status?: string | null;
-  subtotal?: number | null;
-  desconto?: number | null;
-  total?: number | null;
-  observacoes?: string | null;
-  created_at?: string | null;
-};
-
-type VendaItemDB = {
-  id: string;
-  venda_id: string;
-  produto_id?: string | null;
-  produto_nome?: string | null;
-  codigo?: string | null;
-  ncm?: string | null;
-  cfop?: string | null;
-  cest?: string | null;
-  unidade?: string | null;
-  origem?: string | null;
-  cst_csosn?: string | null;
-  aliquota_icms?: number | null;
-  quantidade?: number | null;
-  valor_unitario?: number | null;
-  total?: number | null;
-};
+/* =========================
+   HELPERS
+========================= */
 
 function up(v: unknown) {
   return String(v ?? "").toUpperCase();
@@ -129,28 +103,52 @@ function agoraISO() {
 }
 
 function getPrecoPadraoProduto(p: Produto) {
-  return toMoney(p.preco_balcao) || toMoney(p.preco_instalacao) || toMoney(p.preco_revenda) || 0;
+  return (
+    toMoney(p.preco_balcao) ||
+    toMoney(p.preco_instalacao) ||
+    toMoney(p.preco_revenda) ||
+    0
+  );
 }
 
-function statusClass(status: string) {
-  const s = up(status);
-  if (s === "ABERTA") return "status-aberta";
-  if (s === "FINALIZADA") return "status-finalizada";
-  if (s === "CANCELADA") return "status-cancelada";
-  return "status-aberta";
+function gerarNumeroInterno(data: Venda[]) {
+  if (!data?.length) return "VD-000001";
+
+  let maior = 0;
+
+  for (const item of data) {
+    const m = String(item.numero || "").match(/\d+/);
+    const n = m ? Number(m[0]) : 0;
+    if (n > maior) maior = n;
+  }
+
+  return `VD-${String(maior + 1).padStart(6, "0")}`;
 }
 
-function isPagamentoImediato(forma: string) {
-  const f = up(forma);
+function isPagamentoImediato(formaPagamento: string) {
+  const f = up(formaPagamento);
+
   return (
     f === "DINHEIRO" ||
     f === "PIX" ||
     f === "CARTÃO DE DÉBITO" ||
+    f === "CARTAO DE DÉBITO" ||
     f === "CARTAO DE DEBITO" ||
+    f === "CARTÃO DE CRÉDITO" ||
+    f === "CARTAO DE CRÉDITO" ||
+    f === "CARTAO DE CREDITO" ||
     f === "TRANSFERÊNCIA" ||
     f === "TRANSFERENCIA"
   );
 }
+
+function getFinanceiroStatus(formaPagamento: string) {
+  return isPagamentoImediato(formaPagamento) ? "PAGO" : "ABERTO";
+}
+
+/* =========================
+   COMPONENTE
+========================= */
 
 export default function VendasPage() {
   const router = useRouter();
@@ -160,27 +158,24 @@ export default function VendasPage() {
   const [loading, setLoading] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
 
+  const [numeroVenda, setNumeroVenda] = useState("VD-000001");
+  const [formaPagamento, setFormaPagamento] = useState("DINHEIRO");
+  const [desconto, setDesconto] = useState("0");
+  const [observacoes, setObservacoes] = useState("");
+
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [historico, setHistorico] = useState<Venda[]>([]);
 
-  const [numeroVenda, setNumeroVenda] = useState("VD-000001");
-  const [status, setStatus] = useState<"ABERTA" | "FINALIZADA" | "CANCELADA">("ABERTA");
-  const [formaPagamento, setFormaPagamento] = useState("DINHEIRO");
-
-  const [buscaCliente, setBuscaCliente] = useState("");
-  const [clienteId, setClienteId] = useState<string | null>(null);
+  const [clienteBusca, setClienteBusca] = useState("");
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
-  const [clientesBusca, setClientesBusca] = useState<Cliente[]>([]);
-  const [loadingClientesBusca, setLoadingClientesBusca] = useState(false);
+  const [clientesEncontrados, setClientesEncontrados] = useState<Cliente[]>([]);
+  const [buscandoClientes, setBuscandoClientes] = useState(false);
 
-  const [buscaProduto, setBuscaProduto] = useState("");
-  const [produtosBusca, setProdutosBusca] = useState<Produto[]>([]);
-  const [loadingProdutosBusca, setLoadingProdutosBusca] = useState(false);
+  const [produtoBusca, setProdutoBusca] = useState("");
+  const [produtosEncontrados, setProdutosEncontrados] = useState<Produto[]>([]);
+  const [buscandoProdutos, setBuscandoProdutos] = useState(false);
 
   const [itens, setItens] = useState<VendaItem[]>([]);
-
-  const [desconto, setDesconto] = useState("0");
-  const [observacoes, setObservacoes] = useState("");
   const [buscaHistorico, setBuscaHistorico] = useState("");
 
   const clienteBoxRef = useRef<HTMLDivElement | null>(null);
@@ -189,22 +184,24 @@ export default function VendasPage() {
   const [openClientes, setOpenClientes] = useState(false);
   const [openProdutos, setOpenProdutos] = useState(false);
 
+  /* =========================
+     INIT / ACESSO
+  ========================= */
+
   useEffect(() => {
     async function init() {
-      if (!isLogged()) {
-        router.push("/login");
-        return;
-      }
+      const user = (await getSessionUser()) as SessionUser | null;
 
-      if (!canAccess("VENDAS")) {
-        alert("ACESSO NEGADO");
-        router.push("/dashboard");
-        return;
-      }
-
-      const user = await getSessionUser();
       if (!user) {
         router.push("/login");
+        return;
+      }
+
+      const isAdmin = String(user.role || "").toUpperCase() === "ADMIN";
+
+      if (!isAdmin && !canAccess("VENDAS")) {
+        alert("ACESSO NEGADO");
+        router.push("/dashboard");
         return;
       }
 
@@ -219,9 +216,11 @@ export default function VendasPage() {
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       const target = e.target as Node;
+
       if (clienteBoxRef.current && !clienteBoxRef.current.contains(target)) {
         setOpenClientes(false);
       }
+
       if (produtoBoxRef.current && !produtoBoxRef.current.contains(target)) {
         setOpenProdutos(false);
       }
@@ -231,80 +230,64 @@ export default function VendasPage() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  async function gerarProximoNumero(empId: string) {
-    const { data, error } = await supabase
-      .from("vendas")
-      .select("numero")
-      .eq("empresa_id", empId)
-      .order("created_at", { ascending: false })
-      .limit(50);
+  /* =========================
+     CARREGAMENTO BASE
+  ========================= */
 
-    if (error || !data || data.length === 0) {
-      setNumeroVenda("VD-000001");
-      return;
-    }
-
-    let maior = 0;
-    for (const item of data) {
-      const m = String(item.numero || "").match(/\d+/);
-      const n = m ? Number(m[0]) : 0;
-      if (n > maior) maior = n;
-    }
-
-    setNumeroVenda(`VD-${String(maior + 1).padStart(6, "0")}`);
-  }
-
-  async function carregarBase(empId?: string) {
-    const eid = empId || empresaId;
-    if (!eid) return;
-
+  async function carregarBase(empId: string) {
     setLoading(true);
 
     const [produtosResp, vendasResp] = await Promise.all([
       supabase
         .from("produtos")
         .select(
-          "id,nome,codigo_sku,ncm,cfop,cest,unidade,origem,cst_csosn,aliquota_icms,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status,categoria,subcategoria,codigo_barras"
+          "id,nome,codigo_sku,codigo_barras,categoria,subcategoria,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status"
         )
-        .eq("empresa_id", eid)
+        .eq("empresa_id", empId)
         .order("nome"),
       supabase
         .from("vendas")
-        .select("*")
-        .eq("empresa_id", eid)
+        .select("id,numero,cliente_nome,forma_pagamento,total,created_at,status")
+        .eq("empresa_id", empId)
         .order("created_at", { ascending: false }),
     ]);
 
     if (produtosResp.error) {
-      alert("ERRO PRODUTOS: " + produtosResp.error.message);
+      alert("ERRO AO CARREGAR PRODUTOS: " + produtosResp.error.message);
     }
 
     if (vendasResp.error) {
-      alert("ERRO VENDAS: " + vendasResp.error.message);
+      alert("ERRO AO CARREGAR VENDAS: " + vendasResp.error.message);
     }
 
-    setProdutos((produtosResp.data || []) as Produto[]);
-    setHistorico((vendasResp.data || []) as Venda[]);
+    const listaProdutos = (produtosResp.data || []) as Produto[];
+    const listaVendas = (vendasResp.data || []) as Venda[];
 
-    await gerarProximoNumero(eid);
+    setProdutos(listaProdutos);
+    setHistorico(listaVendas);
+    setNumeroVenda(gerarNumeroInterno(listaVendas));
     setLoading(false);
   }
 
-  async function buscarClientesNoBanco(termo: string) {
+  /* =========================
+     BUSCA CLIENTE
+  ========================= */
+
+  async function buscarClientes(termo: string) {
     if (!empresaId) return;
 
     const q = termo.trim();
 
     if (q.length < 2) {
-      setClientesBusca([]);
+      setClientesEncontrados([]);
       return;
     }
 
-    setLoadingClientesBusca(true);
+    setBuscandoClientes(true);
 
     const { data, error } = await supabase
       .from("clientes")
-      .select("id,nome,telefone,email,cpf_cnpj,cidade,estado,cep,rua,numero,bairro,status")
+      .select("id,nome,telefone,email,cpf_cnpj,cidade,estado,status")
       .eq("empresa_id", empresaId)
       .or(
         [
@@ -313,16 +296,15 @@ export default function VendasPage() {
           `email.ilike.%${q}%`,
           `cpf_cnpj.ilike.%${q}%`,
           `cidade.ilike.%${q}%`,
-          `estado.ilike.%${q}%`,
         ].join(",")
       )
       .order("nome")
-      .limit(30);
+      .limit(20);
 
     if (error) {
       alert("ERRO AO BUSCAR CLIENTES: " + error.message);
-      setClientesBusca([]);
-      setLoadingClientesBusca(false);
+      setClientesEncontrados([]);
+      setBuscandoClientes(false);
       return;
     }
 
@@ -330,26 +312,37 @@ export default function VendasPage() {
       (c) => up(c.status || "ATIVO") !== "INATIVO"
     );
 
-    setClientesBusca(lista);
-    setLoadingClientesBusca(false);
+    setClientesEncontrados(lista);
+    setBuscandoClientes(false);
   }
 
-  async function buscarProdutosNoBanco(termo: string) {
+  function selecionarCliente(cliente: Cliente) {
+    setClienteSelecionado(cliente);
+    setClienteBusca(cliente.nome);
+    setClientesEncontrados([]);
+    setOpenClientes(false);
+  }
+
+  /* =========================
+     BUSCA PRODUTO
+  ========================= */
+
+  async function buscarProdutos(termo: string) {
     if (!empresaId) return;
 
     const q = termo.trim();
 
     if (q.length < 2) {
-      setProdutosBusca([]);
+      setProdutosEncontrados([]);
       return;
     }
 
-    setLoadingProdutosBusca(true);
+    setBuscandoProdutos(true);
 
     const { data, error } = await supabase
       .from("produtos")
       .select(
-        "id,nome,codigo_sku,ncm,cfop,cest,unidade,origem,cst_csosn,aliquota_icms,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status,categoria,subcategoria,codigo_barras"
+        "id,nome,codigo_sku,codigo_barras,categoria,subcategoria,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status"
       )
       .eq("empresa_id", empresaId)
       .or(
@@ -357,7 +350,6 @@ export default function VendasPage() {
           `nome.ilike.%${q}%`,
           `codigo_sku.ilike.%${q}%`,
           `codigo_barras.ilike.%${q}%`,
-          `ncm.ilike.%${q}%`,
           `categoria.ilike.%${q}%`,
           `subcategoria.ilike.%${q}%`,
         ].join(",")
@@ -367,8 +359,8 @@ export default function VendasPage() {
 
     if (error) {
       alert("ERRO AO BUSCAR PRODUTOS: " + error.message);
-      setProdutosBusca([]);
-      setLoadingProdutosBusca(false);
+      setProdutosEncontrados([]);
+      setBuscandoProdutos(false);
       return;
     }
 
@@ -376,79 +368,40 @@ export default function VendasPage() {
       (p) => up(p.status || "ATIVO") !== "INATIVO"
     );
 
-    setProdutosBusca(lista);
-    setLoadingProdutosBusca(false);
+    setProdutosEncontrados(lista);
+    setBuscandoProdutos(false);
   }
 
-  const subtotal = useMemo(() => {
-    return itens.reduce((acc, item) => acc + toMoney(item.total), 0);
-  }, [itens]);
-
-  const totalGeral = useMemo(() => {
-    return Math.max(0, subtotal - toMoney(desconto));
-  }, [subtotal, desconto]);
-
-  const historicoFiltrado = useMemo(() => {
-    const q = up(buscaHistorico.trim());
-    if (!q) return historico;
-
-    return historico.filter((v) =>
-      up(
-        `${v.numero || ""} ${v.cliente_nome || ""} ${v.cliente_telefone || ""} ${v.forma_pagamento || ""} ${v.status || ""}`
-      ).includes(q)
-    );
-  }, [historico, buscaHistorico]);
-
-  function selecionarCliente(c: Cliente) {
-    setClienteId(c.id);
-    setClienteSelecionado(c);
-    setBuscaCliente(c.nome);
-    setOpenClientes(false);
-    setClientesBusca([]);
-  }
-
-  function adicionarProduto(p: Produto) {
-    const precoPadrao = getPrecoPadraoProduto(p);
+  function adicionarProduto(produto: Produto) {
+    const preco = getPrecoPadraoProduto(produto);
 
     setItens((prev) => [
       ...prev,
       {
         id: Date.now() + Math.floor(Math.random() * 1000),
-        produtoId: p.id,
-        nome: up(p.nome),
-        codigo: up(p.codigo_sku || p.codigo_barras || ""),
-        ncm: up(p.ncm || ""),
-        cfop: up(p.cfop || "5102"),
-        cest: up(p.cest || ""),
-        unidade: up(p.unidade || "UN"),
-        origem: up(p.origem || "0"),
-        cstCsosn: up(p.cst_csosn || "102"),
-        aliquotaIcms: toMoney(p.aliquota_icms || 0),
+        produtoId: produto.id,
+        nome: produto.nome,
+        codigo: produto.codigo_sku || produto.codigo_barras || "",
         quantidade: 1,
-        valorUnitario: precoPadrao,
-        total: precoPadrao,
+        valorUnitario: preco,
+        total: preco,
+        estoqueAtual: toMoney(produto.estoque_atual),
+        controlaEstoque: !!produto.controla_estoque,
       },
     ]);
 
-    setBuscaProduto("");
+    setProdutoBusca("");
+    setProdutosEncontrados([]);
     setOpenProdutos(false);
-    setProdutosBusca([]);
   }
+
+  /* =========================
+     ITENS
+  ========================= */
 
   function atualizarItem(
     id: number,
-    campo:
-      | "nome"
-      | "codigo"
-      | "ncm"
-      | "cfop"
-      | "cest"
-      | "unidade"
-      | "origem"
-      | "cstCsosn"
-      | "aliquotaIcms"
-      | "quantidade"
-      | "valorUnitario",
+    campo: "quantidade" | "valorUnitario" | "nome" | "codigo",
     valor: string | number
   ) {
     setItens((prev) =>
@@ -458,7 +411,7 @@ export default function VendasPage() {
         const next = {
           ...item,
           [campo]:
-            campo === "quantidade" || campo === "valorUnitario" || campo === "aliquotaIcms"
+            campo === "quantidade" || campo === "valorUnitario"
               ? Number(valor)
               : String(valor),
         };
@@ -474,174 +427,54 @@ export default function VendasPage() {
   }
 
   function limparVenda() {
-    setStatus("ABERTA");
     setFormaPagamento("DINHEIRO");
-    setBuscaCliente("");
-    setClienteId(null);
-    setClienteSelecionado(null);
-    setClientesBusca([]);
-    setBuscaProduto("");
-    setProdutosBusca([]);
-    setItens([]);
     setDesconto("0");
     setObservacoes("");
+    setClienteBusca("");
+    setClienteSelecionado(null);
+    setClientesEncontrados([]);
+    setProdutoBusca("");
+    setProdutosEncontrados([]);
+    setItens([]);
     setOpenClientes(false);
     setOpenProdutos(false);
-    if (empresaId) gerarProximoNumero(empresaId);
+    setNumeroVenda(gerarNumeroInterno(historico));
   }
 
-  function montarHtmlPreviaFiscal() {
-    const clienteNome = clienteSelecionado?.nome || "-";
-    const clienteDoc = clienteSelecionado?.cpf_cnpj || "-";
-    const clienteEndereco = clienteSelecionado
-      ? `${clienteSelecionado.rua || ""}${clienteSelecionado.numero ? ", " + clienteSelecionado.numero : ""}${clienteSelecionado.bairro ? " - " + clienteSelecionado.bairro : ""}${clienteSelecionado.cidade ? " - " + clienteSelecionado.cidade : ""}${clienteSelecionado.estado ? "/" + clienteSelecionado.estado : ""}`
-      : "-";
+  /* =========================
+     TOTAIS
+  ========================= */
 
-    const itensRows = itens
-      .map((item, idx) => {
-        return `
-          <tr>
-            <td style="text-align:center;">${idx + 1}</td>
-            <td>${item.codigo || "-"}</td>
-            <td>${item.nome}</td>
-            <td>${item.ncm || "-"}</td>
-            <td>${item.cfop || "-"}</td>
-            <td>${item.cstCsosn || "-"}</td>
-            <td style="text-align:center;">${item.unidade || "UN"}</td>
-            <td style="text-align:right;">${item.quantidade}</td>
-            <td style="text-align:right;">${moneyBR(item.valorUnitario)}</td>
-            <td style="text-align:right;">${moneyBR(item.total)}</td>
-          </tr>
-        `;
-      })
-      .join("");
+  const subtotal = useMemo(() => {
+    return itens.reduce((acc, item) => acc + toMoney(item.total), 0);
+  }, [itens]);
 
-    return `
-      <html>
-        <head>
-          <title>PRÉVIA NF ${numeroVenda}</title>
-          <style>
-            body{font-family:Arial,sans-serif;padding:18px;color:#111}
-            .box{border:1px solid #222;padding:10px;margin-bottom:8px}
-            .titulo{font-size:18px;font-weight:700}
-            .sub{font-size:11px;color:#444}
-            .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-            table{width:100%;border-collapse:collapse;margin-top:8px}
-            th,td{border:1px solid #222;padding:6px;font-size:10px;vertical-align:top}
-            th{background:#f3f3f3}
-            .totais{margin-top:10px;margin-left:auto;width:320px}
-            .linha{display:flex;justify-content:space-between;padding:4px 0;font-size:12px}
-            .final{font-size:16px;font-weight:700;border-top:2px solid #111;padding-top:6px}
-            .obs{min-height:70px}
-            .alerta{background:#fff3cd;border:1px solid #e0b100;padding:8px;font-size:11px;margin-bottom:10px}
-          </style>
-        </head>
-        <body>
-          <div class="alerta">
-            <b>PRÉVIA FISCAL / ESTRUTURA PRONTA PARA FUTURA NF-E</b><br/>
-            Ambiente: ${empresaFiscal.ambiente} • Série: ${empresaFiscal.serieNfe} • Próximo número: ${empresaFiscal.proximoNumeroNfe}
-          </div>
+  const totalGeral = useMemo(() => {
+    return Math.max(0, subtotal - toMoney(desconto));
+  }, [subtotal, desconto]);
 
-          <div class="box">
-            <div class="grid2">
-              <div>
-                <div class="titulo">${empresaFiscal.razaoSocial || "-"}</div>
-                <div class="sub">FANTASIA: ${empresaFiscal.nomeFantasia || "-"}</div>
-                <div class="sub">CNPJ: ${empresaFiscal.cnpj || "-"}</div>
-                <div class="sub">IE: ${empresaFiscal.ie || "-"}</div>
-                <div class="sub">CRT: ${empresaFiscal.crt || "-"}</div>
-                <div class="sub">${empresaFiscal.rua || ""}, ${empresaFiscal.numero || ""} ${empresaFiscal.bairro ? "- " + empresaFiscal.bairro : ""}</div>
-                <div class="sub">${empresaFiscal.cidade || ""}/${empresaFiscal.estado || ""} CEP ${empresaFiscal.cep || ""}</div>
-              </div>
+  const historicoFiltrado = useMemo(() => {
+    const q = up(buscaHistorico.trim());
+    if (!q) return historico;
 
-              <div style="text-align:right;">
-                <div class="titulo">PRÉVIA DE NOTA FISCAL</div>
-                <div class="sub">NÚMERO INTERNO: ${numeroVenda}</div>
-                <div class="sub">EMISSÃO: ${formatDateTimeBr(new Date().toISOString())}</div>
-                <div class="sub">CHAVE DE ACESSO: ______________________________________________</div>
-                <div class="sub">PROTOCOLO SEFAZ: ______________________________________________</div>
-              </div>
-            </div>
-          </div>
+    return historico.filter((v) =>
+      up(
+        `${v.numero || ""} ${v.cliente_nome || ""} ${v.forma_pagamento || ""} ${v.status || ""}`
+      ).includes(q)
+    );
+  }, [historico, buscaHistorico]);
 
-          <div class="grid2">
-            <div class="box">
-              <b>DESTINATÁRIO</b><br/>
-              <div class="sub">NOME: ${clienteNome}</div>
-              <div class="sub">DOCUMENTO: ${clienteDoc}</div>
-              <div class="sub">ENDEREÇO: ${clienteEndereco}</div>
-            </div>
+  const pagamentoImediato = useMemo(() => {
+    return isPagamentoImediato(formaPagamento);
+  }, [formaPagamento]);
 
-            <div class="box">
-              <b>DADOS FISCAIS</b><br/>
-              <div class="sub">NATUREZA DA OPERAÇÃO: VENDA DE MERCADORIA</div>
-              <div class="sub">FORMA DE PAGAMENTO: ${up(formaPagamento)}</div>
-              <div class="sub">CERTIFICADO: ${empresaFiscal.certificadoTipo || "-"}</div>
-              <div class="sub">CÓDIGO MUNICÍPIO IBGE: ${empresaFiscal.codigoMunicipio || "-"}</div>
-            </div>
-          </div>
+  const statusFinanceiroAtual = useMemo(() => {
+    return getFinanceiroStatus(formaPagamento);
+  }, [formaPagamento]);
 
-          <div class="box">
-            <b>ITENS</b>
-            <table>
-              <thead>
-                <tr>
-                  <th>ITEM</th>
-                  <th>CÓDIGO</th>
-                  <th>DESCRIÇÃO</th>
-                  <th>NCM</th>
-                  <th>CFOP</th>
-                  <th>CST/CSOSN</th>
-                  <th>UN</th>
-                  <th>QTD</th>
-                  <th>VLR UNIT</th>
-                  <th>VLR TOTAL</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itensRows || `<tr><td colspan="10">SEM ITENS</td></tr>`}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="grid2">
-            <div class="box obs">
-              <b>OBSERVAÇÕES</b><br/>
-              <div class="sub">${up(observacoes || empresaFiscal.observacoesDanfe || "-")}</div>
-            </div>
-
-            <div class="box">
-              <b>TOTAIS</b>
-              <div class="totais">
-                <div class="linha"><span>SUBTOTAL</span><b>${moneyBR(subtotal)}</b></div>
-                <div class="linha"><span>DESCONTO</span><b>${moneyBR(toMoney(desconto))}</b></div>
-                <div class="linha final"><span>VALOR TOTAL DA NOTA</span><b>${moneyBR(totalGeral)}</b></div>
-              </div>
-            </div>
-          </div>
-
-          <script>window.onload=function(){window.print();}</script>
-        </body>
-      </html>
-    `;
-  }
-
-  function imprimirPreviaFiscal() {
-    if (!itens.length) {
-      alert("ADICIONE PRODUTOS PARA IMPRIMIR.");
-      return;
-    }
-
-    const w = window.open("", "_blank", "width=1100,height=850");
-    if (!w) {
-      alert("LIBERE POPUP PARA IMPRIMIR.");
-      return;
-    }
-
-    w.document.open();
-    w.document.write(montarHtmlPreviaFiscal());
-    w.document.close();
-  }
+  /* =========================
+     SALVAR
+  ========================= */
 
   async function salvarVenda() {
     if (!empresaId) return;
@@ -652,40 +485,30 @@ export default function VendasPage() {
     }
 
     if (!itens.length) {
-      alert("ADICIONE PELO MENOS UM PRODUTO.");
+      alert("ADICIONE PELO MENOS UM ITEM.");
       return;
     }
 
     for (const item of itens) {
-      if (!item.produtoId) continue;
-
-      const produto = produtos.find((p) => p.id === item.produtoId);
-      if (!produto) continue;
-
-      if (produto.controla_estoque) {
-        const estoqueAtual = toMoney(produto.estoque_atual);
-        const qtd = toMoney(item.quantidade);
-
-        if (qtd > estoqueAtual) {
-          alert(`ESTOQUE INSUFICIENTE PARA ${item.nome}. DISPONÍVEL: ${estoqueAtual}`);
-          return;
-        }
+      if (item.controlaEstoque && toMoney(item.quantidade) > toMoney(item.estoqueAtual)) {
+        alert(`ESTOQUE INSUFICIENTE PARA ${item.nome}.`);
+        return;
       }
     }
 
     const vendaPayload = {
       empresa_id: empresaId,
-      numero: up(numeroVenda),
-      data_venda: agoraISO(),
+      numero: numeroVenda,
       cliente_id: clienteSelecionado.id,
       cliente_nome: up(clienteSelecionado.nome),
       cliente_telefone: clienteSelecionado.telefone || "",
       forma_pagamento: up(formaPagamento),
-      status: up(status),
-      subtotal: subtotal,
+      subtotal,
       desconto: toMoney(desconto),
       total: totalGeral,
       observacoes: up(observacoes),
+      data_venda: agoraISO(),
+      status: "FINALIZADA",
     };
 
     const { data: vendaCriada, error: vendaError } = await supabase
@@ -699,41 +522,29 @@ export default function VendasPage() {
       return;
     }
 
-    const vendaId = vendaCriada.id as string;
-
-    const itensPayload = itens.map((i) => ({
-      venda_id: vendaId,
-      produto_id: i.produtoId,
-      produto_nome: up(i.nome),
-      codigo: up(i.codigo || ""),
-      ncm: up(i.ncm || ""),
-      cfop: up(i.cfop || "5102"),
-      cest: up(i.cest || ""),
-      unidade: up(i.unidade || "UN"),
-      origem: up(i.origem || "0"),
-      cst_csosn: up(i.cstCsosn || "102"),
-      aliquota_icms: toMoney(i.aliquotaIcms || 0),
-      quantidade: toMoney(i.quantidade),
-      valor_unitario: toMoney(i.valorUnitario),
-      total: toMoney(i.total),
+    const itensPayload = itens.map((item) => ({
+      venda_id: vendaCriada.id,
+      produto_id: item.produtoId,
+      produto_nome: up(item.nome),
+      codigo: up(item.codigo || ""),
+      quantidade: toMoney(item.quantidade),
+      valor_unitario: toMoney(item.valorUnitario),
+      total: toMoney(item.total),
     }));
 
     const { error: itensError } = await supabase.from("venda_itens").insert(itensPayload);
 
     if (itensError) {
-      alert("VENDA SALVA, MAS HOUVE ERRO AO SALVAR ITENS: " + itensError.message);
+      alert("VENDA SALVA, MAS DEU ERRO AO SALVAR ITENS: " + itensError.message);
       return;
     }
 
     for (const item of itens) {
-      if (!item.produtoId) continue;
-
-      const produto = produtos.find((p) => p.id === item.produtoId);
-      if (!produto || !produto.controla_estoque) continue;
+      if (!item.produtoId || !item.controlaEstoque) continue;
 
       const novoEstoque = Math.max(
         0,
-        toMoney(produto.estoque_atual) - toMoney(item.quantidade)
+        toMoney(item.estoqueAtual) - toMoney(item.quantidade)
       );
 
       const { error: estoqueError } = await supabase
@@ -743,12 +554,10 @@ export default function VendasPage() {
         .eq("empresa_id", empresaId);
 
       if (estoqueError) {
-        alert(`VENDA SALVA, MAS HOUVE ERRO AO BAIXAR ESTOQUE DE ${item.nome}: ${estoqueError.message}`);
+        alert("VENDA SALVA, MAS DEU ERRO AO BAIXAR ESTOQUE.");
         return;
       }
     }
-
-    const pagamentoImediato = isPagamentoImediato(formaPagamento) && status === "FINALIZADA";
 
     const financeiroPayload = {
       empresa_id: empresaId,
@@ -768,7 +577,7 @@ export default function VendasPage() {
       data_pagamento: pagamentoImediato ? hojeISO() : null,
       forma_pagamento: up(formaPagamento),
       status: pagamentoImediato ? "PAGO" : "ABERTO",
-      observacoes: up(observacoes || `TÍTULO GERADO AUTOMATICAMENTE DA VENDA ${numeroVenda}`),
+      observacoes: up(observacoes || `TÍTULO GERADO PELA VENDA ${numeroVenda}`),
     };
 
     const { error: financeiroError } = await supabase
@@ -776,105 +585,116 @@ export default function VendasPage() {
       .insert([financeiroPayload]);
 
     if (financeiroError) {
-      alert("VENDA SALVA, MAS HOUVE ERRO NO FINANCEIRO: " + financeiroError.message);
+      alert("VENDA SALVA, MAS DEU ERRO NO FINANCEIRO: " + financeiroError.message);
       return;
     }
 
-    alert("VENDA SALVA COM ESTOQUE E FINANCEIRO!");
-    await carregarBase();
+    alert(
+      pagamentoImediato
+        ? "VENDA SALVA COMO PAGA!"
+        : "VENDA SALVA COMO PENDENTE NO FINANCEIRO!"
+    );
+
+    await carregarBase(empresaId);
     limparVenda();
   }
 
-  async function cancelarVenda(venda: Venda) {
-    if (!empresaId) return;
+  /* =========================
+     PRÉVIA
+  ========================= */
 
-    if (up(venda.status || "") === "CANCELADA") {
-      alert("ESSA VENDA JÁ ESTÁ CANCELADA.");
+  function imprimirPreviaFiscal() {
+    if (!itens.length) {
+      alert("ADICIONE PRODUTOS PARA IMPRIMIR.");
       return;
     }
 
-    if (!confirm(`CANCELAR A VENDA ${venda.numero}? O ESTOQUE SERÁ DEVOLVIDO.`)) return;
+    const clienteNome = clienteSelecionado?.nome || "-";
 
-    const { data: itensVenda, error: itensError } = await supabase
-      .from("venda_itens")
-      .select("*")
-      .eq("venda_id", venda.id);
-
-    if (itensError) {
-      alert("ERRO AO BUSCAR ITENS DA VENDA: " + itensError.message);
-      return;
-    }
-
-    for (const item of (itensVenda || []) as VendaItemDB[]) {
-      if (!item.produto_id) continue;
-
-      const { data: produtoAtual, error: prodError } = await supabase
-        .from("produtos")
-        .select("id,estoque_atual,controla_estoque")
-        .eq("empresa_id", empresaId)
-        .eq("id", item.produto_id)
-        .single();
-
-      if (prodError || !produtoAtual) continue;
-      if (!produtoAtual.controla_estoque) continue;
-
-      const novoEstoque = toMoney(produtoAtual.estoque_atual) + toMoney(item.quantidade);
-
-      await supabase
-        .from("produtos")
-        .update({ estoque_atual: novoEstoque })
-        .eq("empresa_id", empresaId)
-        .eq("id", item.produto_id);
-    }
-
-    const { error: vendaError } = await supabase
-      .from("vendas")
-      .update({ status: "CANCELADA" })
-      .eq("empresa_id", empresaId)
-      .eq("id", venda.id);
-
-    if (vendaError) {
-      alert("ERRO AO CANCELAR VENDA: " + vendaError.message);
-      return;
-    }
-
-    await supabase
-      .from("financeiro_titulos")
-      .update({
-        status: "CANCELADO",
-        observacoes: up(`TÍTULO CANCELADO AUTOMATICAMENTE DA VENDA ${venda.numero}`),
-      })
-      .eq("empresa_id", empresaId)
-      .eq("documento", up(venda.numero));
-
-    alert("VENDA CANCELADA E ESTOQUE DEVOLVIDO!");
-    await carregarBase();
-  }
-
-  async function verItensVenda(venda: Venda) {
-    const { data, error } = await supabase
-      .from("venda_itens")
-      .select("*")
-      .eq("venda_id", venda.id);
-
-    if (error) {
-      alert("ERRO AO BUSCAR ITENS: " + error.message);
-      return;
-    }
-
-    const texto = (data || [])
+    const itensRows = itens
       .map(
-        (item: any, idx: number) =>
-          `${idx + 1}. ${item.produto_nome} | QTD: ${item.quantidade} | UNIT: ${moneyBR(
-            toMoney(item.valor_unitario)
-          )} | TOTAL: ${moneyBR(toMoney(item.total))}`
+        (item, idx) => `
+          <tr>
+            <td>${idx + 1}</td>
+            <td>${item.codigo || "-"}</td>
+            <td>${item.nome}</td>
+            <td>${item.quantidade}</td>
+            <td>${moneyBR(item.valorUnitario)}</td>
+            <td>${moneyBR(item.total)}</td>
+          </tr>
+        `
       )
-      .join("\n");
+      .join("");
 
-    alert(texto || "SEM ITENS.");
+    const html = `
+      <html>
+        <head>
+          <title>PRÉVIA VENDA ${numeroVenda}</title>
+          <style>
+            body{font-family:Arial,sans-serif;padding:20px;color:#111}
+            .box{border:1px solid #222;padding:10px;margin-bottom:10px}
+            .titulo{font-size:18px;font-weight:700}
+            .sub{font-size:12px;color:#444}
+            table{width:100%;border-collapse:collapse;margin-top:10px}
+            th,td{border:1px solid #222;padding:6px;font-size:12px}
+            th{background:#f3f3f3}
+            .linha{display:flex;justify-content:space-between;padding:4px 0}
+            .final{font-size:18px;font-weight:700;border-top:2px solid #111;padding-top:8px}
+          </style>
+        </head>
+        <body>
+          <div class="box">
+            <div class="titulo">${empresaFiscal.nomeFantasia || "EMPRESA"}</div>
+            <div class="sub">VENDA ${numeroVenda}</div>
+            <div class="sub">CLIENTE: ${clienteNome}</div>
+            <div class="sub">FORMA DE PAGAMENTO: ${formaPagamento}</div>
+            <div class="sub">STATUS FINANCEIRO: ${pagamentoImediato ? "PAGO" : "ABERTO"}</div>
+            <div class="sub">EMISSÃO: ${formatDateTimeBr(new Date().toISOString())}</div>
+          </div>
+
+          <div class="box">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>CÓDIGO</th>
+                  <th>PRODUTO</th>
+                  <th>QTD</th>
+                  <th>UNIT</th>
+                  <th>TOTAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itensRows}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="box">
+            <div class="linha"><span>SUBTOTAL</span><strong>${moneyBR(subtotal)}</strong></div>
+            <div class="linha"><span>DESCONTO</span><strong>${moneyBR(toMoney(desconto))}</strong></div>
+            <div class="linha final"><span>TOTAL</span><strong>${moneyBR(totalGeral)}</strong></div>
+          </div>
+
+          <script>window.onload=function(){window.print();}</script>
+        </body>
+      </html>
+    `;
+
+    const w = window.open("", "_blank", "width=1100,height=850");
+    if (!w) {
+      alert("LIBERE POPUP PARA IMPRIMIR.");
+      return;
+    }
+
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
   }
 
-  if (!ready) return <div className="p-6">CARREGANDO...</div>;
+  if (!ready) {
+    return <div className="p-6">CARREGANDO...</div>;
+  }
 
   return (
     <div className="min-h-screen flex bg-[#F4F6F8]">
@@ -888,12 +708,14 @@ export default function VendasPage() {
                 AUTO GESTÃO PRO
               </p>
               <h1 className="mt-2 text-[28px] md:text-[34px] font-black leading-none">
-                VENDAS
+                VENDAS PREMIUM
               </h1>
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
                 <span className="pill pill-white">NÚMERO {numeroVenda}</span>
-                <span className={`pill ${statusClass(status)}`}>{status}</span>
                 <span className="pill pill-success">{formaPagamento}</span>
+                <span className={`pill ${pagamentoImediato ? "pill-paid" : "pill-open"}`}>
+                  {statusFinanceiroAtual}
+                </span>
               </div>
             </div>
 
@@ -906,27 +728,15 @@ export default function VendasPage() {
           </div>
 
           <div className="mt-5 flex gap-3 flex-wrap">
-            <button
-              onClick={imprimirPreviaFiscal}
-              className="botao-header"
-              type="button"
-            >
-              PRÉVIA NOTA FISCAL
+            <button onClick={imprimirPreviaFiscal} className="botao-header" type="button">
+              IMPRIMIR PRÉVIA
             </button>
 
-            <button
-              onClick={salvarVenda}
-              className="botao-header-primary"
-              type="button"
-            >
+            <button onClick={salvarVenda} className="botao-header-primary" type="button">
               SALVAR VENDA
             </button>
 
-            <button
-              onClick={limparVenda}
-              className="botao-header"
-              type="button"
-            >
+            <button onClick={limparVenda} className="botao-header" type="button">
               NOVA VENDA
             </button>
           </div>
@@ -937,41 +747,41 @@ export default function VendasPage() {
             <div className="card">
               <div className="section-header">
                 <div>
-                  <h2 className="section-title">CLIENTE E CONDIÇÕES DA VENDA</h2>
+                  <h2 className="section-title">CLIENTE E PAGAMENTO</h2>
                   <p className="section-subtitle">
-                    Selecione o cliente e defina forma de pagamento e status.
+                    Busque o cliente e defina a forma de pagamento.
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 relative" ref={clienteBoxRef}>
                   <label className="label">CLIENTE</label>
                   <input
-                    value={buscaCliente}
+                    value={clienteBusca}
                     onChange={async (e) => {
                       const valor = e.target.value;
-                      setBuscaCliente(valor);
+                      setClienteBusca(valor);
                       setOpenClientes(true);
-                      await buscarClientesNoBanco(valor);
+                      await buscarClientes(valor);
                     }}
                     onFocus={async () => {
                       setOpenClientes(true);
-                      if (buscaCliente.trim().length >= 2) {
-                        await buscarClientesNoBanco(buscaCliente);
+                      if (clienteBusca.trim().length >= 2) {
+                        await buscarClientes(clienteBusca);
                       }
                     }}
-                    placeholder="DIGITE O NOME, TELEFONE, EMAIL, DOCUMENTO OU CIDADE..."
+                    placeholder="NOME, TELEFONE, E-MAIL, DOCUMENTO..."
                     className="campo"
                   />
 
-                  {loadingClientesBusca && (
+                  {buscandoClientes && (
                     <div className="text-xs text-[#64748B] mt-2">BUSCANDO CLIENTES...</div>
                   )}
 
-                  {openClientes && clientesBusca.length > 0 && (
+                  {openClientes && clientesEncontrados.length > 0 && (
                     <div className="dropdown">
-                      {clientesBusca.map((c) => (
+                      {clientesEncontrados.map((c) => (
                         <button
                           key={c.id}
                           type="button"
@@ -991,12 +801,12 @@ export default function VendasPage() {
                   )}
 
                   {openClientes &&
-                    buscaCliente.trim().length >= 2 &&
-                    !loadingClientesBusca &&
-                    clientesBusca.length === 0 && (
+                    clienteBusca.trim().length >= 2 &&
+                    !buscandoClientes &&
+                    clientesEncontrados.length === 0 && (
                       <div className="dropdown">
                         <div className="dropdown-item text-[#B91C1C]">
-                          NENHUM CLIENTE ENCONTRADO PARA: <strong>{buscaCliente}</strong>
+                          NENHUM CLIENTE ENCONTRADO.
                         </div>
                       </div>
                     )}
@@ -1016,21 +826,7 @@ export default function VendasPage() {
                     <option>BOLETO</option>
                     <option>TRANSFERÊNCIA</option>
                     <option>A PRAZO</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label">STATUS</label>
-                  <select
-                    value={status}
-                    onChange={(e) =>
-                      setStatus(e.target.value as "ABERTA" | "FINALIZADA" | "CANCELADA")
-                    }
-                    className="campo bg-white"
-                  >
-                    <option>ABERTA</option>
-                    <option>FINALIZADA</option>
-                    <option>CANCELADA</option>
+                    <option>FIADO</option>
                   </select>
                 </div>
               </div>
@@ -1053,6 +849,20 @@ export default function VendasPage() {
                   </div>
                 </div>
               )}
+
+              <div className="mt-4">
+                <div
+                  className={`rounded-[16px] px-4 py-3 text-sm font-bold ${
+                    pagamentoImediato
+                      ? "bg-[#DCFCE7] text-[#166534] border border-[#86EFAC]"
+                      : "bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D]"
+                  }`}
+                >
+                  {pagamentoImediato
+                    ? "ESSA VENDA CAIRÁ COMO PAGA NO FINANCEIRO."
+                    : "ESSA VENDA CAIRÁ COMO PENDENTE / EM ABERTO NO FINANCEIRO."}
+                </div>
+              </div>
             </div>
 
             <div className="card" ref={produtoBoxRef}>
@@ -1060,7 +870,7 @@ export default function VendasPage() {
                 <div>
                   <h2 className="section-title">PRODUTOS</h2>
                   <p className="section-subtitle">
-                    Busque por nome, SKU, código de barras, NCM, categoria ou subcategoria.
+                    Busque por nome, SKU, código de barras, categoria ou subcategoria.
                   </p>
                 </div>
                 <div className="helper-badge">DIGITE 2 LETRAS</div>
@@ -1068,30 +878,30 @@ export default function VendasPage() {
 
               <div className="relative">
                 <input
-                  value={buscaProduto}
+                  value={produtoBusca}
                   onChange={async (e) => {
                     const valor = e.target.value;
-                    setBuscaProduto(valor);
+                    setProdutoBusca(valor);
                     setOpenProdutos(true);
-                    await buscarProdutosNoBanco(valor);
+                    await buscarProdutos(valor);
                   }}
                   onFocus={async () => {
                     setOpenProdutos(true);
-                    if (buscaProduto.trim().length >= 2) {
-                      await buscarProdutosNoBanco(buscaProduto);
+                    if (produtoBusca.trim().length >= 2) {
+                      await buscarProdutos(produtoBusca);
                     }
                   }}
                   placeholder="BUSCAR PRODUTO..."
                   className="campo"
                 />
 
-                {loadingProdutosBusca && (
+                {buscandoProdutos && (
                   <div className="text-xs text-[#64748B] mt-2">BUSCANDO PRODUTOS...</div>
                 )}
 
-                {openProdutos && produtosBusca.length > 0 && (
+                {openProdutos && produtosEncontrados.length > 0 && (
                   <div className="dropdown top-full mt-2">
-                    {produtosBusca.map((p) => (
+                    {produtosEncontrados.map((p) => (
                       <button
                         key={p.id}
                         type="button"
@@ -1102,16 +912,15 @@ export default function VendasPage() {
                           <div>
                             <div className="font-bold text-[#0F172A]">{up(p.nome)}</div>
                             <div className="text-xs text-[#64748B]">
-                              {up(p.codigo_sku || p.codigo_barras || "-")} • NCM {up(p.ncm || "-")} • ESTOQUE {toMoney(p.estoque_atual)}
+                              {up(p.codigo_sku || p.codigo_barras || "-")} • ESTOQUE{" "}
+                              {toMoney(p.estoque_atual)}
                             </div>
                             <div className="text-xs text-[#64748B] mt-1">
                               {up(p.categoria || "-")}
                               {p.subcategoria ? ` / ${up(p.subcategoria)}` : ""}
                             </div>
-                            <div className="text-xs text-[#64748B] mt-1">
-                              BALCÃO {moneyBR(toMoney(p.preco_balcao))} • INSTALAÇÃO {moneyBR(toMoney(p.preco_instalacao))} • REVENDA {moneyBR(toMoney(p.preco_revenda))}
-                            </div>
                           </div>
+
                           <div className="font-black text-[#0456A3]">
                             {moneyBR(getPrecoPadraoProduto(p))}
                           </div>
@@ -1122,31 +931,26 @@ export default function VendasPage() {
                 )}
 
                 {openProdutos &&
-                  buscaProduto.trim().length >= 2 &&
-                  !loadingProdutosBusca &&
-                  produtosBusca.length === 0 && (
+                  produtoBusca.trim().length >= 2 &&
+                  !buscandoProdutos &&
+                  produtosEncontrados.length === 0 && (
                     <div className="dropdown top-full mt-2">
                       <div className="dropdown-item text-[#B91C1C]">
-                        NENHUM PRODUTO ENCONTRADO PARA: <strong>{buscaProduto}</strong>
+                        NENHUM PRODUTO ENCONTRADO.
                       </div>
                     </div>
                   )}
               </div>
 
               <div className="mt-4 overflow-auto">
-                <table className="tabela min-w-[1500px]">
+                <table className="tabela min-w-[1200px]">
                   <thead>
                     <tr>
                       <th>PRODUTO</th>
                       <th>CÓDIGO</th>
-                      <th>NCM</th>
-                      <th>CFOP</th>
-                      <th>CST/CSOSN</th>
-                      <th>P. BALCÃO</th>
-                      <th>P. INSTALAÇÃO</th>
-                      <th>P. REVENDA</th>
-                      <th>V. UNIT.</th>
+                      <th>ESTOQUE</th>
                       <th>QTD</th>
+                      <th>V. UNIT.</th>
                       <th>TOTAL</th>
                       <th>AÇÃO</th>
                     </tr>
@@ -1154,93 +958,72 @@ export default function VendasPage() {
                   <tbody>
                     {itens.length === 0 ? (
                       <tr>
-                        <td className="empty-state" colSpan={12}>
-                          NENHUM PRODUTO ADICIONADO.
+                        <td className="empty-state" colSpan={7}>
+                          NENHUM ITEM ADICIONADO.
                         </td>
                       </tr>
                     ) : (
-                      itens.map((item) => {
-                        const produtoOriginal = produtos.find((p) => p.id === item.produtoId);
+                      itens.map((item) => (
+                        <tr key={item.id}>
+                          <td>
+                            <input
+                              value={item.nome}
+                              onChange={(e) => atualizarItem(item.id, "nome", e.target.value)}
+                              className="campo-tabela"
+                            />
+                          </td>
 
-                        return (
-                          <tr key={item.id}>
-                            <td>
-                              <input
-                                value={item.nome}
-                                onChange={(e) => atualizarItem(item.id, "nome", e.target.value)}
-                                className="campo-tabela"
-                              />
-                            </td>
-                            <td>
-                              <input
-                                value={item.codigo || ""}
-                                onChange={(e) => atualizarItem(item.id, "codigo", e.target.value)}
-                                className="campo-tabela"
-                              />
-                            </td>
-                            <td>
-                              <input
-                                value={item.ncm || ""}
-                                onChange={(e) => atualizarItem(item.id, "ncm", e.target.value)}
-                                className="campo-tabela"
-                              />
-                            </td>
-                            <td>
-                              <input
-                                value={item.cfop || ""}
-                                onChange={(e) => atualizarItem(item.id, "cfop", e.target.value)}
-                                className="campo-tabela"
-                              />
-                            </td>
-                            <td>
-                              <input
-                                value={item.cstCsosn || ""}
-                                onChange={(e) => atualizarItem(item.id, "cstCsosn", e.target.value)}
-                                className="campo-tabela"
-                              />
-                            </td>
-                            <td className="text-right font-semibold">
-                              {moneyBR(toMoney(produtoOriginal?.preco_balcao))}
-                            </td>
-                            <td className="text-right font-semibold">
-                              {moneyBR(toMoney(produtoOriginal?.preco_instalacao))}
-                            </td>
-                            <td className="text-right font-semibold">
-                              {moneyBR(toMoney(produtoOriginal?.preco_revenda))}
-                            </td>
-                            <td>
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={item.valorUnitario}
-                                onChange={(e) => atualizarItem(item.id, "valorUnitario", Number(e.target.value))}
-                                className="campo-tabela text-right"
-                              />
-                            </td>
-                            <td>
-                              <input
-                                type="number"
-                                min="1"
-                                value={item.quantidade}
-                                onChange={(e) => atualizarItem(item.id, "quantidade", Number(e.target.value))}
-                                className="campo-tabela text-right"
-                              />
-                            </td>
-                            <td className="font-black text-right text-[#0F172A]">
-                              {moneyBR(item.total)}
-                            </td>
-                            <td className="text-right">
-                              <button
-                                onClick={() => removerItem(item.id)}
-                                className="botao-mini danger"
-                                type="button"
-                              >
-                                REMOVER
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
+                          <td>
+                            <input
+                              value={item.codigo || ""}
+                              onChange={(e) => atualizarItem(item.id, "codigo", e.target.value)}
+                              className="campo-tabela"
+                            />
+                          </td>
+
+                          <td className="font-semibold">
+                            {item.controlaEstoque ? toMoney(item.estoqueAtual) : "-"}
+                          </td>
+
+                          <td>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantidade}
+                              onChange={(e) =>
+                                atualizarItem(item.id, "quantidade", Number(e.target.value))
+                              }
+                              className="campo-tabela text-right"
+                            />
+                          </td>
+
+                          <td>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={item.valorUnitario}
+                              onChange={(e) =>
+                                atualizarItem(item.id, "valorUnitario", Number(e.target.value))
+                              }
+                              className="campo-tabela text-right"
+                            />
+                          </td>
+
+                          <td className="font-black text-right text-[#0F172A]">
+                            {moneyBR(item.total)}
+                          </td>
+
+                          <td className="text-right">
+                            <button
+                              onClick={() => removerItem(item.id)}
+                              className="botao-mini danger"
+                              type="button"
+                            >
+                              REMOVER
+                            </button>
+                          </td>
+                        </tr>
+                      ))
                     )}
                   </tbody>
                 </table>
@@ -1252,7 +1035,7 @@ export default function VendasPage() {
                 <div>
                   <h2 className="section-title">HISTÓRICO DE VENDAS</h2>
                   <p className="section-subtitle">
-                    Consulte vendas realizadas, visualize itens e cancele quando necessário.
+                    Consulte as últimas vendas realizadas.
                   </p>
                 </div>
               </div>
@@ -1260,12 +1043,12 @@ export default function VendasPage() {
               <input
                 value={buscaHistorico}
                 onChange={(e) => setBuscaHistorico(e.target.value)}
-                placeholder="BUSCAR POR NÚMERO, CLIENTE, TELEFONE, PAGAMENTO OU STATUS..."
+                placeholder="NÚMERO, CLIENTE, PAGAMENTO OU STATUS..."
                 className="campo mb-4"
               />
 
               <div className="overflow-auto">
-                <table className="tabela min-w-[1100px]">
+                <table className="tabela min-w-[900px]">
                   <thead>
                     <tr>
                       <th>NÚMERO</th>
@@ -1274,53 +1057,30 @@ export default function VendasPage() {
                       <th>PAGAMENTO</th>
                       <th>STATUS</th>
                       <th>TOTAL</th>
-                      <th>AÇÕES</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={7} className="empty-state">
+                        <td colSpan={6} className="empty-state">
                           CARREGANDO...
                         </td>
                       </tr>
                     ) : historicoFiltrado.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="empty-state">
+                        <td colSpan={6} className="empty-state">
                           NENHUMA VENDA ENCONTRADA.
                         </td>
                       </tr>
                     ) : (
                       historicoFiltrado.map((v) => (
                         <tr key={v.id}>
-                          <td className="font-bold">{v.numero}</td>
-                          <td>{formatDateTimeBr(v.created_at || v.data_venda)}</td>
+                          <td className="font-bold">{v.numero || "-"}</td>
+                          <td>{formatDateTimeBr(v.created_at)}</td>
                           <td>{v.cliente_nome || "-"}</td>
                           <td>{v.forma_pagamento || "-"}</td>
-                          <td>
-                            <span className={`pill ${statusClass(v.status || "ABERTA")}`}>
-                              {v.status || "-"}
-                            </span>
-                          </td>
+                          <td>{v.status || "-"}</td>
                           <td className="font-bold">{moneyBR(toMoney(v.total))}</td>
-                          <td>
-                            <div className="flex gap-2 flex-wrap">
-                              <button
-                                className="botao-mini"
-                                onClick={() => verItensVenda(v)}
-                                type="button"
-                              >
-                                ITENS
-                              </button>
-                              <button
-                                className="botao-mini danger"
-                                onClick={() => cancelarVenda(v)}
-                                type="button"
-                              >
-                                CANCELAR
-                              </button>
-                            </div>
-                          </td>
                         </tr>
                       ))
                     )}
@@ -1345,25 +1105,17 @@ export default function VendasPage() {
                 </div>
                 <div className="resumo-linha">
                   <span>AMBIENTE</span>
-                  <strong>{empresaFiscal.ambiente}</strong>
+                  <strong>{empresaFiscal.ambiente || "-"}</strong>
                 </div>
                 <div className="resumo-linha">
                   <span>SÉRIE</span>
-                  <strong>{empresaFiscal.serieNfe}</strong>
-                </div>
-                <div className="resumo-linha">
-                  <span>PRÓXIMA NF</span>
-                  <strong>{empresaFiscal.proximoNumeroNfe}</strong>
-                </div>
-                <div className="resumo-linha">
-                  <span>CERTIFICADO</span>
-                  <strong>{empresaFiscal.certificadoTipo || "-"}</strong>
+                  <strong>{empresaFiscal.serieNfe || "-"}</strong>
                 </div>
               </div>
             </div>
 
             <div className="card">
-              <h2 className="section-title mb-4">TOTAIS</h2>
+              <h2 className="section-title mb-4">FINANCEIRO BRUTO</h2>
 
               <div className="finance-box">
                 <div className="finance-line">
@@ -1382,6 +1134,26 @@ export default function VendasPage() {
                   />
                 </div>
 
+                <div className="finance-line mt-4">
+                  <span>FORMA</span>
+                  <strong>{formaPagamento}</strong>
+                </div>
+
+                <div className="finance-line">
+                  <span>STATUS FINANCEIRO</span>
+                  <strong>{statusFinanceiroAtual}</strong>
+                </div>
+
+                <div className="finance-line">
+                  <span>ENTRADA HOJE</span>
+                  <strong>{pagamentoImediato ? moneyBR(totalGeral) : moneyBR(0)}</strong>
+                </div>
+
+                <div className="finance-line">
+                  <span>FICA A RECEBER</span>
+                  <strong>{pagamentoImediato ? moneyBR(0) : moneyBR(totalGeral)}</strong>
+                </div>
+
                 <div className="finance-total">
                   <span>TOTAL GERAL</span>
                   <strong>{moneyBR(totalGeral)}</strong>
@@ -1395,7 +1167,7 @@ export default function VendasPage() {
                 value={observacoes}
                 onChange={(e) => setObservacoes(e.target.value)}
                 className="campo-textarea"
-                placeholder="INFORMAÇÕES COMPLEMENTARES, CONDIÇÕES COMERCIAIS, OBSERVAÇÕES FISCAIS..."
+                placeholder="CONDIÇÕES, OBSERVAÇÕES, DETALHES DA VENDA..."
               />
             </div>
           </aside>
@@ -1473,7 +1245,7 @@ export default function VendasPage() {
           padding: 12px;
           font-size: 14px;
           width: 100%;
-          min-height: 150px;
+          min-height: 140px;
           background: white;
           color: #0f172a;
           outline: none;
@@ -1589,19 +1361,16 @@ export default function VendasPage() {
           color: white;
         }
 
-        .status-aberta {
-          background: #e0f2fe;
-          color: #0369a1;
+        .pill-paid {
+          background: rgba(34, 197, 94, 0.18);
+          border: 1px solid rgba(187, 247, 208, 0.5);
+          color: white;
         }
 
-        .status-finalizada {
-          background: #dcfce7;
-          color: #15803d;
-        }
-
-        .status-cancelada {
-          background: #fee2e2;
-          color: #b91c1c;
+        .pill-open {
+          background: rgba(245, 158, 11, 0.22);
+          border: 1px solid rgba(253, 230, 138, 0.5);
+          color: white;
         }
 
         .tabela {
