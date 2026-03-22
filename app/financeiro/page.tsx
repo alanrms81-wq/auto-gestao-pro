@@ -31,13 +31,18 @@ type FinanceiroTitulo = {
 type Cliente = {
   id: string;
   nome: string;
+  telefone?: string | null;
+  celular?: string | null;
+  whatsapp?: string | null;
+  cpf_cnpj?: string | null;
+  status?: string | null;
 };
 
-function up(v: any) {
+function up(v: unknown) {
   return String(v ?? "").toUpperCase();
 }
 
-function toMoney(v: any) {
+function toMoney(v: unknown) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
@@ -86,7 +91,6 @@ export default function FinanceiroPage() {
   const [loading, setLoading] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
 
-  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [titulos, setTitulos] = useState<FinanceiroTitulo[]>([]);
 
   const [busca, setBusca] = useState("");
@@ -99,6 +103,11 @@ export default function FinanceiroPage() {
   const [descricao, setDescricao] = useState("");
   const [clienteId, setClienteId] = useState("");
   const [clienteNome, setClienteNome] = useState("");
+  const [clienteBusca, setClienteBusca] = useState("");
+  const [clientesBusca, setClientesBusca] = useState<Cliente[]>([]);
+  const [loadingClientesBusca, setLoadingClientesBusca] = useState(false);
+  const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false);
+
   const [documento, setDocumento] = useState("");
   const [categoria, setCategoria] = useState("");
   const [valorOriginal, setValorOriginal] = useState("0");
@@ -139,26 +148,69 @@ export default function FinanceiroPage() {
 
     setLoading(true);
 
-    const [clientesResp, titulosResp] = await Promise.all([
-      supabase.from("clientes").select("id,nome").eq("empresa_id", eid).order("nome"),
-      supabase
-        .from("financeiro_titulos")
-        .select("*")
-        .eq("empresa_id", eid)
-        .order("data_vencimento", { ascending: true }),
-    ]);
+    const { data, error } = await supabase
+      .from("financeiro_titulos")
+      .select("*")
+      .eq("empresa_id", eid)
+      .order("data_vencimento", { ascending: true });
 
-    if (clientesResp.error) {
-      alert("ERRO CLIENTES: " + clientesResp.error.message);
+    if (error) {
+      alert("ERRO FINANCEIRO: " + error.message);
     }
 
-    if (titulosResp.error) {
-      alert("ERRO FINANCEIRO: " + titulosResp.error.message);
-    }
-
-    setClientes((clientesResp.data || []) as Cliente[]);
-    setTitulos((titulosResp.data || []) as FinanceiroTitulo[]);
+    setTitulos((data || []) as FinanceiroTitulo[]);
     setLoading(false);
+  }
+
+  async function buscarClientesNoBanco(termo: string) {
+    if (!empresaId) return;
+
+    const q = termo.trim();
+
+    if (q.length < 2) {
+      setClientesBusca([]);
+      return;
+    }
+
+    setLoadingClientesBusca(true);
+
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("id,nome,telefone,celular,whatsapp,cpf_cnpj,status")
+      .eq("empresa_id", empresaId)
+      .or(
+        [
+          `nome.ilike.%${q}%`,
+          `telefone.ilike.%${q}%`,
+          `celular.ilike.%${q}%`,
+          `whatsapp.ilike.%${q}%`,
+          `cpf_cnpj.ilike.%${q}%`,
+        ].join(",")
+      )
+      .order("nome")
+      .limit(20);
+
+    if (error) {
+      alert("ERRO AO BUSCAR CLIENTES: " + error.message);
+      setClientesBusca([]);
+      setLoadingClientesBusca(false);
+      return;
+    }
+
+    const lista = ((data || []) as Cliente[]).filter(
+      (c) => up(c.status || "ATIVO") !== "INATIVO"
+    );
+
+    setClientesBusca(lista);
+    setLoadingClientesBusca(false);
+  }
+
+  function selecionarCliente(c: Cliente) {
+    setClienteId(c.id);
+    setClienteNome(c.nome);
+    setClienteBusca(c.nome);
+    setClientesBusca([]);
+    setMostrarDropdownCliente(false);
   }
 
   const titulosFiltrados = useMemo(() => {
@@ -221,6 +273,9 @@ export default function FinanceiroPage() {
     setDescricao("");
     setClienteId("");
     setClienteNome("");
+    setClienteBusca("");
+    setClientesBusca([]);
+    setMostrarDropdownCliente(false);
     setDocumento("");
     setCategoria("");
     setValorOriginal("0");
@@ -244,6 +299,8 @@ export default function FinanceiroPage() {
   async function salvarTitulo() {
     if (!empresaId) return;
 
+    const clienteNomeFinal = up((clienteNome || clienteBusca).trim());
+
     if (!descricao.trim()) {
       alert("PREENCHA A DESCRIÇÃO.");
       return;
@@ -254,7 +311,7 @@ export default function FinanceiroPage() {
       tipo,
       descricao: up(descricao),
       cliente_id: clienteId || null,
-      cliente_nome: up(clienteNome),
+      cliente_nome: clienteNomeFinal || null,
       documento: up(documento),
       categoria: up(categoria),
       valor_original: toMoney(valorOriginal),
@@ -310,6 +367,9 @@ export default function FinanceiroPage() {
     setDescricao(t.descricao || "");
     setClienteId(t.cliente_id || "");
     setClienteNome(t.cliente_nome || "");
+    setClienteBusca(t.cliente_nome || "");
+    setClientesBusca([]);
+    setMostrarDropdownCliente(false);
     setDocumento(t.documento || "");
     setCategoria(t.categoria || "");
     setValorOriginal(String(toMoney(t.valor_original)));
@@ -395,11 +455,11 @@ export default function FinanceiroPage() {
       <main className="flex-1 min-w-0 p-6">
         <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-[26px] font-black text-[#6C757D] leading-none">
-              FINANCEIRO
+            <h1 className="text-[30px] font-black text-[#111827] leading-none">
+              FINANCEIRO PREMIUM
             </h1>
             <p className="text-[14px] text-[#6C757D] mt-2">
-              CONTAS A RECEBER, A PAGAR, BAIXAS E CONTROLE DE SALDOS
+              CONTAS A RECEBER, A PAGAR, BAIXAS, SALDOS E CONTROLE DE CLIENTES
             </p>
           </div>
 
@@ -408,13 +468,13 @@ export default function FinanceiroPage() {
               placeholder="BUSCAR TÍTULO..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="h-[54px] w-[280px] xl:w-[360px] max-w-full rounded-2xl border border-[#2F2F2F] bg-white px-5 text-[18px] outline-none"
+              className="h-[54px] w-[280px] xl:w-[360px] max-w-full rounded-2xl border border-[#D1D5DB] bg-white px-5 text-[16px] outline-none"
             />
 
             <select
               value={filtroTipo}
               onChange={(e) => setFiltroTipo(e.target.value)}
-              className="h-[54px] rounded-2xl border border-[#2F2F2F] bg-white px-5 text-[16px] outline-none"
+              className="h-[54px] rounded-2xl border border-[#D1D5DB] bg-white px-5 text-[15px] outline-none"
             >
               <option value="TODOS">TODOS</option>
               <option value="RECEBER">RECEBER</option>
@@ -424,7 +484,7 @@ export default function FinanceiroPage() {
             <select
               value={filtroStatus}
               onChange={(e) => setFiltroStatus(e.target.value)}
-              className="h-[54px] rounded-2xl border border-[#2F2F2F] bg-white px-5 text-[16px] outline-none"
+              className="h-[54px] rounded-2xl border border-[#D1D5DB] bg-white px-5 text-[15px] outline-none"
             >
               <option value="TODOS">TODOS OS STATUS</option>
               <option value="ABERTO">ABERTO</option>
@@ -443,7 +503,7 @@ export default function FinanceiroPage() {
           <CardKpi titulo="SALDO CAIXA" valor={moneyBR(resumo.saldoCaixa)} />
         </div>
 
-        <div className="grid grid-cols-1 2xl:grid-cols-[1.3fr_0.7fr] gap-6 mb-6">
+        <div className="grid grid-cols-1 2xl:grid-cols-[1.35fr_0.65fr] gap-6 mb-6">
           <section className="card">
             <h2 className="titulo mb-4">
               {editingId ? "EDITAR TÍTULO" : "NOVO LANÇAMENTO"}
@@ -473,29 +533,70 @@ export default function FinanceiroPage() {
                 className="campo"
               />
 
-              <select
-                value={clienteId}
-                onChange={(e) => {
-                  setClienteId(e.target.value);
-                  const c = clientes.find((x) => x.id === e.target.value);
-                  setClienteNome(c?.nome || "");
-                }}
-                className="campo md:col-span-2"
-              >
-                <option value="">SELECIONE O CLIENTE</option>
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </select>
+              <div className="md:col-span-2 relative">
+                <label className="label">CLIENTE / FORNECEDOR</label>
+                <input
+                  placeholder="PESQUISE O CLIENTE POR NOME, TELEFONE OU DOCUMENTO..."
+                  value={clienteBusca}
+                  onChange={async (e) => {
+                    const valor = e.target.value;
+                    setClienteBusca(valor);
+                    setClienteNome(valor);
 
-              <input
-                placeholder="CLIENTE / FORNECEDOR"
-                value={clienteNome}
-                onChange={(e) => setClienteNome(e.target.value)}
-                className="campo"
-              />
+                    if (!valor.trim()) {
+                      setClienteId("");
+                      setClientesBusca([]);
+                      setMostrarDropdownCliente(false);
+                      return;
+                    }
+
+                    setMostrarDropdownCliente(true);
+                    await buscarClientesNoBanco(valor);
+                  }}
+                  onFocus={async () => {
+                    if (clienteBusca.trim().length >= 2) {
+                      setMostrarDropdownCliente(true);
+                      await buscarClientesNoBanco(clienteBusca);
+                    }
+                  }}
+                  className="campo"
+                />
+
+                {loadingClientesBusca && (
+                  <div className="text-xs text-[#6C757D] mt-2">BUSCANDO CLIENTES...</div>
+                )}
+
+                {mostrarDropdownCliente &&
+                  clienteBusca.trim().length >= 2 &&
+                  clientesBusca.length > 0 && (
+                    <div className="dropdown">
+                      {clientesBusca.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => selecionarCliente(c)}
+                          className="dropdown-item"
+                        >
+                          <div className="font-semibold text-[#111827]">{c.nome}</div>
+                          <div className="text-xs text-[#6B7280]">
+                            {c.telefone || c.celular || c.whatsapp || c.cpf_cnpj || "-"}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                {mostrarDropdownCliente &&
+                  clienteBusca.trim().length >= 2 &&
+                  !loadingClientesBusca &&
+                  clientesBusca.length === 0 && (
+                    <div className="dropdown">
+                      <div className="dropdown-item text-[#B91C1C]">
+                        NENHUM CLIENTE ENCONTRADO PARA: <strong>{clienteBusca}</strong>
+                      </div>
+                    </div>
+                  )}
+              </div>
 
               <input
                 placeholder="CATEGORIA"
@@ -582,7 +683,7 @@ export default function FinanceiroPage() {
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mt-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
               <ResumoMini label="VALOR LÍQUIDO" value={moneyBR(valorLiquidoForm)} />
               <ResumoMini label="VALOR PAGO" value={moneyBR(toMoney(valorPago))} />
               <ResumoMini label="SALDO" value={moneyBR(saldoForm)} destaque />
@@ -718,7 +819,7 @@ export default function FinanceiroPage() {
 
                           <button
                             onClick={() => removerTitulo(t.id)}
-                            className="botao-mini"
+                            className="botao-mini danger"
                             type="button"
                           >
                             REMOVER
@@ -737,77 +838,92 @@ export default function FinanceiroPage() {
       <style jsx>{`
         .card {
           background: white;
-          border-radius: 20px;
-          padding: 18px;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          border-radius: 24px;
+          padding: 22px;
+          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+          border: 1px solid #eef2f7;
         }
 
         .titulo {
           font-weight: 900;
-          font-size: 14px;
-          color: #6c757d;
+          font-size: 15px;
+          color: #334155;
         }
 
         .label {
           display: block;
           font-size: 12px;
           font-weight: 800;
-          color: #6c757d;
+          color: #64748b;
           margin-bottom: 6px;
           text-transform: uppercase;
         }
 
         .campo {
-          height: 44px;
-          border: 1.5px solid #9a9a9a;
-          border-radius: 10px;
+          height: 46px;
+          border: 1.5px solid #d1d5db;
+          border-radius: 12px;
           padding: 0 12px;
           font-size: 14px;
           width: 100%;
           background: white;
           color: #111827;
+          outline: none;
+        }
+
+        .campo:focus,
+        .campo-textarea:focus {
+          border-color: #0456a3;
+          box-shadow: 0 0 0 4px rgba(4, 86, 163, 0.08);
         }
 
         .campo-textarea {
-          border: 1.5px solid #9a9a9a;
-          border-radius: 10px;
-          padding: 10px;
+          border: 1.5px solid #d1d5db;
+          border-radius: 12px;
+          padding: 12px;
           font-size: 14px;
           width: 100%;
           min-height: 120px;
           background: white;
           color: #111827;
           resize: vertical;
+          outline: none;
         }
 
         .botao {
-          border: 1px solid #2f2f2f;
-          border-radius: 10px;
+          border: 1px solid #d1d5db;
+          border-radius: 12px;
           padding: 10px 16px;
           font-size: 13px;
           background: white;
-          color: #1f1f1f;
-          font-weight: 500;
+          color: #111827;
+          font-weight: 700;
         }
 
         .botao-azul {
-          background: #0456a3;
+          background: linear-gradient(135deg, #0456a3 0%, #0a6fd6 100%);
           color: white;
-          border-radius: 10px;
+          border-radius: 12px;
           padding: 10px 16px;
           font-size: 13px;
-          font-weight: 600;
+          font-weight: 800;
           border: none;
         }
 
         .botao-mini {
-          border: 1px solid #2f2f2f;
-          border-radius: 8px;
+          border: 1px solid #d1d5db;
+          border-radius: 10px;
           padding: 6px 10px;
           font-size: 11px;
           background: white;
-          color: #1f1f1f;
-          font-weight: 500;
+          color: #111827;
+          font-weight: 700;
+        }
+
+        .botao-mini.danger {
+          border-color: #fecaca;
+          background: #fef2f2;
+          color: #b91c1c;
         }
 
         .tabela {
@@ -822,6 +938,7 @@ export default function FinanceiroPage() {
           border-bottom: 1px solid #e5e7eb;
           color: #111827;
           font-weight: 900;
+          background: #f8fafc;
         }
 
         .tabela td {
@@ -831,6 +948,35 @@ export default function FinanceiroPage() {
           color: #1f2937;
           vertical-align: middle;
         }
+
+        .dropdown {
+          position: absolute;
+          z-index: 30;
+          width: 100%;
+          margin-top: 8px;
+          border-radius: 16px;
+          border: 1px solid #e5e7eb;
+          background: white;
+          box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
+          max-height: 280px;
+          overflow: auto;
+        }
+
+        .dropdown-item {
+          width: 100%;
+          text-align: left;
+          padding: 12px;
+          border-bottom: 1px solid #eef2f7;
+          background: white;
+        }
+
+        .dropdown-item:last-child {
+          border-bottom: none;
+        }
+
+        .dropdown-item:hover {
+          background: #f8fafc;
+        }
       `}</style>
     </div>
   );
@@ -838,8 +984,8 @@ export default function FinanceiroPage() {
 
 function CardKpi({ titulo, valor }: { titulo: string; valor: string }) {
   return (
-    <div className="bg-white rounded-[22px] shadow-sm p-5 min-h-[110px]">
-      <div className="text-[14px] font-bold text-[#6C757D]">{titulo}</div>
+    <div className="bg-white rounded-[22px] shadow-sm p-5 min-h-[110px] border border-[#EEF2F7]">
+      <div className="text-[13px] font-bold text-[#64748B]">{titulo}</div>
       <div className="mt-3 text-[24px] font-black text-[#111] break-words">{valor}</div>
     </div>
   );
@@ -856,7 +1002,7 @@ function ResumoMini({
 }) {
   return (
     <div className={`rounded-[16px] p-4 ${destaque ? "bg-[#EEF6FF]" : "bg-[#F8F9FB]"}`}>
-      <div className="text-[12px] font-bold text-[#6C757D]">{label}</div>
+      <div className="text-[12px] font-bold text-[#64748B]">{label}</div>
       <div className={`mt-2 text-[18px] font-black ${destaque ? "text-[#0456A3]" : "text-[#111]"}`}>
         {value}
       </div>
