@@ -112,18 +112,18 @@ export default function FinanceiroPage() {
 
   const [documento, setDocumento] = useState("");
   const [categoria, setCategoria] = useState("");
-  const [valorOriginal, setValorOriginal] = useState("0");
-  const [valorPago, setValorPago] = useState("0");
-  const [desconto, setDesconto] = useState("0");
-  const [juros, setJuros] = useState("0");
-  const [multa, setMulta] = useState("0");
+  const [valorOriginal, setValorOriginal] = useState("");
+  const [valorPago, setValorPago] = useState("");
+  const [desconto, setDesconto] = useState("");
+  const [juros, setJuros] = useState("");
+  const [multa, setMulta] = useState("");
   const [dataEmissao, setDataEmissao] = useState(hojeISO());
   const [dataVencimento, setDataVencimento] = useState(hojeISO());
   const [dataPagamento, setDataPagamento] = useState("");
   const [observacoes, setObservacoes] = useState("");
 
   const [baixaId, setBaixaId] = useState<string | null>(null);
-  const [baixaValor, setBaixaValor] = useState("0");
+  const [baixaValor, setBaixaValor] = useState("");
   const [baixaData, setBaixaData] = useState(hojeISO());
   const [baixaObs, setBaixaObs] = useState("");
 
@@ -302,11 +302,11 @@ export default function FinanceiroPage() {
     setMostrarDropdownCliente(false);
     setDocumento("");
     setCategoria("");
-    setValorOriginal("0");
-    setValorPago("0");
-    setDesconto("0");
-    setJuros("0");
-    setMulta("0");
+    setValorOriginal("");
+    setValorPago("");
+    setDesconto("");
+    setJuros("");
+    setMulta("");
     setDataEmissao(hojeISO());
     setDataVencimento(hojeISO());
     setDataPagamento("");
@@ -315,7 +315,7 @@ export default function FinanceiroPage() {
 
   function resetBaixa() {
     setBaixaId(null);
-    setBaixaValor("0");
+    setBaixaValor("");
     setBaixaData(hojeISO());
     setBaixaObs("");
   }
@@ -396,11 +396,11 @@ export default function FinanceiroPage() {
     setMostrarDropdownCliente(false);
     setDocumento(t.documento || "");
     setCategoria(t.categoria || "");
-    setValorOriginal(String(toMoney(t.valor_original)));
-    setValorPago(String(toMoney(t.valor_pago)));
-    setDesconto(String(toMoney(t.desconto)));
-    setJuros(String(toMoney(t.juros)));
-    setMulta(String(toMoney(t.multa)));
+    setValorOriginal(t.valor_original != null ? String(toMoney(t.valor_original)) : "");
+    setValorPago(t.valor_pago != null ? String(toMoney(t.valor_pago)) : "");
+    setDesconto(t.desconto != null ? String(toMoney(t.desconto)) : "");
+    setJuros(t.juros != null ? String(toMoney(t.juros)) : "");
+    setMulta(t.multa != null ? String(toMoney(t.multa)) : "");
     setDataEmissao(t.data_emissao || hojeISO());
     setDataVencimento(t.data_vencimento || hojeISO());
     setDataPagamento(t.data_pagamento || "");
@@ -947,7 +947,7 @@ export default function FinanceiroPage() {
                   type="number"
                   value={baixaValor}
                   onChange={(e) => setBaixaValor(e.target.value)}
-                  placeholder="VALOR"
+                  placeholder="VALOR DA BAIXA"
                 />
               </div>
 
