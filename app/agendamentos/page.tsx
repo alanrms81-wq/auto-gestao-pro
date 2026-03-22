@@ -10,6 +10,11 @@ import { getSessionUser } from "@/lib/session";
 type Cliente = {
   id: string;
   nome: string;
+  telefone?: string | null;
+  celular?: string | null;
+  whatsapp?: string | null;
+  cpf_cnpj?: string | null;
+  status?: string | null;
 };
 
 type Veiculo = {
@@ -55,7 +60,7 @@ function statusClass(status: string) {
   const s = up(status);
   if (s === "AGENDADO") return "status-agendado";
   if (s === "EM ANDAMENTO") return "status-andamento";
-  if (s === "CONCLUÍDO") return "status-concluido";
+  if (s === "CONCLUÍDO" || s === "CONCLUIDO") return "status-concluido";
   if (s === "CANCELADO") return "status-cancelado";
   if (s === "CONVERTIDO") return "status-convertido";
   return "status-agendado";
@@ -68,15 +73,20 @@ export default function AgendamentosPage() {
   const [loading, setLoading] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
 
-  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [veiculosCliente, setVeiculosCliente] = useState<Veiculo[]>([]);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+
+  const [clientesBusca, setClientesBusca] = useState<Cliente[]>([]);
+  const [loadingClientesBusca, setLoadingClientesBusca] = useState(false);
+  const [mostrarDropdownCliente, setMostrarDropdownCliente] = useState(false);
 
   const [busca, setBusca] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [clienteId, setClienteId] = useState("");
   const [clienteNome, setClienteNome] = useState("");
+  const [buscaCliente, setBuscaCliente] = useState("");
+
   const [veiculoId, setVeiculoId] = useState("");
   const [veiculoDescricao, setVeiculoDescricao] = useState("");
   const [placa, setPlaca] = useState("");
@@ -110,31 +120,62 @@ export default function AgendamentosPage() {
 
     setLoading(true);
 
-    const [clientesResp, agendamentosResp] = await Promise.all([
-      supabase
-        .from("clientes")
-        .select("id,nome")
-        .eq("empresa_id", emp)
-        .order("nome"),
-      supabase
-        .from("agendamentos")
-        .select("*")
-        .eq("empresa_id", emp)
-        .order("data_agendamento", { ascending: true })
-        .order("hora_agendamento", { ascending: true }),
-    ]);
+    const { data: agendamentosData, error: agendamentosError } = await supabase
+      .from("agendamentos")
+      .select("*")
+      .eq("empresa_id", emp)
+      .order("data_agendamento", { ascending: true })
+      .order("hora_agendamento", { ascending: true });
 
-    if (clientesResp.error) {
-      alert("ERRO CLIENTES: " + clientesResp.error.message);
+    if (agendamentosError) {
+      alert("ERRO AGENDAMENTOS: " + agendamentosError.message);
     }
 
-    if (agendamentosResp.error) {
-      alert("ERRO AGENDAMENTOS: " + agendamentosResp.error.message);
-    }
-
-    setClientes((clientesResp.data || []) as Cliente[]);
-    setAgendamentos((agendamentosResp.data || []) as Agendamento[]);
+    setAgendamentos((agendamentosData || []) as Agendamento[]);
     setLoading(false);
+  }
+
+  async function buscarClientesNoBanco(termo: string) {
+    if (!empresaId) return;
+
+    const q = termo.trim();
+
+    if (q.length < 2) {
+      setClientesBusca([]);
+      return;
+    }
+
+    setLoadingClientesBusca(true);
+
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("id,nome,telefone,celular,whatsapp,cpf_cnpj,status")
+      .eq("empresa_id", empresaId)
+      .or(
+        [
+          `nome.ilike.%${q}%`,
+          `telefone.ilike.%${q}%`,
+          `celular.ilike.%${q}%`,
+          `whatsapp.ilike.%${q}%`,
+          `cpf_cnpj.ilike.%${q}%`,
+        ].join(",")
+      )
+      .order("nome")
+      .limit(20);
+
+    if (error) {
+      alert("ERRO AO BUSCAR CLIENTES: " + error.message);
+      setClientesBusca([]);
+      setLoadingClientesBusca(false);
+      return;
+    }
+
+    const lista = ((data || []) as Cliente[]).filter(
+      (c) => up(c.status || "ATIVO") !== "INATIVO"
+    );
+
+    setClientesBusca(lista);
+    setLoadingClientesBusca(false);
   }
 
   async function carregarVeiculosCliente(idCliente: string) {
@@ -175,7 +216,7 @@ export default function AgendamentosPage() {
       total: agendamentos.length,
       agendados: agendamentos.filter((a) => up(a.status) === "AGENDADO").length,
       andamento: agendamentos.filter((a) => up(a.status) === "EM ANDAMENTO").length,
-      concluidos: agendamentos.filter((a) => up(a.status) === "CONCLUÍDO").length,
+      concluidos: agendamentos.filter((a) => up(a.status) === "CONCLUÍDO" || up(a.status) === "CONCLUIDO").length,
     };
   }, [agendamentos]);
 
@@ -183,6 +224,9 @@ export default function AgendamentosPage() {
     setEditingId(null);
     setClienteId("");
     setClienteNome("");
+    setBuscaCliente("");
+    setClientesBusca([]);
+    setMostrarDropdownCliente(false);
     setVeiculoId("");
     setVeiculoDescricao("");
     setPlaca("");
@@ -195,11 +239,27 @@ export default function AgendamentosPage() {
     setVeiculosCliente([]);
   }
 
+  async function selecionarCliente(c: Cliente) {
+    setClienteId(c.id);
+    setClienteNome(c.nome);
+    setBuscaCliente(c.nome);
+    setClientesBusca([]);
+    setMostrarDropdownCliente(false);
+
+    setVeiculoId("");
+    setVeiculoDescricao("");
+    setPlaca("");
+
+    await carregarVeiculosCliente(c.id);
+  }
+
   async function salvarAgendamento() {
     if (!empresaId) return;
 
-    if (!clienteNome.trim()) {
-      alert("SELECIONE UM CLIENTE.");
+    const nomeClienteFinal = (clienteNome || buscaCliente).trim();
+
+    if (!nomeClienteFinal) {
+      alert("SELECIONE OU DIGITE O CLIENTE.");
       return;
     }
 
@@ -211,7 +271,7 @@ export default function AgendamentosPage() {
     const payload = {
       empresa_id: empresaId,
       cliente_id: clienteId || null,
-      cliente_nome: up(clienteNome),
+      cliente_nome: up(nomeClienteFinal),
       veiculo_id: veiculoId || null,
       veiculo_descricao: up(veiculoDescricao),
       placa: up(placa),
@@ -257,6 +317,7 @@ export default function AgendamentosPage() {
     setEditingId(a.id);
     setClienteId(a.cliente_id || "");
     setClienteNome(a.cliente_nome || "");
+    setBuscaCliente(a.cliente_nome || "");
     setVeiculoId(a.veiculo_id || "");
     setVeiculoDescricao(a.veiculo_descricao || "");
     setPlaca(a.placa || "");
@@ -266,9 +327,13 @@ export default function AgendamentosPage() {
     setHoraAgendamento(a.hora_agendamento || "");
     setStatus(a.status || "AGENDADO");
     setObservacoes(a.observacoes || "");
+    setMostrarDropdownCliente(false);
+    setClientesBusca([]);
 
     if (a.cliente_id) {
       await carregarVeiculosCliente(a.cliente_id);
+    } else {
+      setVeiculosCliente([]);
     }
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -309,10 +374,10 @@ export default function AgendamentosPage() {
                 AUTO GESTÃO PRO
               </p>
               <h1 className="mt-2 text-[28px] md:text-[34px] font-black leading-none">
-                AGENDAMENTOS
+                AGENDAMENTOS PREMIUM
               </h1>
               <p className="mt-3 text-sm text-white/85">
-                CONTROLE DE SERVIÇOS AGENDADOS COM FLUXO RÁPIDO PARA CONVERSÃO EM OS
+                CONTROLE DE SERVIÇOS AGENDADOS COM BUSCA RÁPIDA DE CLIENTE E CONVERSÃO PARA OS
               </p>
             </div>
 
@@ -364,34 +429,74 @@ export default function AgendamentosPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <select
-              value={clienteId}
-              onChange={async (e) => {
-                const id = e.target.value;
-                setClienteId(id);
+            <div className="md:col-span-2 relative">
+              <label className="label">CLIENTE</label>
+              <input
+                placeholder="PESQUISE O CLIENTE POR NOME, TELEFONE OU DOCUMENTO..."
+                value={buscaCliente}
+                onChange={async (e) => {
+                  const valor = e.target.value;
+                  setBuscaCliente(valor);
+                  setClienteNome(valor);
 
-                const c = clientes.find((x) => x.id === id);
-                setClienteNome(c?.nome || "");
+                  if (!valor.trim()) {
+                    setClienteId("");
+                    setClientesBusca([]);
+                    setMostrarDropdownCliente(false);
+                    setVeiculoId("");
+                    setVeiculoDescricao("");
+                    setPlaca("");
+                    setVeiculosCliente([]);
+                    return;
+                  }
 
-                setVeiculoId("");
-                setVeiculoDescricao("");
-                setPlaca("");
+                  setMostrarDropdownCliente(true);
+                  await buscarClientesNoBanco(valor);
+                }}
+                onFocus={async () => {
+                  if (buscaCliente.trim().length >= 2) {
+                    setMostrarDropdownCliente(true);
+                    await buscarClientesNoBanco(buscaCliente);
+                  }
+                }}
+                className="campo"
+              />
 
-                if (id) {
-                  await carregarVeiculosCliente(id);
-                } else {
-                  setVeiculosCliente([]);
-                }
-              }}
-              className="campo md:col-span-2"
-            >
-              <option value="">SELECIONE O CLIENTE</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nome}
-                </option>
-              ))}
-            </select>
+              {loadingClientesBusca && (
+                <div className="text-xs text-[#64748B] mt-2">BUSCANDO CLIENTES...</div>
+              )}
+
+              {mostrarDropdownCliente &&
+                buscaCliente.trim().length >= 2 &&
+                clientesBusca.length > 0 && (
+                  <div className="dropdown">
+                    {clientesBusca.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => selecionarCliente(c)}
+                        className="dropdown-item"
+                      >
+                        <div className="font-semibold text-[#111827]">{c.nome}</div>
+                        <div className="text-xs text-[#6B7280]">
+                          {c.telefone || c.celular || c.whatsapp || c.cpf_cnpj || "-"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+              {mostrarDropdownCliente &&
+                buscaCliente.trim().length >= 2 &&
+                !loadingClientesBusca &&
+                clientesBusca.length === 0 && (
+                  <div className="dropdown">
+                    <div className="dropdown-item text-[#B91C1C]">
+                      NENHUM CLIENTE ENCONTRADO PARA: <strong>{buscaCliente}</strong>
+                    </div>
+                  </div>
+                )}
+            </div>
 
             <select
               value={veiculoId}
@@ -788,6 +893,35 @@ export default function AgendamentosPage() {
         .status-convertido {
           background: #ede9fe;
           color: #6d28d9;
+        }
+
+        .dropdown {
+          position: absolute;
+          z-index: 30;
+          width: 100%;
+          margin-top: 8px;
+          border-radius: 16px;
+          border: 1px solid #e5e7eb;
+          background: white;
+          box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
+          max-height: 280px;
+          overflow: auto;
+        }
+
+        .dropdown-item {
+          width: 100%;
+          text-align: left;
+          padding: 12px;
+          border-bottom: 1px solid #eef2f7;
+          background: white;
+        }
+
+        .dropdown-item:last-child {
+          border-bottom: none;
+        }
+
+        .dropdown-item:hover {
+          background: #f8fafc;
         }
       `}</style>
     </div>
