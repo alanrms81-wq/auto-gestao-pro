@@ -96,6 +96,8 @@ export default function FinanceiroPage() {
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("TODOS");
   const [filtroStatus, setFiltroStatus] = useState("TODOS");
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
 
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -224,10 +226,13 @@ export default function FinanceiroPage() {
       const okBusca = !q || texto.includes(q);
       const okTipo = filtroTipo === "TODOS" || t.tipo === filtroTipo;
       const okStatus = filtroStatus === "TODOS" || statusFinanceiro(t) === filtroStatus;
+      const okPeriodo =
+        (!dataInicio || (t.data_vencimento && t.data_vencimento >= dataInicio)) &&
+        (!dataFim || (t.data_vencimento && t.data_vencimento <= dataFim));
 
-      return okBusca && okTipo && okStatus;
+      return okBusca && okTipo && okStatus && okPeriodo;
     });
-  }, [titulos, busca, filtroTipo, filtroStatus]);
+  }, [titulos, busca, filtroTipo, filtroStatus, dataInicio, dataFim]);
 
   const resumo = useMemo(() => {
     const receber = titulos
@@ -252,6 +257,25 @@ export default function FinanceiroPage() {
     const saldoCaixa = recebido - pagar;
 
     return { receber, pagar, recebido, vencido, saldoCaixa };
+  }, [titulos]);
+
+  const resumoFiado = useMemo(() => {
+    const mapa: Record<string, number> = {};
+
+    titulos.forEach((t) => {
+      if (t.tipo !== "RECEBER") return;
+
+      const saldo = saldoAbertoTitulo(t);
+      if (saldo <= 0) return;
+
+      const nome = t.cliente_nome || "SEM NOME";
+      mapa[nome] = (mapa[nome] || 0) + saldo;
+    });
+
+    return Object.entries(mapa)
+      .map(([cliente, valor]) => ({ cliente, valor }))
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 10);
   }, [titulos]);
 
   const valorLiquidoForm = useMemo(() => {
@@ -459,7 +483,7 @@ export default function FinanceiroPage() {
               FINANCEIRO PREMIUM
             </h1>
             <p className="text-[14px] text-[#6C757D] mt-2">
-              CONTAS A RECEBER, A PAGAR, BAIXAS, SALDOS E CONTROLE DE CLIENTES
+              CONTAS, BAIXAS, SALDOS, FIADO E CONTROLE INTELIGENTE
             </p>
           </div>
 
@@ -468,7 +492,7 @@ export default function FinanceiroPage() {
               placeholder="BUSCAR TÍTULO..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="h-[54px] w-[280px] xl:w-[360px] max-w-full rounded-2xl border border-[#D1D5DB] bg-white px-5 text-[16px] outline-none"
+              className="h-[54px] w-[260px] xl:w-[320px] max-w-full rounded-2xl border border-[#D1D5DB] bg-white px-5 text-[16px] outline-none"
             />
 
             <select
@@ -492,15 +516,64 @@ export default function FinanceiroPage() {
               <option value="PAGO">PAGO</option>
               <option value="VENCIDO">VENCIDO</option>
             </select>
+
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              className="h-[54px] rounded-2xl border border-[#D1D5DB] bg-white px-5 text-[15px] outline-none"
+            />
+
+            <input
+              type="date"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+              className="h-[54px] rounded-2xl border border-[#D1D5DB] bg-white px-5 text-[15px] outline-none"
+            />
           </div>
         </div>
 
         <div className="grid grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
-          <CardKpi titulo="A RECEBER" valor={moneyBR(resumo.receber)} />
-          <CardKpi titulo="A PAGAR" valor={moneyBR(resumo.pagar)} />
-          <CardKpi titulo="RECEBIDO" valor={moneyBR(resumo.recebido)} />
-          <CardKpi titulo="VENCIDO" valor={moneyBR(resumo.vencido)} />
-          <CardKpi titulo="SALDO CAIXA" valor={moneyBR(resumo.saldoCaixa)} />
+          <CardKpi
+            titulo="A RECEBER"
+            valor={moneyBR(resumo.receber)}
+            onClick={() => {
+              setFiltroTipo("RECEBER");
+              setFiltroStatus("ABERTO");
+            }}
+          />
+          <CardKpi
+            titulo="A PAGAR"
+            valor={moneyBR(resumo.pagar)}
+            onClick={() => {
+              setFiltroTipo("PAGAR");
+              setFiltroStatus("ABERTO");
+            }}
+          />
+          <CardKpi
+            titulo="RECEBIDO"
+            valor={moneyBR(resumo.recebido)}
+            onClick={() => {
+              setFiltroTipo("RECEBER");
+              setFiltroStatus("PAGO");
+            }}
+          />
+          <CardKpi
+            titulo="VENCIDO"
+            valor={moneyBR(resumo.vencido)}
+            onClick={() => {
+              setFiltroTipo("RECEBER");
+              setFiltroStatus("VENCIDO");
+            }}
+          />
+          <CardKpi
+            titulo="SALDO CAIXA"
+            valor={moneyBR(resumo.saldoCaixa)}
+            onClick={() => {
+              setFiltroTipo("TODOS");
+              setFiltroStatus("TODOS");
+            }}
+          />
         </div>
 
         <div className="grid grid-cols-1 2xl:grid-cols-[1.35fr_0.65fr] gap-6 mb-6">
@@ -700,58 +773,86 @@ export default function FinanceiroPage() {
             </div>
           </section>
 
-          <section className="card">
-            <h2 className="titulo mb-4">BAIXA / PAGAMENTO</h2>
+          <div className="space-y-6">
+            <section className="card">
+              <h2 className="titulo mb-4">FIADO POR CLIENTE</h2>
 
-            {baixaId ? (
-              <>
-                <div className="space-y-4">
-                  <div>
-                    <label className="label">VALOR DA BAIXA</label>
-                    <input
-                      className="campo"
-                      type="number"
-                      value={baixaValor}
-                      onChange={(e) => setBaixaValor(e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="label">DATA DA BAIXA</label>
-                    <input
-                      className="campo"
-                      type="date"
-                      value={baixaData}
-                      onChange={(e) => setBaixaData(e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="label">OBSERVAÇÃO</label>
-                    <textarea
-                      className="campo-textarea"
-                      value={baixaObs}
-                      onChange={(e) => setBaixaObs(e.target.value)}
-                    />
-                  </div>
+              {resumoFiado.length === 0 ? (
+                <div className="text-sm text-[#6C757D]">NENHUM FIADO EM ABERTO.</div>
+              ) : (
+                <div className="space-y-2">
+                  {resumoFiado.map((c, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setBusca(c.cliente);
+                        setFiltroTipo("RECEBER");
+                        setFiltroStatus("TODOS");
+                      }}
+                      className="fiado-item"
+                    >
+                      <span>{c.cliente}</span>
+                      <strong>{moneyBR(c.valor)}</strong>
+                    </button>
+                  ))}
                 </div>
+              )}
+            </section>
 
-                <div className="flex gap-3 mt-5 flex-wrap">
-                  <button onClick={registrarBaixa} className="botao-azul" type="button">
-                    REGISTRAR BAIXA
-                  </button>
+            <section className="card">
+              <h2 className="titulo mb-4">AÇÕES RÁPIDAS</h2>
 
-                  <button onClick={resetBaixa} className="botao" type="button">
-                    CANCELAR
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="text-sm text-[#6C757D]">
-                SELECIONE UM TÍTULO NA TABELA E CLIQUE EM <b>BAIXAR</b>.
+              <div className="grid grid-cols-1 gap-3">
+                <button
+                  className="botao"
+                  type="button"
+                  onClick={() => {
+                    setFiltroTipo("RECEBER");
+                    setFiltroStatus("ABERTO");
+                  }}
+                >
+                  VER CONTAS A RECEBER
+                </button>
+
+                <button
+                  className="botao"
+                  type="button"
+                  onClick={() => {
+                    setFiltroTipo("PAGAR");
+                    setFiltroStatus("ABERTO");
+                  }}
+                >
+                  VER CONTAS A PAGAR
+                </button>
+
+                <button
+                  className="botao"
+                  type="button"
+                  onClick={() => {
+                    setFiltroTipo("RECEBER");
+                    setFiltroStatus("VENCIDO");
+                  }}
+                >
+                  VER VENCIDOS
+                </button>
+
+                <button
+                  className="botao"
+                  type="button"
+                  onClick={() => {
+                    setBusca("");
+                    setFiltroTipo("TODOS");
+                    setFiltroStatus("TODOS");
+                    setDataInicio("");
+                    setDataFim("");
+                  }}
+                >
+                  LIMPAR FILTROS
+                </button>
               </div>
-            )}
-          </section>
+            </section>
+          </div>
         </div>
 
         <section className="card">
@@ -833,6 +934,55 @@ export default function FinanceiroPage() {
             </table>
           </div>
         </section>
+
+        {baixaId && (
+          <div className="modal-overlay" onClick={resetBaixa}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h2 className="titulo mb-4">BAIXAR TÍTULO</h2>
+
+              <div>
+                <label className="label">VALOR DA BAIXA</label>
+                <input
+                  className="campo"
+                  type="number"
+                  value={baixaValor}
+                  onChange={(e) => setBaixaValor(e.target.value)}
+                  placeholder="VALOR"
+                />
+              </div>
+
+              <div className="mt-3">
+                <label className="label">DATA DA BAIXA</label>
+                <input
+                  className="campo"
+                  type="date"
+                  value={baixaData}
+                  onChange={(e) => setBaixaData(e.target.value)}
+                />
+              </div>
+
+              <div className="mt-3">
+                <label className="label">OBSERVAÇÃO</label>
+                <textarea
+                  className="campo-textarea"
+                  value={baixaObs}
+                  onChange={(e) => setBaixaObs(e.target.value)}
+                  placeholder="OBSERVAÇÃO"
+                />
+              </div>
+
+              <div className="flex gap-3 mt-4 flex-wrap">
+                <button className="botao-azul" onClick={registrarBaixa} type="button">
+                  CONFIRMAR BAIXA
+                </button>
+
+                <button className="botao" onClick={resetBaixa} type="button">
+                  CANCELAR
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       <style jsx>{`
@@ -977,17 +1127,68 @@ export default function FinanceiroPage() {
         .dropdown-item:hover {
           background: #f8fafc;
         }
+
+        .fiado-item {
+          width: 100%;
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          border: 1px solid #e5e7eb;
+          background: #f8fafc;
+          text-align: left;
+          font-size: 13px;
+          color: #111827;
+        }
+
+        .fiado-item:hover {
+          background: #eef6ff;
+          border-color: #bfdbfe;
+        }
+
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 999;
+          padding: 16px;
+        }
+
+        .modal {
+          background: white;
+          padding: 24px;
+          border-radius: 20px;
+          width: 420px;
+          max-width: 100%;
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+        }
       `}</style>
     </div>
   );
 }
 
-function CardKpi({ titulo, valor }: { titulo: string; valor: string }) {
+function CardKpi({
+  titulo,
+  valor,
+  onClick,
+}: {
+  titulo: string;
+  valor: string;
+  onClick?: () => void;
+}) {
   return (
-    <div className="bg-white rounded-[22px] shadow-sm p-5 min-h-[110px] border border-[#EEF2F7]">
+    <button
+      onClick={onClick}
+      className="cursor-pointer bg-white rounded-[22px] shadow-sm p-5 min-h-[110px] border border-[#EEF2F7] hover:scale-[1.02] transition text-left"
+      type="button"
+    >
       <div className="text-[13px] font-bold text-[#64748B]">{titulo}</div>
       <div className="mt-3 text-[24px] font-black text-[#111] break-words">{valor}</div>
-    </div>
+    </button>
   );
 }
 
