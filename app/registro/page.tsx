@@ -16,6 +16,7 @@ export default function RegistroPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
   const [nomeEmpresa, setNomeEmpresa] = useState("");
   const [cnpj, setCnpj] = useState("");
@@ -26,16 +27,22 @@ export default function RegistroPage() {
   const [confirmarSenha, setConfirmarSenha] = useState("");
 
   useEffect(() => {
-    async function checkUser() {
-      const { data } = await supabase.auth.getSession();
+    async function prepareRegistro() {
+      try {
+        const { data } = await supabase.auth.getSession();
 
-      if (data.session) {
-        router.push("/dashboard");
+        // Se já existir sessão aberta, encerra antes de registrar
+        // para não cair no dashboard da empresa que já está logada.
+        if (data.session) {
+          await supabase.auth.signOut();
+        }
+      } finally {
+        setCheckingSession(false);
       }
     }
 
-    checkUser();
-  }, [router]);
+    prepareRegistro();
+  }, []);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -46,7 +53,7 @@ export default function RegistroPage() {
     }
 
     if (!nomeUsuario.trim()) {
-      alert("PREENCHA O NOME DO USUÁRIO.");
+      alert("PREENCHA O NOME DO RESPONSÁVEL.");
       return;
     }
 
@@ -73,18 +80,21 @@ export default function RegistroPage() {
     try {
       setLoading(true);
 
+      // Garante novamente que não existe sessão reaproveitada
+      await supabase.auth.signOut();
+
       const res = await fetch("/api/registro", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          nomeEmpresa,
-          cnpj,
-          telefoneEmpresa,
-          nomeUsuario,
-          email,
-          senha,
+          nomeEmpresa: nomeEmpresa.trim(),
+          cnpj: cnpj.trim(),
+          telefoneEmpresa: telefoneEmpresa.trim(),
+          nomeUsuario: nomeUsuario.trim(),
+          email: email.trim(),
+          senha: senha.trim(),
         }),
       });
 
@@ -100,17 +110,17 @@ export default function RegistroPage() {
       }
 
       const loginResult = await supabase.auth.signInWithPassword({
-        email,
-        password: senha,
+        email: email.trim(),
+        password: senha.trim(),
       });
 
       if (loginResult.error) {
-        alert("CONTA CRIADA, MAS HOUVE ERRO NO LOGIN AUTOMÁTICO.");
+        alert("SOLICITAÇÃO CRIADA, MAS HOUVE ERRO NO LOGIN AUTOMÁTICO.");
         router.push("/login");
         return;
       }
 
-      alert("CONTA CRIADA COM SUCESSO!");
+      alert("EMPRESA CRIADA COM SUCESSO!");
       router.push("/dashboard");
     } catch (error) {
       console.error(error);
@@ -118,6 +128,21 @@ export default function RegistroPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center p-6">
+        <div className="w-full max-w-[520px] bg-white rounded-[24px] shadow-sm p-8 text-center">
+          <h1 className="text-[28px] font-black text-[#0456A3]">
+            PREPARANDO REGISTRO
+          </h1>
+          <p className="text-[#6C757D] mt-3">
+            AGUARDE UM INSTANTE...
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -129,7 +154,7 @@ export default function RegistroPage() {
           </h1>
 
           <p className="text-[#6C757D] mt-2">
-            CRIE SUA EMPRESA E COMECE A USAR O SISTEMA
+            REGISTRE SUA EMPRESA PARA INICIAR O USO DO SISTEMA
           </p>
         </div>
 
@@ -165,7 +190,7 @@ export default function RegistroPage() {
           </div>
 
           <div className="md:col-span-2">
-            <label className="label">NOME DO USUÁRIO ADMIN</label>
+            <label className="label">NOME DO RESPONSÁVEL</label>
             <input
               className="campo"
               value={nomeUsuario}
@@ -207,13 +232,18 @@ export default function RegistroPage() {
             />
           </div>
 
-          <div className="md:col-span-2 flex gap-3 mt-2">
+          <div className="md:col-span-2 rounded-[16px] border border-[#DBEAFE] bg-[#EFF6FF] p-4 text-[13px] text-[#1D4ED8]">
+            AO REGISTRAR, SUA EMPRESA PODE SER CRIADA COM ACESSO INICIAL E
+            ACOMPANHAMENTO COMERCIAL POSTERIOR.
+          </div>
+
+          <div className="md:col-span-2 flex gap-3 mt-2 flex-wrap">
             <button
               type="submit"
               className="botao-azul"
               disabled={loading}
             >
-              {loading ? "CRIANDO..." : "CRIAR CONTA"}
+              {loading ? "PROCESSANDO..." : "REGISTRAR EMPRESA"}
             </button>
 
             <button
@@ -245,6 +275,12 @@ export default function RegistroPage() {
           font-size: 14px;
           background: white;
           color: #111827;
+          outline: none;
+        }
+
+        .campo:focus {
+          border-color: #0456a3;
+          box-shadow: 0 0 0 4px rgba(4, 86, 163, 0.08);
         }
 
         .botao {
@@ -263,6 +299,11 @@ export default function RegistroPage() {
           padding: 12px 18px;
           font-weight: 700;
           border: none;
+        }
+
+        .botao:disabled,
+        .botao-azul:disabled {
+          opacity: 0.7;
         }
       `}</style>
     </div>
