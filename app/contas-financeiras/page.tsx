@@ -8,6 +8,7 @@ import { getSessionUser } from "@/lib/session";
 
 type SessionUser = {
   empresa_id: string;
+  role?: string | null;
 };
 
 type ContaFinanceira = {
@@ -69,6 +70,13 @@ export default function ContasFinanceirasPage() {
 
       if (!user) {
         router.push("/login");
+        return;
+      }
+
+      const isAdmin = String(user.role || "").toUpperCase() === "ADMIN";
+
+      if (!isAdmin) {
+        router.push("/dashboard");
         return;
       }
 
