@@ -67,6 +67,23 @@ type VendaItem = {
   controlaEstoque?: boolean;
 };
 
+type ContaFinanceira = {
+  id: string;
+  nome?: string | null;
+  saldo_atual?: number | null;
+  status?: string | null;
+};
+
+type TaxaCartao = {
+  id: string;
+  nome?: string | null;
+  tipo_cartao?: string | null;
+  bandeira?: string | null;
+  taxa_percentual?: number | null;
+  prazo_recebimento_dias?: number | null;
+  status?: string | null;
+};
+
 /* =========================
    HELPERS
 ========================= */
@@ -87,19 +104,29 @@ function moneyBR(v: number) {
   });
 }
 
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function hojeLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function agoraLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(
+    d.getHours()
+  )}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
 function formatDateTimeBr(value?: string | null) {
   if (!value) return "-";
   const d = new Date(value);
   if (isNaN(d.getTime())) return String(value);
-  return d.toLocaleString("pt-BR");
-}
-
-function hojeISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function agoraISO() {
-  return new Date().toISOString();
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(
+    d.getHours()
+  )}:${pad2(d.getMinutes())}`;
 }
 
 function getPrecoPadraoProduto(p: Produto) {
@@ -142,8 +169,26 @@ function isPagamentoImediato(formaPagamento: string) {
   );
 }
 
+function isCartao(formaPagamento: string) {
+  const f = up(formaPagamento);
+  return f.includes("CARTÃO") || f.includes("CARTAO");
+}
+
 function getFinanceiroStatus(formaPagamento: string) {
   return isPagamentoImediato(formaPagamento) ? "PAGO" : "ABERTO";
+}
+
+function calcularLiquidoComTaxa(valorBruto: number, taxaPercentual: number) {
+  const bruto = Number(valorBruto) || 0;
+  const taxa = Number(taxaPercentual) || 0;
+
+  const valorTaxa = bruto * (taxa / 100);
+  const valorLiquido = bruto - valorTaxa;
+
+  return {
+    valorTaxa,
+    valorLiquido,
+  };
 }
 
 /* =========================
@@ -177,6 +222,11 @@ export default function VendasPage() {
 
   const [itens, setItens] = useState<VendaItem[]>([]);
   const [buscaHistorico, setBuscaHistorico] = useState("");
+
+  const [contasFinanceiras, setContasFinanceiras] = useState<ContaFinanceira[]>([]);
+  const [taxasCartao, setTaxasCartao] = useState<TaxaCartao[]>([]);
+  const [contaFinanceiraId, setContaFinanceiraId] = useState("");
+  const [taxaCartaoId, setTaxaCartaoId] = useState("");
 
   const clienteBoxRef = useRef<HTMLDivElement | null>(null);
   const produtoBoxRef = useRef<HTMLDivElement | null>(null);
@@ -237,7 +287,7 @@ export default function VendasPage() {
   async function carregarBase(empId: string) {
     setLoading(true);
 
-    const [produtosResp, vendasResp] = await Promise.all([
+    const [produtosResp, vendasResp, contasResp, taxasResp] = await Promise.all([
       supabase
         .from("produtos")
         .select(
@@ -245,11 +295,26 @@ export default function VendasPage() {
         )
         .eq("empresa_id", empId)
         .order("nome"),
+
       supabase
         .from("vendas")
         .select("id,numero,cliente_nome,forma_pagamento,total,created_at,status")
         .eq("empresa_id", empId)
         .order("created_at", { ascending: false }),
+
+      supabase
+        .from("contas_financeiras")
+        .select("id,nome,saldo_atual,status")
+        .eq("empresa_id", empId)
+        .eq("status", "ATIVO")
+        .order("nome"),
+
+      supabase
+        .from("taxas_cartao")
+        .select("id,nome,tipo_cartao,bandeira,taxa_percentual,prazo_recebimento_dias,status")
+        .eq("empresa_id", empId)
+        .eq("status", "ATIVO")
+        .order("nome"),
     ]);
 
     if (produtosResp.error) {
@@ -260,11 +325,23 @@ export default function VendasPage() {
       alert("ERRO AO CARREGAR VENDAS: " + vendasResp.error.message);
     }
 
+    if (contasResp.error) {
+      alert("ERRO AO CARREGAR CONTAS FINANCEIRAS: " + contasResp.error.message);
+    }
+
+    if (taxasResp.error) {
+      alert("ERRO AO CARREGAR TAXAS DE CARTÃO: " + taxasResp.error.message);
+    }
+
     const listaProdutos = (produtosResp.data || []) as Produto[];
     const listaVendas = (vendasResp.data || []) as Venda[];
+    const listaContas = (contasResp.data || []) as ContaFinanceira[];
+    const listaTaxas = (taxasResp.data || []) as TaxaCartao[];
 
     setProdutos(listaProdutos);
     setHistorico(listaVendas);
+    setContasFinanceiras(listaContas);
+    setTaxasCartao(listaTaxas);
     setNumeroVenda(gerarNumeroInterno(listaVendas));
     setLoading(false);
   }
@@ -439,6 +516,8 @@ export default function VendasPage() {
     setOpenClientes(false);
     setOpenProdutos(false);
     setNumeroVenda(gerarNumeroInterno(historico));
+    setContaFinanceiraId("");
+    setTaxaCartaoId("");
   }
 
   /* =========================
@@ -472,6 +551,67 @@ export default function VendasPage() {
     return getFinanceiroStatus(formaPagamento);
   }, [formaPagamento]);
 
+  const taxaSelecionada = useMemo(() => {
+    return taxasCartao.find((t) => t.id === taxaCartaoId) || null;
+  }, [taxasCartao, taxaCartaoId]);
+
+  const taxaCompativelComForma = useMemo(() => {
+    if (!isCartao(formaPagamento)) return true;
+    if (!taxaSelecionada) return false;
+
+    const forma = up(formaPagamento);
+    const tipoTaxa = up(taxaSelecionada.tipo_cartao || "");
+
+    if (forma.includes("DÉBITO") || forma.includes("DEBITO")) {
+      return tipoTaxa === "DEBITO";
+    }
+
+    if (forma.includes("CRÉDITO") || forma.includes("CREDITO")) {
+      return tipoTaxa === "CREDITO" || tipoTaxa === "CREDITO PARCELADO";
+    }
+
+    return true;
+  }, [formaPagamento, taxaSelecionada]);
+
+  const { valorTaxaCalculado, valorLiquidoCalculado } = useMemo(() => {
+    if (!isCartao(formaPagamento) || !taxaSelecionada || !taxaCompativelComForma) {
+      return {
+        valorTaxaCalculado: 0,
+        valorLiquidoCalculado: totalGeral,
+      };
+    }
+
+    const calc = calcularLiquidoComTaxa(
+      totalGeral,
+      Number(taxaSelecionada.taxa_percentual || 0)
+    );
+
+    return {
+      valorTaxaCalculado: calc.valorTaxa,
+      valorLiquidoCalculado: calc.valorLiquido,
+    };
+  }, [formaPagamento, taxaSelecionada, taxaCompativelComForma, totalGeral]);
+
+  const taxasFiltradasPorForma = useMemo(() => {
+    if (!isCartao(formaPagamento)) return taxasCartao;
+
+    const forma = up(formaPagamento);
+
+    return taxasCartao.filter((taxa) => {
+      const tipo = up(taxa.tipo_cartao || "");
+
+      if (forma.includes("DÉBITO") || forma.includes("DEBITO")) {
+        return tipo === "DEBITO";
+      }
+
+      if (forma.includes("CRÉDITO") || forma.includes("CREDITO")) {
+        return tipo === "CREDITO" || tipo === "CREDITO PARCELADO";
+      }
+
+      return true;
+    });
+  }, [formaPagamento, taxasCartao]);
+
   /* =========================
      SALVAR
   ========================= */
@@ -486,6 +626,21 @@ export default function VendasPage() {
 
     if (!itens.length) {
       alert("ADICIONE PELO MENOS UM ITEM.");
+      return;
+    }
+
+    if (!contaFinanceiraId) {
+      alert("SELECIONE A CONTA FINANCEIRA.");
+      return;
+    }
+
+    if (isCartao(formaPagamento) && !taxaCartaoId) {
+      alert("SELECIONE A TAXA DE CARTÃO.");
+      return;
+    }
+
+    if (isCartao(formaPagamento) && !taxaCompativelComForma) {
+      alert("A TAXA SELECIONADA NÃO É COMPATÍVEL COM A FORMA DE PAGAMENTO.");
       return;
     }
 
@@ -507,7 +662,7 @@ export default function VendasPage() {
       desconto: toMoney(desconto),
       total: totalGeral,
       observacoes: up(observacoes),
-      data_venda: agoraISO(),
+      data_venda: agoraLocalISO(),
       status: "FINALIZADA",
     };
 
@@ -542,10 +697,7 @@ export default function VendasPage() {
     for (const item of itens) {
       if (!item.produtoId || !item.controlaEstoque) continue;
 
-      const novoEstoque = Math.max(
-        0,
-        toMoney(item.estoqueAtual) - toMoney(item.quantidade)
-      );
+      const novoEstoque = Math.max(0, toMoney(item.estoqueAtual) - toMoney(item.quantidade));
 
       const { error: estoqueError } = await supabase
         .from("produtos")
@@ -568,16 +720,21 @@ export default function VendasPage() {
       documento: up(numeroVenda),
       categoria: "VENDAS",
       valor_original: totalGeral,
-      valor_pago: pagamentoImediato ? totalGeral : 0,
+      valor_pago: pagamentoImediato ? valorLiquidoCalculado : 0,
       desconto: 0,
       juros: 0,
       multa: 0,
-      data_emissao: hojeISO(),
-      data_vencimento: hojeISO(),
-      data_pagamento: pagamentoImediato ? hojeISO() : null,
+      data_emissao: hojeLocalISO(),
+      data_vencimento: hojeLocalISO(),
+      data_pagamento: pagamentoImediato ? hojeLocalISO() : null,
       forma_pagamento: up(formaPagamento),
       status: pagamentoImediato ? "PAGO" : "ABERTO",
       observacoes: up(observacoes || `TÍTULO GERADO PELA VENDA ${numeroVenda}`),
+      conta_financeira_id: contaFinanceiraId || null,
+      taxa_cartao_id: taxaCartaoId || null,
+      valor_taxa: valorTaxaCalculado,
+      valor_liquido: valorLiquidoCalculado,
+      tipo_recebimento: up(formaPagamento),
     };
 
     const { error: financeiroError } = await supabase
@@ -589,9 +746,28 @@ export default function VendasPage() {
       return;
     }
 
+    if (pagamentoImediato && contaFinanceiraId) {
+      const conta = contasFinanceiras.find((c) => c.id === contaFinanceiraId);
+
+      if (conta) {
+        const novoSaldo = toMoney(conta.saldo_atual) + valorLiquidoCalculado;
+
+        const { error: contaError } = await supabase
+          .from("contas_financeiras")
+          .update({ saldo_atual: novoSaldo })
+          .eq("id", contaFinanceiraId)
+          .eq("empresa_id", empresaId);
+
+        if (contaError) {
+          alert("VENDA SALVA, MAS DEU ERRO AO ATUALIZAR A CONTA FINANCEIRA.");
+          return;
+        }
+      }
+    }
+
     alert(
       pagamentoImediato
-        ? "VENDA SALVA COMO PAGA!"
+        ? "VENDA SALVA COMO PAGA, COM TAXA E CONTA FINANCEIRA!"
         : "VENDA SALVA COMO PENDENTE NO FINANCEIRO!"
     );
 
@@ -610,6 +786,9 @@ export default function VendasPage() {
     }
 
     const clienteNome = clienteSelecionado?.nome || "-";
+    const contaNome =
+      contasFinanceiras.find((c) => c.id === contaFinanceiraId)?.nome || "-";
+    const taxaNome = taxaSelecionada?.nome || "-";
 
     const itensRows = itens
       .map(
@@ -648,6 +827,8 @@ export default function VendasPage() {
             <div class="sub">VENDA ${numeroVenda}</div>
             <div class="sub">CLIENTE: ${clienteNome}</div>
             <div class="sub">FORMA DE PAGAMENTO: ${formaPagamento}</div>
+            <div class="sub">CONTA: ${contaNome}</div>
+            <div class="sub">TAXA: ${taxaNome}</div>
             <div class="sub">STATUS FINANCEIRO: ${pagamentoImediato ? "PAGO" : "ABERTO"}</div>
             <div class="sub">EMISSÃO: ${formatDateTimeBr(new Date().toISOString())}</div>
           </div>
@@ -673,7 +854,8 @@ export default function VendasPage() {
           <div class="box">
             <div class="linha"><span>SUBTOTAL</span><strong>${moneyBR(subtotal)}</strong></div>
             <div class="linha"><span>DESCONTO</span><strong>${moneyBR(toMoney(desconto))}</strong></div>
-            <div class="linha final"><span>TOTAL</span><strong>${moneyBR(totalGeral)}</strong></div>
+            <div class="linha"><span>TAXA</span><strong>${moneyBR(valorTaxaCalculado)}</strong></div>
+            <div class="linha final"><span>TOTAL LÍQUIDO</span><strong>${moneyBR(valorLiquidoCalculado)}</strong></div>
           </div>
 
           <script>window.onload=function(){window.print();}</script>
@@ -722,8 +904,8 @@ export default function VendasPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
               <KpiMini titulo="ITENS" valor={String(itens.length)} />
               <KpiMini titulo="SUBTOTAL" valor={moneyBR(subtotal)} />
-              <KpiMini titulo="DESCONTO" valor={moneyBR(toMoney(desconto))} />
-              <KpiMini titulo="TOTAL" valor={moneyBR(totalGeral)} destaque />
+              <KpiMini titulo="TAXA" valor={moneyBR(valorTaxaCalculado)} />
+              <KpiMini titulo="LÍQUIDO" value={moneyBR(valorLiquidoCalculado)} destaque />
             </div>
           </div>
 
@@ -816,7 +998,14 @@ export default function VendasPage() {
                   <label className="label">FORMA DE PAGAMENTO</label>
                   <select
                     value={formaPagamento}
-                    onChange={(e) => setFormaPagamento(e.target.value)}
+                    onChange={(e) => {
+                      const novaForma = e.target.value;
+                      setFormaPagamento(novaForma);
+
+                      if (!isCartao(novaForma)) {
+                        setTaxaCartaoId("");
+                      }
+                    }}
                     className="campo bg-white"
                   >
                     <option>DINHEIRO</option>
@@ -849,6 +1038,43 @@ export default function VendasPage() {
                   </div>
                 </div>
               )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="label">CONTA FINANCEIRA</label>
+                  <select
+                    value={contaFinanceiraId}
+                    onChange={(e) => setContaFinanceiraId(e.target.value)}
+                    className="campo bg-white"
+                  >
+                    <option value="">SELECIONE A CONTA</option>
+                    {contasFinanceiras.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label">TAXA DE CARTÃO</label>
+                  <select
+                    value={taxaCartaoId}
+                    onChange={(e) => setTaxaCartaoId(e.target.value)}
+                    className="campo bg-white"
+                    disabled={!isCartao(formaPagamento)}
+                  >
+                    <option value="">
+                      {isCartao(formaPagamento) ? "SELECIONE A TAXA" : "NÃO SE APLICA"}
+                    </option>
+                    {taxasFiltradasPorForma.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nome} - {toMoney(t.taxa_percentual).toFixed(2)}%
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
               <div className="mt-4">
                 <div
@@ -1115,7 +1341,7 @@ export default function VendasPage() {
             </div>
 
             <div className="card">
-              <h2 className="section-title mb-4">FINANCEIRO BRUTO</h2>
+              <h2 className="section-title mb-4">FINANCEIRO INTEGRADO</h2>
 
               <div className="finance-box">
                 <div className="finance-line">
@@ -1140,23 +1366,40 @@ export default function VendasPage() {
                 </div>
 
                 <div className="finance-line">
+                  <span>CONTA</span>
+                  <strong>
+                    {contasFinanceiras.find((c) => c.id === contaFinanceiraId)?.nome || "-"}
+                  </strong>
+                </div>
+
+                <div className="finance-line">
+                  <span>TAXA</span>
+                  <strong>{moneyBR(valorTaxaCalculado)}</strong>
+                </div>
+
+                <div className="finance-line">
+                  <span>VALOR LÍQUIDO</span>
+                  <strong>{moneyBR(valorLiquidoCalculado)}</strong>
+                </div>
+
+                <div className="finance-line">
                   <span>STATUS FINANCEIRO</span>
                   <strong>{statusFinanceiroAtual}</strong>
                 </div>
 
                 <div className="finance-line">
                   <span>ENTRADA HOJE</span>
-                  <strong>{pagamentoImediato ? moneyBR(totalGeral) : moneyBR(0)}</strong>
+                  <strong>{pagamentoImediato ? moneyBR(valorLiquidoCalculado) : moneyBR(0)}</strong>
                 </div>
 
                 <div className="finance-line">
                   <span>FICA A RECEBER</span>
-                  <strong>{pagamentoImediato ? moneyBR(0) : moneyBR(totalGeral)}</strong>
+                  <strong>{pagamentoImediato ? moneyBR(0) : moneyBR(valorLiquidoCalculado)}</strong>
                 </div>
 
                 <div className="finance-total">
-                  <span>TOTAL GERAL</span>
-                  <strong>{moneyBR(totalGeral)}</strong>
+                  <span>TOTAL FINAL</span>
+                  <strong>{moneyBR(valorLiquidoCalculado)}</strong>
                 </div>
               </div>
             </div>

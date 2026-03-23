@@ -252,6 +252,19 @@ function calcularProximoNumero(lista: OrdemServico[]) {
   let melhorSufixo = "";
   let melhorTamanho = 6;
 
+  function calcularLiquidoComTaxa(valorBruto: number, taxaPercentual: number) {
+  const bruto = Number(valorBruto) || 0;
+  const taxa = Number(taxaPercentual) || 0;
+
+  const valorTaxa = bruto * (taxa / 100);
+  const valorLiquido = bruto - valorTaxa;
+
+  return {
+    valorTaxa,
+    valorLiquido,
+  };
+}
+
   for (const item of lista) {
     const info = extrairInfoNumero(item.numero || "");
     if (!info) continue;
@@ -363,8 +376,17 @@ function OrdensPageContent() {
   const [mostrarModalOS, setMostrarModalOS] = useState(false);
   const [modoModal, setModoModal] = useState<"NOVA" | "EDICAO">("NOVA");
 
+  const [contasFinanceiras, setContasFinanceiras] = useState<any[]>([]);
+const [taxasCartao, setTaxasCartao] = useState<any[]>([]);
+
+const [contaFinanceiraId, setContaFinanceiraId] = useState("");
+const [taxaCartaoId, setTaxaCartaoId] = useState("");
+
+const [valorTaxaCalculado, setValorTaxaCalculado] = useState(0);
+const [valorLiquidoCalculado, setValorLiquidoCalculado] = useState(0);
   useEffect(() => {
-    async function init() {
+    async function init() 
+    {
       const user = (await getSessionUser()) as SessionUser | null;
 
       if (!user) {
