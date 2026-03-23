@@ -6,6 +6,10 @@ import Sidebar from "@/app/components/Sidebar";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
+import {
+  buscarAssinaturaEmpresa,
+  resolverStatusAssinatura,
+} from "@/lib/assinatura";
 
 type Produto = {
   id: string;
@@ -139,6 +143,7 @@ export default function DashboardPage() {
 
   const [ready, setReady] = useState(false);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
+  const [statusAssinatura, setStatusAssinatura] = useState("");
 
   const [totalClientes, setTotalClientes] = useState(0);
   const [totalProdutos, setTotalProdutos] = useState(0);
@@ -154,6 +159,16 @@ export default function DashboardPage() {
 
       if (!user) {
         router.push("/login");
+        return;
+      }
+
+      const assinatura = await buscarAssinaturaEmpresa(user.empresa_id);
+      const status = resolverStatusAssinatura(assinatura);
+
+      setStatusAssinatura(status);
+
+      if (status === "BLOQUEADO" || status === "CANCELADO") {
+        router.push("/bloqueado");
         return;
       }
 
@@ -386,6 +401,14 @@ export default function DashboardPage() {
       <Sidebar />
 
       <main className="flex-1 p-6">
+        {(statusAssinatura === "VENCIDO" || statusAssinatura === "CARENCIA") && (
+          <div className="mb-6 rounded-2xl border border-yellow-300 bg-yellow-100 p-4 text-yellow-900 font-bold">
+            {statusAssinatura === "CARENCIA"
+              ? "ASSINATURA EM CARÊNCIA - REGULARIZE URGENTE"
+              : "ASSINATURA VENCIDA - ENTRE EM CONTATO"}
+          </div>
+        )}
+
         <div className="flex justify-between items-start mb-6 gap-4 flex-wrap">
           <div>
             <h1 className="text-[28px] font-black text-[#6C757D]">
