@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter } from "next/navigation";
-import { canAccess, isLogged } from "@/lib/authGuard";
+import { getSessionUser } from "@/lib/session";
 
 type CategoriaItem = {
   id: number;
@@ -112,19 +112,19 @@ export default function CategoriasPage() {
   const [status, setStatus] = useState<"ATIVO" | "INATIVO">("ATIVO");
 
   useEffect(() => {
-    if (!isLogged()) {
-      router.push("/login");
-      return;
+    async function init() {
+      const user = await getSessionUser();
+
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      setItens(readLS<CategoriaItem[]>(LS_CATEGORIAS, []));
+      setReady(true);
     }
 
-    if (!canAccess("CATEGORIAS")) {
-      alert("ACESSO NEGADO");
-      router.push("/dashboard");
-      return;
-    }
-
-    setItens(readLS<CategoriaItem[]>(LS_CATEGORIAS, []));
-    setReady(true);
+    init();
   }, [router]);
 
   const itensFiltrados = useMemo(() => {
