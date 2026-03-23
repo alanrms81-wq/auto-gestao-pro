@@ -1,39 +1,31 @@
 import { supabase } from "@/lib/supabase";
 
+export type AssinaturaEmpresa = {
+  id?: string;
+  empresa_id: string;
+  nome_empresa?: string;
+  responsavel?: string;
+  telefone?: string;
+  email?: string;
+  plano?: string;
+  valor_mensal?: number;
+  dia_vencimento?: number;
+  proximo_vencimento?: string;
+  status_assinatura?: string;
+  bloqueado?: boolean;
+  dias_carencia?: number;
+};
+
 export type AssinaturaStatus =
   | "ATIVO"
-  | "TESTE"
-  | "VENCIDO"
   | "CARENCIA"
+  | "VENCIDO"
   | "BLOQUEADO"
   | "CANCELADO";
 
-export type AssinaturaEmpresa = {
-  id: string;
-  empresa_id: string;
-  nome_empresa?: string | null;
-  plano?: string | null;
-  status_assinatura?: string | null;
-  bloqueado?: boolean | null;
-  proximo_vencimento?: string | null;
-  dias_carencia?: number | null;
-};
-
-function up(v: unknown) {
-  return String(v ?? "").toUpperCase();
-}
-
-function hojeISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDays(dateStr: string, days: number) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-export async function buscarAssinaturaEmpresa(empresaId: string) {
+export async function buscarAssinaturaEmpresa(
+  empresaId: string
+): Promise<AssinaturaEmpresa | null> {
   const { data, error } = await supabase
     .from("assinaturas")
     .select("*")
@@ -41,41 +33,31 @@ export async function buscarAssinaturaEmpresa(empresaId: string) {
     .maybeSingle();
 
   if (error) {
-    throw new Error(error.message);
+    console.error("ERRO AO BUSCAR ASSINATURA:", error.message);
+    return null;
   }
 
-  return (data || null) as AssinaturaEmpresa | null;
+  return data as AssinaturaEmpresa;
 }
 
 export function resolverStatusAssinatura(
   assinatura: AssinaturaEmpresa | null
 ): AssinaturaStatus {
-  if (!assinatura) return "BLOQUEADO";
+  if (!assinatura) return "CANCELADO";
 
-  const status = up(assinatura.status_assinatura);
-  const bloqueado = !!assinatura.bloqueado;
-  const vencimento = assinatura.proximo_vencimento || null;
-  const carencia = Number(assinatura.dias_carencia || 0);
-  const hoje = hojeISO();
+  if (assinatura.bloqueado) return "BLOQUEADO";
 
-  if (bloqueado) return "BLOQUEADO";
+  const status = String(assinatura.status_assinatura || "").toUpperCase();
+
   if (status === "CANCELADO") return "CANCELADO";
-  if (status === "TESTE") return "TESTE";
-  if (status === "ATIVO" && vencimento && vencimento >= hoje) return "ATIVO";
+  if (status === "TESTE") return "CARENCIA";
 
-  if (vencimento && vencimento < hoje) {
-    const fimCarencia = addDays(vencimento, carencia);
+  const hoje = new Date().toISOString().slice(0, 10);
+  const vencimento = assinatura.proximo_vencimento;
 
-    if (hoje <= fimCarencia) {
-      return "CARENCIA";
-    }
+  if (!vencimento) return "ATIVO";
 
-    return "BLOQUEADO";
-  }
-
-  if (status === "VENCIDO") return "VENCIDO";
-  if (status === "CARENCIA") return "CARENCIA";
-  if (status === "BLOQUEADO") return "BLOQUEADO";
+  if (vencimento < hoje) return "VENCIDO";
 
   return "ATIVO";
 }

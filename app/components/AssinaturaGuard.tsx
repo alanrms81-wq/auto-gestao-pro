@@ -8,7 +8,7 @@ import {
   resolverStatusAssinatura,
   type AssinaturaEmpresa,
   type AssinaturaStatus,
-} from "@/lib/assinaturas";
+} from "@/lib/assinatura";
 
 type Props = {
   children: React.ReactNode;
