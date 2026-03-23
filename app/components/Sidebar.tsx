@@ -15,7 +15,6 @@ type SessionUser = {
 type MenuItem = {
   label: string;
   href: string;
-  adminOnly?: boolean;
 };
 
 const MENU_PRINCIPAL: MenuItem[] = [
@@ -29,12 +28,17 @@ const MENU_PRINCIPAL: MenuItem[] = [
   { label: "ORDENS DE SERVIÇO", href: "/ordens" },
   { label: "VENDAS", href: "/vendas" },
   { label: "FINANCEIRO", href: "/financeiro" },
+  { label: "USUÁRIOS", href: "/usuarios" },
+
 ];
 
-const MENU_ADMIN: MenuItem[] = [
-  { label: "CONTAS FINANCEIRAS", href: "/contas-financeiras", adminOnly: true },
-  { label: "TAXAS DE CARTÃO", href: "/taxas-cartao", adminOnly: true },
-  { label: "PAINEL MASTER", href: "/painel-master", adminOnly: true },
+const MENU_ADMIN_EMPRESA: MenuItem[] = [
+  { label: "CONTAS FINANCEIRAS", href: "/contas-financeiras" },
+  { label: "TAXAS DE CARTÃO", href: "/taxas-cartao" },
+];
+
+const MENU_MASTER: MenuItem[] = [
+  { label: "PAINEL MASTER", href: "/painel-master" },
 ];
 
 export default function Sidebar() {
@@ -58,16 +62,17 @@ export default function Sidebar() {
     loadUser();
   }, []);
 
-  const isAdmin = useMemo(() => {
-    return String(sessionUser?.role || "").toUpperCase() === "ADMIN";
-  }, [sessionUser]);
+  const role = String(sessionUser?.role || "").toUpperCase();
+  const isAdminEmpresa = role === "ADMIN" || role === "MASTER";
+  const isMaster = role === "MASTER";
 
   const menuItems = useMemo(() => {
     return [
       ...MENU_PRINCIPAL,
-      ...(isAdmin ? MENU_ADMIN : []),
+      ...(isAdminEmpresa ? MENU_ADMIN_EMPRESA : []),
+      ...(isMaster ? MENU_MASTER : []),
     ];
-  }, [isAdmin]);
+  }, [isAdminEmpresa, isMaster]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -106,7 +111,7 @@ export default function Sidebar() {
               </div>
 
               <div className="mt-2 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-bold">
-                {isAdmin ? "ADMIN" : "OPERADOR"}
+                {isMaster ? "MASTER" : isAdminEmpresa ? "ADMIN" : "OPERADOR"}
               </div>
             </div>
 
@@ -155,13 +160,24 @@ export default function Sidebar() {
             })}
           </nav>
 
-          {isAdmin && !collapsed && (
+          {isAdminEmpresa && !collapsed && (
             <div className="mt-6 rounded-2xl border border-white/15 bg-white/10 p-4">
               <div className="text-[11px] font-black tracking-[0.12em] text-white/70">
                 ÁREA ADMIN
               </div>
               <div className="mt-2 text-[13px] font-semibold text-white">
-                CONTAS, TAXAS E PAINEL MASTER LIBERADOS.
+                CONTAS E TAXAS LIBERADAS.
+              </div>
+            </div>
+          )}
+
+          {isMaster && !collapsed && (
+            <div className="mt-4 rounded-2xl border border-white/15 bg-white/10 p-4">
+              <div className="text-[11px] font-black tracking-[0.12em] text-white/70">
+                ÁREA MASTER
+              </div>
+              <div className="mt-2 text-[13px] font-semibold text-white">
+                PAINEL MASTER LIBERADO.
               </div>
             </div>
           )}
