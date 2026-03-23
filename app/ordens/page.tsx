@@ -144,26 +144,58 @@ function moneyBR(v: number) {
   });
 }
 
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function hojeLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 function formatDateBr(value?: string | null) {
   if (!value) return "-";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-");
+    return `${d}/${m}/${y}`;
+  }
+
   const d = new Date(value);
   if (isNaN(d.getTime())) return String(value);
-  return d.toLocaleDateString("pt-BR");
+
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
 function formatDateTimeBr(value?: string | null) {
   if (!value) return "-";
+
   const d = new Date(value);
   if (isNaN(d.getTime())) return String(value);
-  return d.toLocaleString("pt-BR");
+
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(
+    d.getHours()
+  )}:${pad2(d.getMinutes())}`;
 }
 
-function hojeISO() {
-  return new Date().toISOString().slice(0, 10);
+function toDateTimeLocalInput(value?: string | null) {
+  if (!value) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return value;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value}T08:00`;
+
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "";
+
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(
+    d.getHours()
+  )}:${pad2(d.getMinutes())}`;
 }
 
-function agoraISO() {
-  return new Date().toISOString();
+function fromDateTimeLocalInput(value?: string | null) {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return `${value}:00`;
+  return value;
 }
 
 function makeLocalId() {
@@ -393,11 +425,9 @@ function OrdensPageContent() {
     const listaHistorico = (historicoResp.data || []) as OrdemServico[];
 
     setClientes(listaClientes);
-
     setServicosBase(
       listaServicos.filter((s) => normalizarTexto(s.status || "ATIVO") !== "INATIVO")
     );
-
     setHistorico(listaHistorico);
 
     if (!editingId) {
@@ -599,7 +629,7 @@ function OrdensPageContent() {
 
     setStatus(os.status || "ABERTA");
     setTecnico(os.tecnico_responsavel || "");
-    setPrazoData(os.prazo_data || "");
+    setPrazoData(toDateTimeLocalInput(os.prazo_data || ""));
     setGarantiaNumero(os.garantia_numero || "");
     setGarantiaTipo(os.garantia_tipo || "DIAS");
     setFormaPagamento(os.forma_pagamento || "DINHEIRO");
@@ -660,6 +690,10 @@ function OrdensPageContent() {
         setTecnico(agResp.tecnico_responsavel || "");
         setDefeitoRelatado(agResp.servico || "");
         setObservacoes(agResp.observacoes || "");
+
+        if (agResp.data_hora) {
+          setPrazoData(toDateTimeLocalInput(agResp.data_hora));
+        }
       }
     }
   }
@@ -884,7 +918,7 @@ function OrdensPageContent() {
       placa: up(placa),
       km: up(km),
       tecnico_responsavel: up(tecnico),
-      prazo_data: prazoData || null,
+      prazo_data: fromDateTimeLocalInput(prazoData),
       garantia_numero: up(garantiaNumero),
       garantia_tipo: up(garantiaTipo),
       forma_pagamento: up(formaPagamento),
@@ -1174,8 +1208,7 @@ function OrdensPageContent() {
 
       if (produtoBancoError) {
         alert(
-          `ERRO AO VALIDAR ESTOQUE DO PRODUTO ${prod.produto_nome || prod.nome || ""}: ` +
-            produtoBancoError.message
+          `ERRO AO VALIDAR ESTOQUE DO PRODUTO ${prod.produto_nome || prod.nome || ""}: ${produtoBancoError.message}`
         );
         return;
       }
@@ -1207,8 +1240,7 @@ function OrdensPageContent() {
 
       if (produtoBancoError) {
         alert(
-          `ERRO AO BAIXAR ESTOQUE DO PRODUTO ${prod.produto_nome || prod.nome || ""}: ` +
-            produtoBancoError.message
+          `ERRO AO BAIXAR ESTOQUE DO PRODUTO ${prod.produto_nome || prod.nome || ""}: ${produtoBancoError.message}`
         );
         return;
       }
@@ -1225,8 +1257,7 @@ function OrdensPageContent() {
 
       if (updateEstoqueError) {
         alert(
-          `ERRO AO ATUALIZAR ESTOQUE DO PRODUTO ${produtoBanco.nome || "-"}: ` +
-            updateEstoqueError.message
+          `ERRO AO ATUALIZAR ESTOQUE DO PRODUTO ${produtoBanco.nome || "-"}: ${updateEstoqueError.message}`
         );
         return;
       }
@@ -1245,9 +1276,9 @@ function OrdensPageContent() {
       desconto: 0,
       juros: 0,
       multa: 0,
-      data_emissao: hojeISO(),
-      data_vencimento: hojeISO(),
-      data_pagamento: pagamentoImediato ? hojeISO() : null,
+      data_emissao: hojeLocalISO(),
+      data_vencimento: hojeLocalISO(),
+      data_pagamento: pagamentoImediato ? hojeLocalISO() : null,
       forma_pagamento: up(item.forma_pagamento || ""),
       status: getStatusFinanceiro(item.forma_pagamento || ""),
       observacoes: up(`FATURAMENTO DA OS ${item.numero || ""}`),
@@ -1266,7 +1297,7 @@ function OrdensPageContent() {
       .from("ordens_servico")
       .update({
         faturado: true,
-        data_faturamento: hojeISO(),
+        data_faturamento: hojeLocalISO(),
         status:
           up(item.status || "") === "ABERTA" || up(item.status || "") === "EM ANDAMENTO"
             ? "FINALIZADA"
@@ -1689,7 +1720,7 @@ function OrdensPageContent() {
                         <div>
                           <label className="label">PRAZO</label>
                           <input
-                            type="date"
+                            type="datetime-local"
                             className="campo"
                             value={prazoData}
                             onChange={(e) => setPrazoData(e.target.value)}
@@ -2093,7 +2124,7 @@ function OrdensPageContent() {
                         </div>
                         <div className="resumo-linha">
                           <span>PRAZO</span>
-                          <strong>{prazoData ? formatDateBr(prazoData) : "-"}</strong>
+                          <strong>{prazoData ? formatDateTimeBr(fromDateTimeLocalInput(prazoData)) : "-"}</strong>
                         </div>
                         <div className="resumo-linha">
                           <span>GARANTIA</span>
@@ -2174,7 +2205,7 @@ function OrdensPageContent() {
 
                       <textarea
                         className="campo-textarea"
-                        placeholder="DESCREVA O SERVIÇO, DEFEITO, CONDIÇÕES DE ENTRADA, TESTES, PEÇAS TROCADAS..."
+                        placeholder="DESCREVA O SERVIÇO, DEFEITO, CONDIÇÕES, PEÇAS, TESTES, ORIENTAÇÕES..."
                         value={observacoes}
                         onChange={(e) => setObservacoes(e.target.value)}
                       />
@@ -2185,6 +2216,7 @@ function OrdensPageContent() {
             </div>
           </div>
         )}
+
       </main>
 
       <style jsx>{`
@@ -2309,11 +2341,6 @@ function OrdensPageContent() {
           color: #b91c1c;
         }
 
-        .botao-mini:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-        }
-
         .botao-header {
           border: 1px solid rgba(255, 255, 255, 0.45);
           background: rgba(255, 255, 255, 0.12);
@@ -2366,7 +2393,7 @@ function OrdensPageContent() {
 
         .dropdown {
           position: absolute;
-          z-index: 30;
+          z-index: 20;
           width: 100%;
           border-radius: 16px;
           border: 1px solid #dbe4ee;
@@ -2528,73 +2555,73 @@ function OrdensPageContent() {
         .modal-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(15, 23, 42, 0.55);
-          backdrop-filter: blur(4px);
-          z-index: 80;
+          z-index: 999;
+          background: rgba(15, 23, 42, 0.65);
+          padding: 18px;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 18px;
         }
 
         .modal-os {
           width: min(1500px, 100%);
-          max-height: 95vh;
-          overflow: hidden;
-          border-radius: 28px;
+          height: calc(100vh - 36px);
           background: #f4f6f8;
-          box-shadow: 0 30px 80px rgba(15, 23, 42, 0.35);
-          border: 1px solid rgba(255, 255, 255, 0.25);
+          border-radius: 28px;
+          overflow: hidden;
           display: flex;
           flex-direction: column;
+          box-shadow: 0 30px 80px rgba(2, 8, 23, 0.35);
         }
 
         .modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 16px;
-          padding: 22px 24px 12px;
           background: linear-gradient(135deg, #0456a3 0%, #0a6fd6 100%);
           color: white;
+          padding: 20px 22px;
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
         }
 
         .modal-kicker {
           font-size: 12px;
-          font-weight: 800;
+          font-weight: 900;
           letter-spacing: 0.2em;
           opacity: 0.8;
         }
 
         .modal-title {
-          margin-top: 8px;
+          margin-top: 6px;
           font-size: 28px;
           font-weight: 900;
           line-height: 1;
         }
 
         .fechar-modal {
-          border: none;
           width: 42px;
           height: 42px;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.16);
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.24);
+          background: rgba(255, 255, 255, 0.14);
           color: white;
-          font-size: 20px;
+          font-size: 18px;
           font-weight: 900;
         }
 
         .modal-actions-top {
+          padding: 14px 22px;
+          background: white;
+          border-bottom: 1px solid #e2e8f0;
           display: flex;
-          flex-wrap: wrap;
           gap: 10px;
-          padding: 14px 24px 0;
-          background: #f4f6f8;
+          flex-wrap: wrap;
         }
 
         .modal-body {
+          flex: 1;
           overflow: auto;
-          padding: 20px 24px 24px;
+          padding: 22px;
         }
 
         @media (max-width: 1279px) {
@@ -2602,8 +2629,8 @@ function OrdensPageContent() {
             position: static;
           }
 
-          .modal-title {
-            font-size: 22px;
+          .modal-os {
+            height: calc(100vh - 20px);
           }
         }
       `}</style>
