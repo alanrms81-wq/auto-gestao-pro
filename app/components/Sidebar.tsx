@@ -1,110 +1,182 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
 
 type SessionUser = {
   nome?: string | null;
   role?: string | null;
+  empresa_id?: string | null;
 };
 
 type MenuItem = {
-  nome: string;
-  rota: string;
+  label: string;
+  href: string;
+  adminOnly?: boolean;
 };
+
+const MENU_PRINCIPAL: MenuItem[] = [
+  { label: "DASHBOARD", href: "/dashboard" },
+  { label: "CLIENTES", href: "/clientes" },
+  { label: "VEÍCULOS", href: "/veiculos" },
+  { label: "PRODUTOS", href: "/produtos" },
+  { label: "CATEGORIAS", href: "/categorias" },
+  { label: "SERVIÇOS", href: "/servicos" },
+  { label: "AGENDAMENTOS", href: "/agendamentos" },
+  { label: "ORDENS DE SERVIÇO", href: "/ordens" },
+  { label: "VENDAS", href: "/vendas" },
+  { label: "FINANCEIRO", href: "/financeiro" },
+];
+
+const MENU_ADMIN: MenuItem[] = [
+  { label: "CONTAS FINANCEIRAS", href: "/contas-financeiras", adminOnly: true },
+  { label: "TAXAS DE CARTÃO", href: "/taxas-cartao", adminOnly: true },
+  { label: "PAINEL MASTER", href: "/painel-master", adminOnly: true },
+];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<SessionUser | null>(null);
+
+  const [collapsed, setCollapsed] = useState(false);
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
 
   useEffect(() => {
     async function loadUser() {
-      const sessionUser = await getSessionUser();
-      setUser(sessionUser);
+      try {
+        const user = (await getSessionUser()) as SessionUser | null;
+        setSessionUser(user);
+      } finally {
+        setLoadingUser(false);
+      }
     }
+
     loadUser();
   }, []);
 
-  const menu: MenuItem[] = [
-    { nome: "DASHBOARD", rota: "/dashboard" },
-    { nome: "CLIENTES", rota: "/clientes" },
-    { nome: "AGENDAMENTOS", rota: "/agendamentos" },
-    { nome: "ORDEM DE SERVIÇO", rota: "/ordens" },
-    { nome: "PRODUTOS", rota: "/produtos" },
-    { nome: "CATEGORIAS", rota: "/categorias" },
-    { nome: "SERVIÇOS", rota: "/servicos" },
-    { nome: "FORNECEDORES", rota: "/fornecedores" },
-    { nome: "VENDAS", rota: "/vendas" },
-    { nome: "FINANCEIRO", rota: "/financeiro" },
-    { nome: "USUÁRIOS", rota: "/usuarios" },
-    { nome: "CONFIGURAÇÕES", rota: "/configuracoes" },
-    { nome: "BACKUP", rota: "/configuracoes/backup" },
-  ];
+  const isAdmin = useMemo(() => {
+    return String(sessionUser?.role || "").toUpperCase() === "ADMIN";
+  }, [sessionUser]);
 
-  function isActive(rota: string) {
-    return pathname === rota || pathname.startsWith(`${rota}/`);
-  }
+  const menuItems = useMemo(() => {
+    return [
+      ...MENU_PRINCIPAL,
+      ...(isAdmin ? MENU_ADMIN : []),
+    ];
+  }, [isAdmin]);
 
-  async function sair() {
+  async function handleLogout() {
     await supabase.auth.signOut();
     router.push("/login");
-    router.refresh();
+  }
+
+  function isActive(href: string) {
+    if (href === "/dashboard") {
+      return pathname === "/dashboard";
+    }
+    return pathname === href || pathname.startsWith(`${href}/`);
   }
 
   return (
-    <aside className="w-[260px] min-h-screen bg-[#0456A3] text-white flex flex-col justify-between shrink-0">
-      <div>
-        <div className="px-6 pt-8 pb-4">
-          <h1 className="text-[28px] font-black leading-[30px] text-white">
-            AUTO GESTÃO <br /> PRÓ
-          </h1>
+    <aside
+      className={`h-screen sticky top-0 border-r border-[#D8E1EA] bg-[#0456A3] text-white transition-all duration-300 ${
+        collapsed ? "w-[86px]" : "w-[290px]"
+      }`}
+    >
+      <div className="flex h-full flex-col">
+        <div className="border-b border-white/15 px-4 py-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className={`${collapsed ? "hidden" : "block"}`}>
+              <div className="text-[11px] font-black tracking-[0.18em] text-white/75">
+                AUTO GESTÃO PRO
+              </div>
+              <div className="mt-2 text-[22px] font-black leading-none">
+                MENU
+              </div>
+              <div className="mt-3 text-[12px] text-white/75">
+                {loadingUser
+                  ? "CARREGANDO..."
+                  : sessionUser?.nome
+                  ? `USUÁRIO: ${String(sessionUser.nome).toUpperCase()}`
+                  : "USUÁRIO LOGADO"}
+              </div>
 
-          <div className="mt-8">
-            <p className="text-[14px] font-semibold text-white">
-              {String(user?.nome || "USUÁRIO").toUpperCase()}
-            </p>
-            <p className="text-[14px] text-white/90 mt-1">
-              {String(user?.role || "").toUpperCase() || "ADMIN"}
-            </p>
+              <div className="mt-2 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-bold">
+                {isAdmin ? "ADMIN" : "OPERADOR"}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCollapsed((v) => !v)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/10 hover:bg-white/15"
+              title={collapsed ? "Expandir menu" : "Recolher menu"}
+            >
+              <span className="text-lg font-black">{collapsed ? "»" : "«"}</span>
+            </button>
           </div>
         </div>
 
-        <nav className="px-4 mt-6 flex flex-col gap-2">
-          {menu.map((item) => {
-            const ativo = isActive(item.rota);
+        <div className="flex-1 overflow-y-auto px-3 py-4">
+          <div className="mb-3 px-3 text-[10px] font-black tracking-[0.16em] text-white/60">
+            {!collapsed ? "NAVEGAÇÃO" : "•"}
+          </div>
 
-            return (
-              <Link
-                key={item.rota}
-                href={item.rota}
-                className={[
-                  "block rounded-[22px] px-6 py-3 text-[16px] font-bold transition-colors duration-150",
-                  ativo
-                    ? "!bg-white !text-[#0456A3] shadow-sm"
-                    : "!text-white hover:bg-white/10",
-                ].join(" ")}
-              >
-                <span className={ativo ? "!text-[#0456A3]" : "!text-white"}>
-                  {item.nome}
-                </span>
-              </Link>
-            );
-          })}
-        </nav>
-      </div>
+          <nav className="space-y-1">
+            {menuItems.map((item) => {
+              const active = isActive(item.href);
 
-      <div className="p-4">
-        <button
-          onClick={sair}
-          className="w-full rounded-xl bg-white py-3 font-bold text-[#0456A3] transition hover:opacity-90"
-          type="button"
-        >
-          SAIR
-        </button>
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`group flex min-h-[48px] items-center gap-3 rounded-2xl px-3 py-3 text-[13px] font-bold transition-all ${
+                    active
+                      ? "bg-white text-[#0456A3] shadow-[0_8px_24px_rgba(0,0,0,0.14)]"
+                      : "text-white hover:bg-white/12"
+                  }`}
+                  title={collapsed ? item.label : undefined}
+                >
+                  <span
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                      active ? "bg-[#0456A3]" : "bg-white/70"
+                    }`}
+                  />
+
+                  {!collapsed && (
+                    <span className="leading-tight">{item.label}</span>
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
+
+          {isAdmin && !collapsed && (
+            <div className="mt-6 rounded-2xl border border-white/15 bg-white/10 p-4">
+              <div className="text-[11px] font-black tracking-[0.12em] text-white/70">
+                ÁREA ADMIN
+              </div>
+              <div className="mt-2 text-[13px] font-semibold text-white">
+                CONTAS, TAXAS E PAINEL MASTER LIBERADOS.
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-white/15 p-3">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-3 py-3 text-[13px] font-black text-white hover:bg-white/15"
+          >
+            <span className="text-base">⎋</span>
+            {!collapsed && <span>SAIR</span>}
+          </button>
+        </div>
       </div>
     </aside>
   );
