@@ -905,8 +905,7 @@ export default function VendasPage() {
               <KpiMini titulo="ITENS" valor={String(itens.length)} />
               <KpiMini titulo="SUBTOTAL" valor={moneyBR(subtotal)} />
               <KpiMini titulo="TAXA" valor={moneyBR(valorTaxaCalculado)} />
-              <KpiMini titulo="LÍQUIDO" value={moneyBR(valorLiquidoCalculado)} destaque />
-            </div>
+<KpiMini titulo="LÍQUIDO" valor={moneyBR(valorLiquidoCalculado)} destaque />            </div>
           </div>
 
           <div className="mt-5 flex gap-3 flex-wrap">
