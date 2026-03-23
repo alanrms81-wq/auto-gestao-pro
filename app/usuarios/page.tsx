@@ -42,6 +42,8 @@ const MODULOS = [
   "RELATORIOS",
   "USUARIOS",
   "CONFIGURACOES",
+  "CONTAS_FINANCEIRAS",
+  "TAXAS_CARTAO",
 ];
 
 function up(v: unknown) {
@@ -97,12 +99,15 @@ function aplicarPerfilPadrao(perfil: string): Permissao[] {
       "SERVICOS",
       "ORDENS",
       "VENDAS",
-      "FINANCEIRO",
       "ESTOQUE",
       "RELATORIOS",
     ].forEach((m) => liberar(m, true, true, true, false));
+
+    liberar("FINANCEIRO", true, false, false, false);
     liberar("USUARIOS", true, false, false, false);
     liberar("CONFIGURACOES", true, false, false, false);
+    liberar("CONTAS_FINANCEIRAS", false, false, false, false);
+    liberar("TAXAS_CARTAO", false, false, false, false);
     return base;
   }
 
@@ -134,6 +139,8 @@ function aplicarPerfilPadrao(perfil: string): Permissao[] {
     liberar("VENDAS", true, false, false, false);
     liberar("ORDENS", true, false, false, false);
     liberar("CLIENTES", true, false, false, false);
+    liberar("CONTAS_FINANCEIRAS", false, false, false, false);
+    liberar("TAXAS_CARTAO", false, false, false, false);
     return base;
   }
 
@@ -229,7 +236,10 @@ export default function UsuariosPage() {
           atualizado.pode_excluir = false;
         }
 
-        if ((campo === "pode_criar" || campo === "pode_editar" || campo === "pode_excluir") && valor) {
+        if (
+          (campo === "pode_criar" || campo === "pode_editar" || campo === "pode_excluir") &&
+          valor
+        ) {
           atualizado.pode_ver = true;
         }
 
@@ -532,21 +542,27 @@ export default function UsuariosPage() {
                       <input
                         type="checkbox"
                         checked={p.pode_criar}
-                        onChange={(e) => atualizarPermissao(p.modulo, "pode_criar", e.target.checked)}
+                        onChange={(e) =>
+                          atualizarPermissao(p.modulo, "pode_criar", e.target.checked)
+                        }
                       />
                     </td>
                     <td>
                       <input
                         type="checkbox"
                         checked={p.pode_editar}
-                        onChange={(e) => atualizarPermissao(p.modulo, "pode_editar", e.target.checked)}
+                        onChange={(e) =>
+                          atualizarPermissao(p.modulo, "pode_editar", e.target.checked)
+                        }
                       />
                     </td>
                     <td>
                       <input
                         type="checkbox"
                         checked={p.pode_excluir}
-                        onChange={(e) => atualizarPermissao(p.modulo, "pode_excluir", e.target.checked)}
+                        onChange={(e) =>
+                          atualizarPermissao(p.modulo, "pode_excluir", e.target.checked)
+                        }
                       />
                     </td>
                   </tr>
