@@ -7,8 +7,20 @@ import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
 
 type SessionUser = {
+  id?: string;
   empresa_id: string;
   role?: string | null;
+};
+
+type UsuarioPermissao = {
+  id?: string;
+  empresa_id?: string;
+  usuario_id?: string;
+  modulo: string;
+  pode_ver: boolean;
+  pode_criar: boolean;
+  pode_editar: boolean;
+  pode_excluir: boolean;
 };
 
 type TaxaCartao = {
@@ -39,6 +51,14 @@ function percentBR(v: number) {
   })}%`;
 }
 
+function normalizarModulo(modulo?: string | null) {
+  return String(modulo || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
+}
+
 export default function TaxasCartaoPage() {
   const router = useRouter();
 
@@ -67,9 +87,39 @@ export default function TaxasCartaoPage() {
         return;
       }
 
-      const isAdmin = String(user.role || "").toUpperCase() === "ADMIN";
+      const role = String(user.role || "").toUpperCase();
+      const isMaster = role === "MASTER";
+      const isAdmin = role === "ADMIN";
 
-      if (!isAdmin) {
+      if (isMaster || isAdmin) {
+        setEmpresaId(user.empresa_id);
+        await carregarBase(user.empresa_id);
+        setReady(true);
+        return;
+      }
+
+      if (!user.id || !user.empresa_id) {
+        router.push("/dashboard");
+        return;
+      }
+
+      const { data: permissoes, error } = await supabase
+        .from("usuarios_permissoes")
+        .select("*")
+        .eq("empresa_id", user.empresa_id)
+        .eq("usuario_id", user.id);
+
+      if (error) {
+        router.push("/dashboard");
+        return;
+      }
+
+      const podeVer = (permissoes || []).some(
+        (p: UsuarioPermissao) =>
+          normalizarModulo(p.modulo) === "TAXAS_CARTAO" && p.pode_ver
+      );
+
+      if (!podeVer) {
         router.push("/dashboard");
         return;
       }
