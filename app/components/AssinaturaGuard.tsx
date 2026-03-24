@@ -78,18 +78,21 @@ export default function AssinaturaGuard({ children }: Props) {
         const role = String(user.role || "").toUpperCase();
         const isMaster = role === "MASTER";
 
-        // MASTER nunca passa por bloqueio de assinatura
+        // MASTER nunca pode cair em /bloqueado
         if (isMaster) {
+          if (pathname === "/bloqueado") {
+            router.push("/dashboard");
+            return;
+          }
+
           setLiberado(true);
-          setLoading(false);
           return;
         }
 
-        // páginas livres
         const rotasLivres = ["/login", "/registro", "/reset-password", "/bloqueado"];
+
         if (rotasLivres.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`))) {
           setLiberado(true);
-          setLoading(false);
           return;
         }
 

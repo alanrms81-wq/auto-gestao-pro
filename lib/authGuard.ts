@@ -1,40 +1,107 @@
-export type Role = "ADMIN" | "FUNCIONARIO";
+"use client";
 
-export type SessionUser = {
-  ok: true;
-  id: number;
-  usuario: string;
-  nome: string;
-  role: Role;
-  privilegios?: string[];
+type Permissao = {
+  modulo?: string;
+  pode_ver?: boolean;
+  pode_criar?: boolean;
+  pode_editar?: boolean;
+  pode_excluir?: boolean;
 };
 
-export function getSession(): SessionUser | null {
-  if (typeof window === "undefined") return null;
+type UsuarioCache = {
+  id?: string;
+  nome?: string | null;
+  email?: string | null;
+  role?: string | null;
+  perfil?: string | null;
+  empresa_id?: string | null;
+  permissoes?: Permissao[] | Record<string, boolean>;
+};
 
+function normalizarTexto(v: unknown) {
+  return String(v || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
+}
+
+function readJson<T>(key: string): T | null {
   try {
-    const raw = localStorage.getItem("sessionUser");
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
-
-    return JSON.parse(raw);
+    return JSON.parse(raw) as T;
   } catch {
     return null;
   }
 }
 
-export function isLogged() {
-  const session = getSession();
-  return !!session;
+function getCachedUser(): UsuarioCache | null {
+  const candidatos = [
+    "sessionUser",
+    "session_user",
+    "user",
+    "usuario",
+    "usuario_logado",
+    "auth_user",
+  ];
+
+  for (const key of candidatos) {
+    const data = readJson<UsuarioCache>(key);
+    if (data) return data;
+  }
+
+  return null;
 }
 
-export function canAccess(privilegio: string) {
-  const session = getSession();
+export function isLogged() {
+  const user = getCachedUser();
+  return !!user;
+}
 
-  if (!session) return false;
+export function getRole() {
+  const user = getCachedUser();
+  return normalizarTexto(user?.role || user?.perfil || "");
+}
 
-  if (session.role === "ADMIN") return true;
+export function isMaster() {
+  return getRole() === "MASTER";
+}
 
-  const privs = session.privilegios || [];
+export function isAdmin() {
+  const role = getRole();
+  return role === "ADMIN" || role === "MASTER";
+}
 
-  return privs.includes(privilegio);
+export function canAccess(modulo: string) {
+  const user = getCachedUser();
+
+  if (!user) return false;
+
+  const role = normalizarTexto(user.role || user.perfil || "");
+
+  // MASTER entra em tudo
+  if (role === "MASTER") return true;
+
+  // ADMIN entra em tudo da empresa
+  if (role === "ADMIN") return true;
+
+  const moduloNormalizado = normalizarTexto(modulo);
+
+  // caso permissoes venha como array
+  if (Array.isArray(user.permissoes)) {
+    const permissao = user.permissoes.find(
+      (p) => normalizarTexto(p.modulo) === moduloNormalizado
+    );
+
+    return !!permissao?.pode_ver;
+  }
+
+  // caso permissoes venha como objeto
+  if (user.permissoes && typeof user.permissoes === "object") {
+    const mapa = user.permissoes as Record<string, boolean>;
+    return !!mapa[moduloNormalizado];
+  }
+
+  return false;
 }
