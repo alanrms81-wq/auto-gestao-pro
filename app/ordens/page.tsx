@@ -282,7 +282,7 @@ function scoreSearch(haystack: string, query: string) {
   return score;
 }
 
-export default function OrdensPage() {
+ 
   const router = useRouter();
 
   export default function OrdensPage()
