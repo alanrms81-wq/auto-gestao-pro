@@ -153,32 +153,43 @@ export default function DashboardPage() {
   const [titulos, setTitulos] = useState<FinanceiroTitulo[]>([]);
   const [movsEstoque, setMovsEstoque] = useState<MovimentacaoEstoque[]>([]);
 
-  useEffect(() => {
-    async function init() {
-      const user = await getSessionUser();
+ useEffect(() => {
+  async function init() {
+    const user = await getSessionUser();
 
-      if (!user) {
-        router.push("/login");
-        return;
-      }
+    if (!user) {
+      router.push("/login");
+      return;
+    }
 
-      const assinatura = await buscarAssinaturaEmpresa(user.empresa_id);
-      const status = resolverStatusAssinatura(assinatura);
+    const role = String(user.role || "").toUpperCase();
+    const isMaster = role === "MASTER";
 
-      setStatusAssinatura(status);
-
-      if (status === "BLOQUEADO" || status === "CANCELADO") {
-        router.push("/bloqueado");
-        return;
-      }
-
+    // 🔥 MASTER IGNORA BLOQUEIO
+    if (isMaster) {
       setEmpresaId(user.empresa_id);
       await carregarBase(user.empresa_id);
       setReady(true);
+      return;
     }
 
-    init();
-  }, [router]);
+    const assinatura = await buscarAssinaturaEmpresa(user.empresa_id);
+    const status = resolverStatusAssinatura(assinatura);
+
+    setStatusAssinatura(status);
+
+    if (status === "BLOQUEADO" || status === "CANCELADO") {
+      router.push("/bloqueado");
+      return;
+    }
+
+    setEmpresaId(user.empresa_id);
+    await carregarBase(user.empresa_id);
+    setReady(true);
+  }
+
+  init();
+}, [router]);
 
   async function carregarBase(empId: string) {
     const [
