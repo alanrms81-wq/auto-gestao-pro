@@ -204,7 +204,7 @@ function normalizarTipoProduto(v?: string | null) {
   return up(v || "SIMPLES");
 }
 
-function normalizeText(v: unknown) {
+ function normalizeText(v: unknown) {
   return String(v ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -214,15 +214,81 @@ function normalizeText(v: unknown) {
 
 function tokenize(v: string) {
   return normalizeText(v)
-    .split(/\s+/)
+    .split(/[\s\-_/.,;:()]+/)
     .filter(Boolean);
 }
 
-function matchTokens(haystack: string, query: string) {
+function uniqueTokens(tokens: string[]) {
+  return [...new Set(tokens.filter(Boolean))];
+}
+
+function expandToken(token: string) {
+  const t = normalizeText(token);
+
+  const mapa: Record<string, string[]> = {
+    VW: ["VOLKSWAGEN"],
+    VOLKS: ["VOLKSWAGEN"],
+    GM: ["CHEVROLET"],
+    CHEV: ["CHEVROLET"],
+    MERCEDES: ["MB", "MERCEDESBENZ"],
+    BENZ: ["MERCEDES", "MERCEDESBENZ"],
+    FIAT: [],
+    FORD: [],
+    GOL: [],
+    FOX: [],
+    PALIO: [],
+    UNO: [],
+    CORSA: [],
+    CELTA: [],
+    CIVIC: [],
+    FIT: [],
+    HB20: ["HYUNDAI"],
+    ONIX: ["CHEVROLET"],
+    ARGO: ["FIAT"],
+    STRADA: ["FIAT"],
+    SAVEIRO: ["VOLKSWAGEN", "VW"],
+    G5: ["GERACAO5", "GOLG5"],
+    G6: ["GERACAO6", "GOLG6"],
+    G7: ["GERACAO7", "GOLG7"],
+  };
+
+  return uniqueTokens([t, ...(mapa[t] || [])]);
+}
+
+function buildSearchTokens(query: string) {
+  const base = tokenize(query);
+  const expandido = base.flatMap(expandToken);
+  return uniqueTokens(expandido);
+}
+
+function scoreSearch(haystack: string, query: string) {
   const h = normalizeText(haystack);
-  const tokens = tokenize(query);
+  const tokens = buildSearchTokens(query);
+
+  if (!tokens.length) return 0;
+
+  let score = 0;
+
+  for (const token of tokens) {
+    if (h.includes(token)) score += 1;
+  }
+
+  const original = normalizeText(query);
+  if (original && h.includes(original)) score += 3;
+
+  const joined = tokens.join(" ");
+  if (joined && h.includes(joined)) score += 2;
+
+  return score;
+}
+
+function matchSmart(haystack: string, query: string) {
+  const tokens = buildSearchTokens(query);
   if (!tokens.length) return true;
-  return tokens.every((t) => h.includes(t));
+
+  const h = normalizeText(haystack);
+
+  return tokens.every((t) => h.includes(t) || tokens.filter((x) => x === t).length > 1);
 }
 
 export default function OrdensPage() {
@@ -418,27 +484,54 @@ export default function OrdensPage() {
     setOpenClientes(false);
   }
 
-  const produtosEncontrados = useMemo(() => {
-    return produtos
-      .filter((p) => up(p.status || "ATIVO") !== "INATIVO")
-      .filter((p) => {
-        if (!produtoBusca.trim()) return false;
+ const produtosEncontrados = useMemo(() => {
+  const q = produtoBusca.trim();
 
-        const haystack = [
-          p.nome,
-          p.codigo_sku,
-          p.codigo_barras,
-          p.categoria,
-          p.subcategoria,
-          p.tipo_produto,
-        ]
-          .filter(Boolean)
-          .join(" ");
+  if (!q) return [];
 
-        return matchTokens(haystack, produtoBusca);
-      })
-      .slice(0, 30);
-  }, [produtos, produtoBusca]);
+  return produtos
+    .filter((p) => up(p.status || "ATIVO") !== "INATIVO")
+    .map((p) => {
+      const nome = normalizeText(p.nome || "");
+      const categoria = normalizeText(p.categoria || "");
+      const subcategoria = normalizeText(p.subcategoria || "");
+      const sku = normalizeText(p.codigo_sku || "");
+      const barras = normalizeText(p.codigo_barras || "");
+      const tipo = normalizeText(p.tipo_produto || "");
+
+      // tenta separar montadora / modelo / geração do nome
+      const aliases = [
+        nome,
+        categoria,
+        subcategoria,
+        sku,
+        barras,
+        tipo,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      const score = scoreSearch(aliases, q);
+
+      return {
+        ...p,
+        __score: score,
+        __haystack: aliases,
+      };
+    })
+    .filter((p: any) => p.__score > 0 && matchSmart(p.__haystack, q))
+    .sort((a: any, b: any) => {
+      if (b.__score !== a.__score) return b.__score - a.__score;
+
+      const estoqueA = toMoney(a.estoque_atual);
+      const estoqueB = toMoney(b.estoque_atual);
+
+      if (estoqueB !== estoqueA) return estoqueB - estoqueA;
+
+      return String(a.nome || "").localeCompare(String(b.nome || ""));
+    })
+    .slice(0, 40);
+}, [produtos, produtoBusca]);
 
   function adicionarProduto(produto: Produto) {
     const preco = getPrecoPadraoProduto(produto);
