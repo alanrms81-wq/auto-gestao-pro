@@ -41,8 +41,21 @@ type Produto = {
   preco_instalacao?: number | null;
   preco_revenda?: number | null;
   estoque_atual?: number | null;
+  estoque_minimo?: number | null;
   controla_estoque?: boolean | null;
   status?: string | null;
+  tipo_produto?: string | null;
+  unidade_medida?: string | null;
+  controla_composicao?: boolean | null;
+};
+
+type ProdutoComposicao = {
+  id?: string;
+  produto_pai_id?: string;
+  produto_item_id: string;
+  quantidade: number;
+  unidade_medida?: string | null;
+  observacoes?: string | null;
 };
 
 type Venda = {
@@ -65,6 +78,8 @@ type VendaItem = {
   total: number;
   estoqueAtual?: number;
   controlaEstoque?: boolean;
+  tipoProduto?: string;
+  unidadeMedida?: string;
 };
 
 type ContaFinanceira = {
@@ -191,6 +206,10 @@ function calcularLiquidoComTaxa(valorBruto: number, taxaPercentual: number) {
   };
 }
 
+function normalizarTipoProduto(v?: string | null) {
+  return up(v || "SIMPLES");
+}
+
 /* =========================
    COMPONENTE
 ========================= */
@@ -247,9 +266,11 @@ export default function VendasPage() {
         return;
       }
 
-      const isAdmin = String(user.role || "").toUpperCase() === "ADMIN";
+      const role = String(user.role || "").toUpperCase();
+      const isMaster = role === "MASTER";
+      const isAdmin = role === "ADMIN";
 
-      if (!isAdmin && !canAccess("VENDAS")) {
+      if (!isMaster && !isAdmin && !canAccess("VENDAS")) {
         alert("ACESSO NEGADO");
         router.push("/dashboard");
         return;
@@ -291,7 +312,7 @@ export default function VendasPage() {
       supabase
         .from("produtos")
         .select(
-          "id,nome,codigo_sku,codigo_barras,categoria,subcategoria,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status"
+          "id,nome,codigo_sku,codigo_barras,categoria,subcategoria,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,estoque_minimo,controla_estoque,status,tipo_produto,unidade_medida,controla_composicao"
         )
         .eq("empresa_id", empId)
         .order("nome"),
@@ -419,7 +440,7 @@ export default function VendasPage() {
     const { data, error } = await supabase
       .from("produtos")
       .select(
-        "id,nome,codigo_sku,codigo_barras,categoria,subcategoria,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,controla_estoque,status"
+        "id,nome,codigo_sku,codigo_barras,categoria,subcategoria,preco_balcao,preco_instalacao,preco_revenda,estoque_atual,estoque_minimo,controla_estoque,status,tipo_produto,unidade_medida,controla_composicao"
       )
       .eq("empresa_id", empresaId)
       .or(
@@ -464,6 +485,8 @@ export default function VendasPage() {
         total: preco,
         estoqueAtual: toMoney(produto.estoque_atual),
         controlaEstoque: !!produto.controla_estoque,
+        tipoProduto: produto.tipo_produto || "SIMPLES",
+        unidadeMedida: produto.unidade_medida || "UN",
       },
     ]);
 
@@ -613,6 +636,168 @@ export default function VendasPage() {
   }, [formaPagamento, taxasCartao]);
 
   /* =========================
+     COMPOSIÇÃO / ESTOQUE
+  ========================= */
+
+  async function buscarComposicaoProduto(produtoPaiId: string) {
+    if (!empresaId) return [];
+
+    const { data, error } = await supabase
+      .from("produtos_composicao")
+      .select("id,produto_pai_id,produto_item_id,quantidade,unidade_medida,observacoes")
+      .eq("empresa_id", empresaId)
+      .eq("produto_pai_id", produtoPaiId);
+
+    if (error) {
+      throw new Error("ERRO AO CARREGAR COMPOSIÇÃO DO PRODUTO.");
+    }
+
+    return (data || []) as ProdutoComposicao[];
+  }
+
+  async function validarEstoqueItemVenda(item: VendaItem) {
+    if (!empresaId || !item.produtoId) return;
+
+    const produto = produtos.find((p) => p.id === item.produtoId);
+
+    if (!produto) {
+      throw new Error(`PRODUTO NÃO ENCONTRADO: ${item.nome}`);
+    }
+
+    const tipo = normalizarTipoProduto(produto.tipo_produto);
+
+    if (tipo !== "COMPOSTO") {
+      if (produto.controla_estoque && toMoney(produto.estoque_atual) < toMoney(item.quantidade)) {
+        throw new Error(`ESTOQUE INSUFICIENTE PARA ${produto.nome}.`);
+      }
+      return;
+    }
+
+    const composicao = await buscarComposicaoProduto(produto.id);
+
+    if (composicao.length === 0) {
+      throw new Error(`O PRODUTO COMPOSTO ${produto.nome} NÃO TEM COMPOSIÇÃO CADASTRADA.`);
+    }
+
+    const idsComponentes = composicao.map((c) => c.produto_item_id);
+
+    const { data: componentes, error } = await supabase
+      .from("produtos")
+      .select("id,nome,estoque_atual,controla_estoque")
+      .in("id", idsComponentes)
+      .eq("empresa_id", empresaId);
+
+    if (error) {
+      throw new Error("ERRO AO VALIDAR COMPONENTES DO PRODUTO COMPOSTO.");
+    }
+
+    const mapa = new Map((componentes || []).map((p: any) => [p.id, p]));
+
+    for (const comp of composicao) {
+      const produtoComp: any = mapa.get(comp.produto_item_id);
+      const qtdNecessaria = toMoney(comp.quantidade) * toMoney(item.quantidade);
+
+      if (!produtoComp) {
+        throw new Error(`COMPONENTE NÃO ENCONTRADO NA COMPOSIÇÃO DE ${produto.nome}.`);
+      }
+
+      if (!!produtoComp.controla_estoque && toMoney(produtoComp.estoque_atual) < qtdNecessaria) {
+        throw new Error(
+          `ESTOQUE INSUFICIENTE PARA O COMPONENTE ${produtoComp.nome} DO PRODUTO ${produto.nome}.`
+        );
+      }
+    }
+  }
+
+  async function baixarEstoqueItemVenda(item: VendaItem, vendaId: string) {
+    if (!empresaId || !item.produtoId) return;
+
+    const produto = produtos.find((p) => p.id === item.produtoId);
+    if (!produto) return;
+
+    const tipo = normalizarTipoProduto(produto.tipo_produto);
+
+    if (tipo !== "COMPOSTO") {
+      if (!produto.controla_estoque) return;
+
+      const novoEstoque = toMoney(produto.estoque_atual) - toMoney(item.quantidade);
+
+      const { error: upError } = await supabase
+        .from("produtos")
+        .update({ estoque_atual: novoEstoque })
+        .eq("empresa_id", empresaId)
+        .eq("id", produto.id);
+
+      if (upError) {
+        throw new Error(`ERRO AO BAIXAR ESTOQUE DE ${produto.nome}.`);
+      }
+
+      await supabase.from("movimentacoes_estoque").insert([
+        {
+          empresa_id: empresaId,
+          produto_id: produto.id,
+          tipo: "SAIDA",
+          quantidade: toMoney(item.quantidade),
+          origem: "VENDA",
+          origem_id: vendaId,
+          observacoes: `VENDA ${numeroVenda} - PRODUTO SIMPLES`,
+        },
+      ]);
+
+      return;
+    }
+
+    const composicao = await buscarComposicaoProduto(produto.id);
+
+    const idsComponentes = composicao.map((c) => c.produto_item_id);
+
+    const { data: componentes, error } = await supabase
+      .from("produtos")
+      .select("id,nome,estoque_atual,controla_estoque")
+      .in("id", idsComponentes)
+      .eq("empresa_id", empresaId);
+
+    if (error) {
+      throw new Error(`ERRO AO CARREGAR COMPONENTES DE ${produto.nome}.`);
+    }
+
+    const mapa = new Map((componentes || []).map((p: any) => [p.id, p]));
+
+    for (const comp of composicao) {
+      const produtoComp: any = mapa.get(comp.produto_item_id);
+      if (!produtoComp) continue;
+
+      const qtdBaixa = toMoney(comp.quantidade) * toMoney(item.quantidade);
+
+      if (!!produtoComp.controla_estoque) {
+        const novoEstoque = toMoney(produtoComp.estoque_atual) - qtdBaixa;
+
+        const { error: upError } = await supabase
+          .from("produtos")
+          .update({ estoque_atual: novoEstoque })
+          .eq("empresa_id", empresaId)
+          .eq("id", produtoComp.id);
+
+        if (upError) {
+          throw new Error(`ERRO AO BAIXAR COMPONENTE ${produtoComp.nome}.`);
+        }
+      }
+
+      await supabase.from("movimentacoes_estoque").insert([
+        {
+          empresa_id: empresaId,
+          produto_id: produtoComp.id,
+          tipo: "SAIDA",
+          quantidade: qtdBaixa,
+          origem: "VENDA",
+          origem_id: vendaId,
+          observacoes: `VENDA ${numeroVenda} - BAIXA AUTOMÁTICA POR PRODUTO COMPOSTO: ${produto.nome}`,
+        },
+      ]);
+    }
+  }
+
+  /* =========================
      SALVAR
   ========================= */
 
@@ -644,11 +829,13 @@ export default function VendasPage() {
       return;
     }
 
-    for (const item of itens) {
-      if (item.controlaEstoque && toMoney(item.quantidade) > toMoney(item.estoqueAtual)) {
-        alert(`ESTOQUE INSUFICIENTE PARA ${item.nome}.`);
-        return;
+    try {
+      for (const item of itens) {
+        await validarEstoqueItemVenda(item);
       }
+    } catch (e: any) {
+      alert(e?.message || "ERRO AO VALIDAR ESTOQUE.");
+      return;
     }
 
     const vendaPayload = {
@@ -694,21 +881,13 @@ export default function VendasPage() {
       return;
     }
 
-    for (const item of itens) {
-      if (!item.produtoId || !item.controlaEstoque) continue;
-
-      const novoEstoque = Math.max(0, toMoney(item.estoqueAtual) - toMoney(item.quantidade));
-
-      const { error: estoqueError } = await supabase
-        .from("produtos")
-        .update({ estoque_atual: novoEstoque })
-        .eq("id", item.produtoId)
-        .eq("empresa_id", empresaId);
-
-      if (estoqueError) {
-        alert("VENDA SALVA, MAS DEU ERRO AO BAIXAR ESTOQUE.");
-        return;
+    try {
+      for (const item of itens) {
+        await baixarEstoqueItemVenda(item, vendaCriada.id);
       }
+    } catch (e: any) {
+      alert(e?.message || "VENDA SALVA, MAS DEU ERRO AO BAIXAR ESTOQUE.");
+      return;
     }
 
     const financeiroPayload = {
@@ -767,7 +946,7 @@ export default function VendasPage() {
 
     alert(
       pagamentoImediato
-        ? "VENDA SALVA COMO PAGA, COM TAXA E CONTA FINANCEIRA!"
+        ? "VENDA SALVA COMO PAGA, COM TAXA, CONTA FINANCEIRA E BAIXA DE ESTOQUE!"
         : "VENDA SALVA COMO PENDENTE NO FINANCEIRO!"
     );
 
@@ -798,6 +977,7 @@ export default function VendasPage() {
             <td>${item.codigo || "-"}</td>
             <td>${item.nome}</td>
             <td>${item.quantidade}</td>
+            <td>${item.tipoProduto || "SIMPLES"}</td>
             <td>${moneyBR(item.valorUnitario)}</td>
             <td>${moneyBR(item.total)}</td>
           </tr>
@@ -841,6 +1021,7 @@ export default function VendasPage() {
                   <th>CÓDIGO</th>
                   <th>PRODUTO</th>
                   <th>QTD</th>
+                  <th>TIPO</th>
                   <th>UNIT</th>
                   <th>TOTAL</th>
                 </tr>
@@ -905,7 +1086,8 @@ export default function VendasPage() {
               <KpiMini titulo="ITENS" valor={String(itens.length)} />
               <KpiMini titulo="SUBTOTAL" valor={moneyBR(subtotal)} />
               <KpiMini titulo="TAXA" valor={moneyBR(valorTaxaCalculado)} />
-<KpiMini titulo="LÍQUIDO" valor={moneyBR(valorLiquidoCalculado)} destaque />            </div>
+              <KpiMini titulo="LÍQUIDO" valor={moneyBR(valorLiquidoCalculado)} destaque />
+            </div>
           </div>
 
           <div className="mt-5 flex gap-3 flex-wrap">
@@ -1138,7 +1320,7 @@ export default function VendasPage() {
                             <div className="font-bold text-[#0F172A]">{up(p.nome)}</div>
                             <div className="text-xs text-[#64748B]">
                               {up(p.codigo_sku || p.codigo_barras || "-")} • ESTOQUE{" "}
-                              {toMoney(p.estoque_atual)}
+                              {toMoney(p.estoque_atual)} • {up(p.tipo_produto || "SIMPLES")}
                             </div>
                             <div className="text-xs text-[#64748B] mt-1">
                               {up(p.categoria || "-")}
@@ -1168,11 +1350,13 @@ export default function VendasPage() {
               </div>
 
               <div className="mt-4 overflow-auto">
-                <table className="tabela min-w-[1200px]">
+                <table className="tabela min-w-[1300px]">
                   <thead>
                     <tr>
                       <th>PRODUTO</th>
                       <th>CÓDIGO</th>
+                      <th>TIPO</th>
+                      <th>UNIDADE</th>
                       <th>ESTOQUE</th>
                       <th>QTD</th>
                       <th>V. UNIT.</th>
@@ -1183,7 +1367,7 @@ export default function VendasPage() {
                   <tbody>
                     {itens.length === 0 ? (
                       <tr>
-                        <td className="empty-state" colSpan={7}>
+                        <td className="empty-state" colSpan={9}>
                           NENHUM ITEM ADICIONADO.
                         </td>
                       </tr>
@@ -1206,6 +1390,9 @@ export default function VendasPage() {
                             />
                           </td>
 
+                          <td className="font-semibold">{item.tipoProduto || "SIMPLES"}</td>
+                          <td>{item.unidadeMedida || "UN"}</td>
+
                           <td className="font-semibold">
                             {item.controlaEstoque ? toMoney(item.estoqueAtual) : "-"}
                           </td>
@@ -1214,6 +1401,7 @@ export default function VendasPage() {
                             <input
                               type="number"
                               min="1"
+                              step="0.0001"
                               value={item.quantidade}
                               onChange={(e) =>
                                 atualizarItem(item.id, "quantidade", Number(e.target.value))
