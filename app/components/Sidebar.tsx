@@ -202,7 +202,7 @@ export default function Sidebar() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-4">
-          <div className="mb-3 px-3 text-[10px] font-black tracking-[0.16em] text-white/60">
+          <div className="mb-3 px-3 text-[10px] font-black tracking-[0.16em] text-white/70">
             {!collapsed ? "NAVEGAÇÃO" : "•"}
           </div>
 
@@ -216,8 +216,8 @@ export default function Sidebar() {
                   href={item.href}
                   className={`group flex min-h-[48px] items-center gap-3 rounded-2xl px-3 py-3 text-[13px] font-bold transition-all ${
                     active
-                      ? "bg-white text-[#0456A3] shadow-[0_8px_24px_rgba(0,0,0,0.14)]"
-                      : "text-white hover:bg-white/12"
+                      ? "bg-white shadow-[0_8px_24px_rgba(0,0,0,0.14)]"
+                      : "hover:bg-white/12"
                   }`}
                   title={collapsed ? item.label : undefined}
                 >
@@ -226,7 +226,12 @@ export default function Sidebar() {
                       active ? "bg-[#0456A3]" : "bg-white/70"
                     }`}
                   />
-                  {!collapsed && <span className="leading-tight">{item.label}</span>}
+
+                  {!collapsed && (
+                    <span className={`leading-tight ${active ? "text-[#0456A3]" : "text-white"}`}>
+                      {item.label}
+                    </span>
+                  )}
                 </Link>
               );
             })}
