@@ -33,7 +33,6 @@ type UsuarioPermissao = {
 const MENU_PRINCIPAL: MenuItem[] = [
   { label: "DASHBOARD", href: "/dashboard", modulo: "DASHBOARD" },
   { label: "CLIENTES", href: "/clientes", modulo: "CLIENTES" },
-  { label: "VEÍCULOS", href: "/veiculos", modulo: "VEICULOS" },
   { label: "PRODUTOS", href: "/produtos", modulo: "PRODUTOS" },
   { label: "CATEGORIAS", href: "/categorias", modulo: "CATEGORIAS" },
   { label: "SERVIÇOS", href: "/servicos", modulo: "SERVICOS" },
@@ -144,9 +143,7 @@ export default function Sidebar() {
 
   const menuItems = useMemo(() => {
     const principais = MENU_PRINCIPAL.filter((item) => podeVerModulo(item.modulo));
-
     const adminEmpresa = MENU_ADMIN_EMPRESA.filter((item) => podeVerModulo(item.modulo));
-
     const master = isMaster ? MENU_MASTER : [];
 
     return [...principais, ...adminEmpresa, ...master];
@@ -178,9 +175,7 @@ export default function Sidebar() {
                 AUTO GESTÃO PRO
               </div>
 
-              <div className="mt-2 text-[22px] font-black leading-none">
-                MENU
-              </div>
+              <div className="mt-2 text-[22px] font-black leading-none">MENU</div>
 
               <div className="mt-3 text-[12px] text-white/75">
                 {loadingUser
@@ -231,7 +226,6 @@ export default function Sidebar() {
                       active ? "bg-[#0456A3]" : "bg-white/70"
                     }`}
                   />
-
                   {!collapsed && <span className="leading-tight">{item.label}</span>}
                 </Link>
               );

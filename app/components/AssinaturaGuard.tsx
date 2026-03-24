@@ -1,79 +1,147 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
-import {
-  buscarAssinaturaEmpresa,
-  resolverStatusAssinatura,
-  type AssinaturaEmpresa,
-  type AssinaturaStatus,
-} from "@/lib/assinatura";
+import { supabase } from "@/lib/supabase";
+
+type SessionUser = {
+  id?: string;
+  empresa_id?: string | null;
+  role?: string | null;
+};
+
+type AssinaturaEmpresa = {
+  id: string;
+  empresa_id?: string | null;
+  status_assinatura?: string | null;
+  bloqueado?: boolean | null;
+  proximo_vencimento?: string | null;
+  dias_carencia?: number | null;
+};
 
 type Props = {
   children: React.ReactNode;
 };
 
+function up(v: unknown) {
+  return String(v ?? "").toUpperCase().trim();
+}
+
+function hojeISO() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function addDays(dateIso: string, days: number) {
+  const [y, m, d] = dateIso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+function assinaturaBloqueada(a: AssinaturaEmpresa | null) {
+  if (!a) return false;
+
+  if (a.bloqueado) return true;
+
+  const status = up(a.status_assinatura || "");
+  if (status === "BLOQUEADO" || status === "CANCELADO") return true;
+
+  if (a.proximo_vencimento) {
+    const limite = addDays(a.proximo_vencimento, Number(a.dias_carencia || 0));
+    if (hojeISO() > limite) return true;
+  }
+
+  return false;
+}
+
 export default function AssinaturaGuard({ children }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<AssinaturaStatus | null>(null);
-  const [assinatura, setAssinatura] = useState<AssinaturaEmpresa | null>(null);
+  const [liberado, setLiberado] = useState(false);
 
   useEffect(() => {
     async function validar() {
-      const user = await getSessionUser();
-
-      if (!user) {
-        router.push("/login");
-        return;
-      }
-
       try {
-        const assinaturaEmpresa = await buscarAssinaturaEmpresa(user.empresa_id);
-        const statusResolvido = resolverStatusAssinatura(assinaturaEmpresa);
+        const user = (await getSessionUser()) as SessionUser | null;
 
-        setAssinatura(assinaturaEmpresa);
-        setStatus(statusResolvido);
+        if (!user) {
+          router.push("/login");
+          return;
+        }
 
-        if (
-          statusResolvido === "BLOQUEADO" ||
-          statusResolvido === "CANCELADO"
-        ) {
+        const role = String(user.role || "").toUpperCase();
+        const isMaster = role === "MASTER";
+
+        // MASTER nunca passa por bloqueio de assinatura
+        if (isMaster) {
+          setLiberado(true);
+          setLoading(false);
+          return;
+        }
+
+        // páginas livres
+        const rotasLivres = ["/login", "/registro", "/reset-password", "/bloqueado"];
+        if (rotasLivres.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`))) {
+          setLiberado(true);
+          setLoading(false);
+          return;
+        }
+
+        if (!user.empresa_id) {
+          router.push("/login");
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("assinaturas")
+          .select("id,empresa_id,status_assinatura,bloqueado,proximo_vencimento,dias_carencia")
+          .eq("empresa_id", user.empresa_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (error) {
+          console.error("Erro ao validar assinatura:", error.message);
           router.push("/bloqueado");
           return;
         }
-      } catch (error) {
-        router.push("/bloqueado");
-        return;
+
+        const bloqueado = assinaturaBloqueada((data || null) as AssinaturaEmpresa | null);
+
+        if (bloqueado) {
+          if (pathname !== "/bloqueado") {
+            router.push("/bloqueado");
+            return;
+          }
+        } else {
+          if (pathname === "/bloqueado") {
+            router.push("/dashboard");
+            return;
+          }
+        }
+
+        setLiberado(true);
       } finally {
         setLoading(false);
       }
     }
 
     validar();
-  }, [router]);
+  }, [pathname, router]);
 
   if (loading) {
     return <div className="p-6">VALIDANDO ASSINATURA...</div>;
   }
 
-  return (
-    <>
-      {(status === "VENCIDO" || status === "CARENCIA") && (
-        <div className="mx-4 mt-4 rounded-2xl border border-[#FCD34D] bg-[#FEF3C7] p-4 text-[#92400E]">
-          <div className="font-black text-sm">
-            {status === "CARENCIA"
-              ? "ASSINATURA EM CARÊNCIA"
-              : "ASSINATURA VENCIDA"}
-          </div>
-          <div className="mt-1 text-sm">
-            Entre em contato para regularizar a mensalidade.
-          </div>
-        </div>
-      )}
+  if (!liberado) {
+    return null;
+  }
 
-      {children}
-    </>
-  );
+  return <>{children}</>;
 }
