@@ -204,7 +204,7 @@ function normalizarTipoProduto(v?: string | null) {
   return up(v || "SIMPLES");
 }
 
- function normalizeText(v: unknown) {
+function normalizeText(v: unknown) {
   return String(v ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -232,20 +232,6 @@ function expandToken(token: string) {
     CHEV: ["CHEVROLET"],
     MERCEDES: ["MB", "MERCEDESBENZ"],
     BENZ: ["MERCEDES", "MERCEDESBENZ"],
-    FIAT: [],
-    FORD: [],
-    GOL: [],
-    FOX: [],
-    PALIO: [],
-    UNO: [],
-    CORSA: [],
-    CELTA: [],
-    CIVIC: [],
-    FIT: [],
-    HB20: ["HYUNDAI"],
-    ONIX: ["CHEVROLET"],
-    ARGO: ["FIAT"],
-    STRADA: ["FIAT"],
     SAVEIRO: ["VOLKSWAGEN", "VW"],
     G5: ["GERACAO5", "GOLG5"],
     G6: ["GERACAO6", "GOLG6"],
@@ -255,41 +241,45 @@ function expandToken(token: string) {
   return uniqueTokens([t, ...(mapa[t] || [])]);
 }
 
-function buildSearchTokens(query: string) {
+function buildSearchGroups(query: string) {
   const base = tokenize(query);
-  const expandido = base.flatMap(expandToken);
-  return uniqueTokens(expandido);
+
+  return base.map((token) => expandToken(token));
+}
+
+function matchSmart(haystack: string, query: string) {
+  const h = normalizeText(haystack);
+  const groups = buildSearchGroups(query);
+
+  if (!groups.length) return true;
+
+  // Cada palavra pesquisada precisa bater em pelo menos 1 alternativa do grupo
+  return groups.every((group) => group.some((alt) => h.includes(alt)));
 }
 
 function scoreSearch(haystack: string, query: string) {
   const h = normalizeText(haystack);
-  const tokens = buildSearchTokens(query);
+  const original = normalizeText(query);
+  const groups = buildSearchGroups(query);
 
-  if (!tokens.length) return 0;
+  if (!groups.length) return 0;
 
   let score = 0;
 
-  for (const token of tokens) {
-    if (h.includes(token)) score += 1;
+  for (const group of groups) {
+    if (group.some((alt) => h.includes(alt))) {
+      score += 1;
+    }
   }
 
-  const original = normalizeText(query);
-  if (original && h.includes(original)) score += 3;
+  if (original && h.includes(original)) score += 4;
 
-  const joined = tokens.join(" ");
-  if (joined && h.includes(joined)) score += 2;
+  const tokens = tokenize(query);
+  for (const token of tokens) {
+    if (h.startsWith(token)) score += 1;
+  }
 
   return score;
-}
-
-function matchSmart(haystack: string, query: string) {
-  const tokens = buildSearchTokens(query);
-  if (!tokens.length) return true;
-
-  const h = normalizeText(haystack);
-
-  return tokens.every((t) => h.includes(t) || tokens.filter((x) => x === t).length > 1);
-}
 
 export default function OrdensPage() {
   const router = useRouter();
@@ -483,8 +473,7 @@ export default function OrdensPage() {
     setClientesEncontrados([]);
     setOpenClientes(false);
   }
-
- const produtosEncontrados = useMemo(() => {
+const produtosEncontrados = useMemo(() => {
   const q = produtoBusca.trim();
 
   if (!q) return [];
@@ -492,21 +481,14 @@ export default function OrdensPage() {
   return produtos
     .filter((p) => up(p.status || "ATIVO") !== "INATIVO")
     .map((p) => {
-      const nome = normalizeText(p.nome || "");
-      const categoria = normalizeText(p.categoria || "");
-      const subcategoria = normalizeText(p.subcategoria || "");
-      const sku = normalizeText(p.codigo_sku || "");
-      const barras = normalizeText(p.codigo_barras || "");
-      const tipo = normalizeText(p.tipo_produto || "");
-
-      // tenta separar montadora / modelo / geração do nome
+      
       const aliases = [
-        nome,
-        categoria,
-        subcategoria,
-        sku,
-        barras,
-        tipo,
+        p.nome,
+        p.codigo_sku,
+        p.codigo_barras,
+        p.categoria,
+        p.subcategoria,
+        p.tipo_produto,
       ]
         .filter(Boolean)
         .join(" ");
@@ -515,23 +497,18 @@ export default function OrdensPage() {
 
       return {
         ...p,
-        __score: score,
         __haystack: aliases,
+        __score: score,
       };
     })
-    .filter((p: any) => p.__score > 0 && matchSmart(p.__haystack, q))
+    .filter((p: any) => matchSmart(p.__haystack, q))
     .sort((a: any, b: any) => {
       if (b.__score !== a.__score) return b.__score - a.__score;
-
-      const estoqueA = toMoney(a.estoque_atual);
-      const estoqueB = toMoney(b.estoque_atual);
-
-      if (estoqueB !== estoqueA) return estoqueB - estoqueA;
-
       return String(a.nome || "").localeCompare(String(b.nome || ""));
     })
     .slice(0, 40);
 }, [produtos, produtoBusca]);
+
 
   function adicionarProduto(produto: Produto) {
     const preco = getPrecoPadraoProduto(produto);
