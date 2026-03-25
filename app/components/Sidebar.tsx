@@ -3,6 +3,24 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  LayoutDashboard,
+  Users,
+  Package,
+  FolderTree,
+  Wrench,
+  CalendarDays,
+  FileText,
+  ShoppingCart,
+  Wallet,
+  UserCog,
+  Landmark,
+  CreditCard,
+  Shield,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
 
@@ -17,6 +35,7 @@ type MenuItem = {
   label: string;
   href: string;
   modulo?: string;
+  icon: any;
 };
 
 type UsuarioPermissao = {
@@ -31,16 +50,16 @@ type UsuarioPermissao = {
 };
 
 const MENU_PRINCIPAL: MenuItem[] = [
-  { label: "DASHBOARD", href: "/dashboard", modulo: "DASHBOARD" },
-  { label: "CLIENTES", href: "/clientes", modulo: "CLIENTES" },
-  { label: "PRODUTOS", href: "/produtos", modulo: "PRODUTOS" },
-  { label: "CATEGORIAS", href: "/categorias", modulo: "CATEGORIAS" },
-  { label: "SERVIÇOS", href: "/servicos", modulo: "SERVICOS" },
-  { label: "AGENDAMENTOS", href: "/agendamentos", modulo: "AGENDAMENTOS" },
-  { label: "ORDENS DE SERVIÇO", href: "/ordens", modulo: "ORDENS" },
-  { label: "VENDAS", href: "/vendas", modulo: "VENDAS" },
-  { label: "FINANCEIRO", href: "/financeiro", modulo: "FINANCEIRO" },
-  { label: "USUÁRIOS", href: "/usuarios", modulo: "USUARIOS" },
+  { label: "DASHBOARD", href: "/dashboard", modulo: "DASHBOARD", icon: LayoutDashboard },
+  { label: "CLIENTES", href: "/clientes", modulo: "CLIENTES", icon: Users },
+  { label: "PRODUTOS", href: "/produtos", modulo: "PRODUTOS", icon: Package },
+  { label: "CATEGORIAS", href: "/categorias", modulo: "CATEGORIAS", icon: FolderTree },
+  { label: "SERVIÇOS", href: "/servicos", modulo: "SERVICOS", icon: Wrench },
+  { label: "AGENDAMENTOS", href: "/agendamentos", modulo: "AGENDAMENTOS", icon: CalendarDays },
+  { label: "ORDENS DE SERVIÇO", href: "/ordens", modulo: "ORDENS", icon: FileText },
+  { label: "VENDAS", href: "/vendas", modulo: "VENDAS", icon: ShoppingCart },
+  { label: "FINANCEIRO", href: "/financeiro", modulo: "FINANCEIRO", icon: Wallet },
+  { label: "USUÁRIOS", href: "/usuarios", modulo: "USUARIOS", icon: UserCog },
 ];
 
 const MENU_ADMIN_EMPRESA: MenuItem[] = [
@@ -48,11 +67,13 @@ const MENU_ADMIN_EMPRESA: MenuItem[] = [
     label: "CONTAS FINANCEIRAS",
     href: "/contas-financeiras",
     modulo: "CONTAS_FINANCEIRAS",
+    icon: Landmark,
   },
   {
     label: "TAXAS DE CARTÃO",
     href: "/taxas-cartao",
     modulo: "TAXAS_CARTAO",
+    icon: CreditCard,
   },
 ];
 
@@ -60,6 +81,7 @@ const MENU_MASTER: MenuItem[] = [
   {
     label: "PAINEL MASTER",
     href: "/painel-master",
+    icon: Shield,
   },
 ];
 
@@ -147,7 +169,7 @@ export default function Sidebar() {
     const master = isMaster ? MENU_MASTER : [];
 
     return [...principais, ...adminEmpresa, ...master];
-  }, [isMaster, permissoesMap, role]);
+  }, [isMaster, permissoesMap]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -163,21 +185,23 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`sticky top-0 h-screen border-r border-[#D8E1EA] bg-[#0456A3] text-white transition-all duration-300 ${
-        collapsed ? "w-[86px]" : "w-[290px]"
+      className={`sticky top-0 h-screen shrink-0 border-r border-white/10 bg-gradient-to-b from-[#0456A3] via-[#0456A3] to-[#03427D] text-white shadow-[8px_0_30px_rgba(2,24,43,0.12)] transition-all duration-300 ${
+        collapsed ? "w-[92px]" : "w-[300px]"
       }`}
     >
       <div className="flex h-full flex-col">
         <div className="border-b border-white/15 px-4 py-5">
           <div className="flex items-start justify-between gap-3">
             <div className={collapsed ? "hidden" : "block"}>
-              <div className="text-[11px] font-black tracking-[0.18em] text-white/75">
+              <div className="text-[11px] font-black tracking-[0.18em] text-white/70">
                 AUTO GESTÃO PRO
               </div>
 
-              <div className="mt-2 text-[22px] font-black leading-none">MENU</div>
+              <div className="mt-2 text-[24px] font-black leading-none text-white">
+                MENU
+              </div>
 
-              <div className="mt-3 text-[12px] text-white/75">
+              <div className="mt-3 text-[12px] text-white/80">
                 {loadingUser
                   ? "CARREGANDO..."
                   : sessionUser?.nome
@@ -185,7 +209,7 @@ export default function Sidebar() {
                   : "USUÁRIO LOGADO"}
               </div>
 
-              <div className="mt-2 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-bold">
+              <div className="mt-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-black tracking-[0.08em] text-white">
                 {isMaster ? "MASTER" : isAdminEmpresa ? "ADMIN" : "OPERADOR"}
               </div>
             </div>
@@ -193,44 +217,55 @@ export default function Sidebar() {
             <button
               type="button"
               onClick={() => setCollapsed((v) => !v)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/10 hover:bg-white/15"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/10 text-white transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/20"
               title={collapsed ? "Expandir menu" : "Recolher menu"}
             >
-              <span className="text-lg font-black">{collapsed ? "»" : "«"}</span>
+              {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-4">
-          <div className="mb-3 px-3 text-[10px] font-black tracking-[0.16em] text-white/70">
+          <div className="mb-3 px-3 text-[10px] font-black tracking-[0.16em] text-white/65">
             {!collapsed ? "NAVEGAÇÃO" : "•"}
           </div>
 
-          <nav className="space-y-1">
+          <nav className="space-y-1.5">
             {menuItems.map((item) => {
               const active = isActive(item.href);
+              const Icon = item.icon;
 
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`group flex min-h-[48px] items-center gap-3 rounded-2xl px-3 py-3 text-[13px] font-bold transition-all ${
+                  className={`group flex min-h-[50px] items-center gap-3 rounded-2xl px-3 py-3 text-[13px] font-bold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/20 ${
                     active
-                      ? "bg-white shadow-[0_8px_24px_rgba(0,0,0,0.14)]"
-                      : "hover:bg-white/12"
-                  }`}
+                      ? "bg-white text-[#0456A3] shadow-[0_10px_28px_rgba(0,0,0,0.16)]"
+                      : "text-white hover:bg-white/12 hover:text-white"
+                  } ${collapsed ? "justify-center px-2" : ""}`}
                   title={collapsed ? item.label : undefined}
                 >
-                  <span
-                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                      active ? "bg-[#0456A3]" : "bg-white/70"
+                  <div
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all ${
+                      active
+                        ? "bg-[#0456A3]/10 text-[#0456A3]"
+                        : "bg-white/10 text-white group-hover:bg-white/15"
                     }`}
-                  />
+                  >
+                    <Icon size={18} className="text-current" />
+                  </div>
 
                   {!collapsed && (
-                    <span className={`leading-tight ${active ? "text-[#0456A3]" : "text-white"}`}>
-                      {item.label}
-                    </span>
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                      <span className="truncate leading-tight text-current">{item.label}</span>
+
+                      <span
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                          active ? "bg-[#0456A3]" : "bg-white/50"
+                        }`}
+                      />
+                    </div>
                   )}
                 </Link>
               );
@@ -238,7 +273,7 @@ export default function Sidebar() {
           </nav>
 
           {isAdminEmpresa && !collapsed && (
-            <div className="mt-6 rounded-2xl border border-white/15 bg-white/10 p-4">
+            <div className="mt-6 rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
               <div className="text-[11px] font-black tracking-[0.12em] text-white/70">
                 ÁREA ADMIN
               </div>
@@ -249,7 +284,7 @@ export default function Sidebar() {
           )}
 
           {isMaster && !collapsed && (
-            <div className="mt-4 rounded-2xl border border-white/15 bg-white/10 p-4">
+            <div className="mt-4 rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
               <div className="text-[11px] font-black tracking-[0.12em] text-white/70">
                 ÁREA MASTER
               </div>
@@ -264,9 +299,9 @@ export default function Sidebar() {
           <button
             type="button"
             onClick={handleLogout}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-3 py-3 text-[13px] font-black text-white hover:bg-white/15"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-3 py-3 text-[13px] font-black text-white transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/20"
           >
-            <span className="text-base">⎋</span>
+            <LogOut size={17} />
             {!collapsed && <span>SAIR</span>}
           </button>
         </div>
