@@ -243,7 +243,6 @@ function expandToken(token: string) {
 
 function buildSearchGroups(query: string) {
   const base = tokenize(query);
-
   return base.map((token) => expandToken(token));
 }
 
@@ -253,7 +252,6 @@ function matchSmart(haystack: string, query: string) {
 
   if (!groups.length) return true;
 
-  // Cada palavra pesquisada precisa bater em pelo menos 1 alternativa do grupo
   return groups.every((group) => group.some((alt) => h.includes(alt)));
 }
 
@@ -282,11 +280,7 @@ function scoreSearch(haystack: string, query: string) {
   return score;
 }
 
- 
-  const router = useRouter();
-
-  export default function OrdensPage()
-
+export default function OrdensPage() {
   const router = useRouter();
 
   const [ready, setReady] = useState(false);
@@ -478,1107 +472,1151 @@ function scoreSearch(haystack: string, query: string) {
     setClientesEncontrados([]);
     setOpenClientes(false);
   }
+
   const produtosEncontrados = useMemo(() => {
     const q = produtoBusca.trim();
 
     if (!q) return [];
 
+    return [...produtos]
+      .filter((p) => up(p.status || "ATIVO") !== "INATIVO")
+      .filter((p) => {
+        const texto = [
+          p.nome,
+          p.codigo_sku,
+          p.codigo_barras,
+          p.categoria,
+          p.subcategoria,
+          p.tipo_produto,
+        ]
+          .filter(Boolean)
+          .join(" ");
 
-    function adicionarProduto(produto: Produto) {
-      const preco = getPrecoPadraoProduto(produto);
+        return matchSmart(texto, q);
+      })
+      .sort((a, b) => {
+        const textoA = [
+          a.nome,
+          a.codigo_sku,
+          a.codigo_barras,
+          a.categoria,
+          a.subcategoria,
+          a.tipo_produto,
+        ]
+          .filter(Boolean)
+          .join(" ");
 
-      setItens((prev) => [
-        ...prev,
-        {
-          id: Date.now() + Math.floor(Math.random() * 1000),
-          produtoId: produto.id,
-          nome: produto.nome,
-          codigo: produto.codigo_sku || produto.codigo_barras || "",
-          quantidade: 1,
-          valorUnitario: preco,
-          total: preco,
-          estoqueAtual: toMoney(produto.estoque_atual),
-          controlaEstoque: !!produto.controla_estoque,
-          tipoProduto: produto.tipo_produto || "SIMPLES",
-          unidadeMedida: produto.unidade_medida || "UN",
-        },
-      ]);
+        const textoB = [
+          b.nome,
+          b.codigo_sku,
+          b.codigo_barras,
+          b.categoria,
+          b.subcategoria,
+          b.tipo_produto,
+        ]
+          .filter(Boolean)
+          .join(" ");
 
-      setProdutoBusca("");
-      setOpenProdutos(false);
-    }
+        return scoreSearch(textoB, q) - scoreSearch(textoA, q);
+      })
+      .slice(0, 20);
+  }, [produtoBusca, produtos]);
 
-    function atualizarItem(
-      id: number,
-      campo: "quantidade" | "valorUnitario" | "nome" | "codigo",
-      valor: string | number
-    ) {
-      setItens((prev) =>
-        prev.map((item) => {
-          if (item.id !== id) return item;
+  function adicionarProduto(produto: Produto) {
+    const preco = getPrecoPadraoProduto(produto);
 
-          const next = {
-            ...item,
-            [campo]:
-              campo === "quantidade" || campo === "valorUnitario"
-                ? Number(valor)
-                : String(valor),
-          };
+    setItens((prev) => [
+      ...prev,
+      {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        produtoId: produto.id,
+        nome: produto.nome,
+        codigo: produto.codigo_sku || produto.codigo_barras || "",
+        quantidade: 1,
+        valorUnitario: preco,
+        total: preco,
+        estoqueAtual: toMoney(produto.estoque_atual),
+        controlaEstoque: !!produto.controla_estoque,
+        tipoProduto: produto.tipo_produto || "SIMPLES",
+        unidadeMedida: produto.unidade_medida || "UN",
+      },
+    ]);
 
-          next.total = toMoney(next.quantidade) * toMoney(next.valorUnitario);
-          return next;
-        })
-      );
-    }
+    setProdutoBusca("");
+    setOpenProdutos(false);
+  }
 
-    function removerItem(id: number) {
-      setItens((prev) => prev.filter((item) => item.id !== id));
-    }
+  function atualizarItem(
+    id: number,
+    campo: "quantidade" | "valorUnitario" | "nome" | "codigo",
+    valor: string | number
+  ) {
+    setItens((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
 
-    function resetForm() {
-      setEditingId(null);
-      setNumeroOs(gerarNumeroInterno(ordens));
-      setClienteBusca("");
-      setClienteSelecionado(null);
-      setClientesEncontrados([]);
-      setVeiculoDescricao("");
-      setObservacoes("");
-      setStatus("ABERTA");
-      setFaturado(false);
-      setFormaPagamento("DINHEIRO");
-      setDesconto("0");
-      setContaFinanceiraId("");
-      setTaxaCartaoId("");
-      setProdutoBusca("");
-      setItens([]);
-      setOpenClientes(false);
-      setOpenProdutos(false);
-    }
+        const next = {
+          ...item,
+          [campo]:
+            campo === "quantidade" || campo === "valorUnitario"
+              ? Number(valor)
+              : String(valor),
+        };
 
-    async function editarOrdem(ordem: OrdemServico) {
-      setEditingId(ordem.id);
-      setNumeroOs(ordem.numero || "");
-      setClienteBusca(ordem.cliente_nome || "");
-      setClienteSelecionado(
-        ordem.cliente_nome
-          ? {
+        next.total = toMoney(next.quantidade) * toMoney(next.valorUnitario);
+        return next;
+      })
+    );
+  }
+
+  function removerItem(id: number) {
+    setItens((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  function resetForm() {
+    setEditingId(null);
+    setNumeroOs(gerarNumeroInterno(ordens));
+    setClienteBusca("");
+    setClienteSelecionado(null);
+    setClientesEncontrados([]);
+    setVeiculoDescricao("");
+    setObservacoes("");
+    setStatus("ABERTA");
+    setFaturado(false);
+    setFormaPagamento("DINHEIRO");
+    setDesconto("0");
+    setContaFinanceiraId("");
+    setTaxaCartaoId("");
+    setProdutoBusca("");
+    setItens([]);
+    setOpenClientes(false);
+    setOpenProdutos(false);
+  }
+
+  async function editarOrdem(ordem: OrdemServico) {
+    setEditingId(ordem.id);
+    setNumeroOs(ordem.numero || "");
+    setClienteBusca(ordem.cliente_nome || "");
+    setClienteSelecionado(
+      ordem.cliente_nome
+        ? {
             id: ordem.cliente_id || "",
             nome: ordem.cliente_nome || "",
             telefone: ordem.cliente_telefone || "",
           }
-          : null
-      );
-      setVeiculoDescricao(ordem.veiculo_descricao || "");
-      setObservacoes(ordem.observacoes || "");
-      setStatus(ordem.status || "ABERTA");
-      setFaturado(!!ordem.faturado);
-      setFormaPagamento(ordem.forma_pagamento || "DINHEIRO");
-      setDesconto(String(toMoney(ordem.desconto)));
-      setContaFinanceiraId("");
-      setTaxaCartaoId("");
+        : null
+    );
+    setVeiculoDescricao(ordem.veiculo_descricao || "");
+    setObservacoes(ordem.observacoes || "");
+    setStatus(ordem.status || "ABERTA");
+    setFaturado(!!ordem.faturado);
+    setFormaPagamento(ordem.forma_pagamento || "DINHEIRO");
+    setDesconto(String(toMoney(ordem.desconto)));
+    setContaFinanceiraId("");
+    setTaxaCartaoId("");
 
-      const { data, error } = await supabase
-        .from("ordens_servico_itens")
-        .select("*")
-        .eq("ordem_servico_id", ordem.id);
+    const { data, error } = await supabase
+      .from("ordens_servico_itens")
+      .select("*")
+      .eq("ordem_servico_id", ordem.id);
 
-      if (error) {
-        alert("ERRO AO CARREGAR ITENS DA OS: " + error.message);
-        return;
-      }
-
-      const itensMapeados: OrdemItem[] = (data || []).map((item: any, idx: number) => ({
-        id: Date.now() + idx,
-        produtoId: item.produto_id,
-        nome: item.produto_nome || "",
-        codigo: item.codigo || "",
-        quantidade: Number(item.quantidade || 0),
-        valorUnitario: Number(item.valor_unitario || 0),
-        total: Number(item.total || 0),
-        estoqueAtual: 0,
-        controlaEstoque: true,
-        tipoProduto: item.tipo_produto || "SIMPLES",
-        unidadeMedida: item.unidade_medida || "UN",
-      }));
-
-      setItens(itensMapeados);
-      setModalAberto(true);
+    if (error) {
+      alert("ERRO AO CARREGAR ITENS DA OS: " + error.message);
+      return;
     }
 
-    async function removerOrdem(id: string) {
-      if (!empresaId) return;
-      if (!confirm("REMOVER ESTA ORDEM DE SERVIÇO?")) return;
+    const itensMapeados: OrdemItem[] = (data || []).map((item: any, idx: number) => ({
+      id: Date.now() + idx,
+      produtoId: item.produto_id,
+      nome: item.produto_nome || "",
+      codigo: item.codigo || "",
+      quantidade: Number(item.quantidade || 0),
+      valorUnitario: Number(item.valor_unitario || 0),
+      total: Number(item.total || 0),
+      estoqueAtual: 0,
+      controlaEstoque: true,
+      tipoProduto: item.tipo_produto || "SIMPLES",
+      unidadeMedida: item.unidade_medida || "UN",
+    }));
 
-      const { error } = await supabase
-        .from("ordens_servico")
-        .delete()
-        .eq("empresa_id", empresaId)
-        .eq("id", id);
+    setItens(itensMapeados);
+    setModalAberto(true);
+  }
 
-      if (error) {
-        alert("ERRO AO REMOVER OS: " + error.message);
-        return;
-      }
+  async function removerOrdem(id: string) {
+    if (!empresaId) return;
+    if (!confirm("REMOVER ESTA ORDEM DE SERVIÇO?")) return;
 
-      alert("OS REMOVIDA!");
-      await carregarBase(empresaId);
+    const { error } = await supabase
+      .from("ordens_servico")
+      .delete()
+      .eq("empresa_id", empresaId)
+      .eq("id", id);
+
+    if (error) {
+      alert("ERRO AO REMOVER OS: " + error.message);
+      return;
     }
 
-    const subtotal = useMemo(() => {
-      return itens.reduce((acc, item) => acc + toMoney(item.total), 0);
-    }, [itens]);
+    alert("OS REMOVIDA!");
+    await carregarBase(empresaId);
+  }
 
-    const totalGeral = useMemo(() => {
-      return Math.max(0, subtotal - toMoney(desconto));
-    }, [subtotal, desconto]);
+  const subtotal = useMemo(() => {
+    return itens.reduce((acc, item) => acc + toMoney(item.total), 0);
+  }, [itens]);
 
-    const historicoFiltrado = useMemo(() => {
-      const q = normalizeText(buscaHistorico);
-      if (!q) return ordens;
+  const totalGeral = useMemo(() => {
+    return Math.max(0, subtotal - toMoney(desconto));
+  }, [subtotal, desconto]);
 
-      return ordens.filter((o) =>
-        normalizeText(
-          `${o.numero || ""} ${o.cliente_nome || ""} ${o.veiculo_descricao || ""} ${o.status || ""}`
-        ).includes(q)
-      );
-    }, [ordens, buscaHistorico]);
+  const historicoFiltrado = useMemo(() => {
+    const q = normalizeText(buscaHistorico);
+    if (!q) return ordens;
 
-    const taxaSelecionada = useMemo(() => {
-      return taxasCartao.find((t) => t.id === taxaCartaoId) || null;
-    }, [taxasCartao, taxaCartaoId]);
+    return ordens.filter((o) =>
+      normalizeText(
+        `${o.numero || ""} ${o.cliente_nome || ""} ${o.veiculo_descricao || ""} ${o.status || ""}`
+      ).includes(q)
+    );
+  }, [ordens, buscaHistorico]);
 
-    const taxaCompativelComForma = useMemo(() => {
-      if (!isCartao(formaPagamento)) return true;
-      if (!taxaSelecionada) return false;
+  const taxaSelecionada = useMemo(() => {
+    return taxasCartao.find((t) => t.id === taxaCartaoId) || null;
+  }, [taxasCartao, taxaCartaoId]);
 
-      const forma = up(formaPagamento);
-      const tipoTaxa = up(taxaSelecionada.tipo_cartao || "");
+  const taxaCompativelComForma = useMemo(() => {
+    if (!isCartao(formaPagamento)) return true;
+    if (!taxaSelecionada) return false;
+
+    const forma = up(formaPagamento);
+    const tipoTaxa = up(taxaSelecionada.tipo_cartao || "");
+
+    if (forma.includes("DÉBITO") || forma.includes("DEBITO")) {
+      return tipoTaxa === "DEBITO";
+    }
+
+    if (forma.includes("CRÉDITO") || forma.includes("CREDITO")) {
+      return tipoTaxa === "CREDITO" || tipoTaxa === "CREDITO PARCELADO";
+    }
+
+    return true;
+  }, [formaPagamento, taxaSelecionada]);
+
+  const { valorTaxaCalculado, valorLiquidoCalculado } = useMemo(() => {
+    if (!isCartao(formaPagamento) || !taxaSelecionada || !taxaCompativelComForma) {
+      return {
+        valorTaxaCalculado: 0,
+        valorLiquidoCalculado: totalGeral,
+      };
+    }
+
+    const calc = calcularLiquidoComTaxa(
+      totalGeral,
+      Number(taxaSelecionada.taxa_percentual || 0)
+    );
+
+    return {
+      valorTaxaCalculado: calc.valorTaxa,
+      valorLiquidoCalculado: calc.valorLiquido,
+    };
+  }, [formaPagamento, taxaSelecionada, taxaCompativelComForma, totalGeral]);
+
+  const taxasFiltradasPorForma = useMemo(() => {
+    if (!isCartao(formaPagamento)) return taxasCartao;
+
+    const forma = up(formaPagamento);
+
+    return taxasCartao.filter((taxa) => {
+      const tipo = up(taxa.tipo_cartao || "");
 
       if (forma.includes("DÉBITO") || forma.includes("DEBITO")) {
-        return tipoTaxa === "DEBITO";
+        return tipo === "DEBITO";
       }
 
       if (forma.includes("CRÉDITO") || forma.includes("CREDITO")) {
-        return tipoTaxa === "CREDITO" || tipoTaxa === "CREDITO PARCELADO";
+        return tipo === "CREDITO" || tipo === "CREDITO PARCELADO";
       }
 
       return true;
-    }, [formaPagamento, taxaSelecionada]);
+    });
+  }, [formaPagamento, taxasCartao]);
 
-    const { valorTaxaCalculado, valorLiquidoCalculado } = useMemo(() => {
-      if (!isCartao(formaPagamento) || !taxaSelecionada || !taxaCompativelComForma) {
-        return {
-          valorTaxaCalculado: 0,
-          valorLiquidoCalculado: totalGeral,
-        };
-      }
+  async function buscarComposicaoProduto(produtoPaiId: string) {
+    if (!empresaId) return [];
 
-      const calc = calcularLiquidoComTaxa(
-        totalGeral,
-        Number(taxaSelecionada.taxa_percentual || 0)
-      );
+    const { data, error } = await supabase
+      .from("produtos_composicao")
+      .select("id,produto_pai_id,produto_item_id,quantidade,unidade_medida,observacoes")
+      .eq("empresa_id", empresaId)
+      .eq("produto_pai_id", produtoPaiId);
 
-      return {
-        valorTaxaCalculado: calc.valorTaxa,
-        valorLiquidoCalculado: calc.valorLiquido,
-      };
-    }, [formaPagamento, taxaSelecionada, taxaCompativelComForma, totalGeral]);
-
-    const taxasFiltradasPorForma = useMemo(() => {
-      if (!isCartao(formaPagamento)) return taxasCartao;
-
-      const forma = up(formaPagamento);
-
-      return taxasCartao.filter((taxa) => {
-        const tipo = up(taxa.tipo_cartao || "");
-
-        if (forma.includes("DÉBITO") || forma.includes("DEBITO")) {
-          return tipo === "DEBITO";
-        }
-
-        if (forma.includes("CRÉDITO") || forma.includes("CREDITO")) {
-          return tipo === "CREDITO" || tipo === "CREDITO PARCELADO";
-        }
-
-        return true;
-      });
-    }, [formaPagamento, taxasCartao]);
-
-    async function buscarComposicaoProduto(produtoPaiId: string) {
-      if (!empresaId) return [];
-
-      const { data, error } = await supabase
-        .from("produtos_composicao")
-        .select("id,produto_pai_id,produto_item_id,quantidade,unidade_medida,observacoes")
-        .eq("empresa_id", empresaId)
-        .eq("produto_pai_id", produtoPaiId);
-
-      if (error) {
-        throw new Error("ERRO AO CARREGAR COMPOSIÇÃO DO PRODUTO.");
-      }
-
-      return (data || []) as ProdutoComposicao[];
+    if (error) {
+      throw new Error("ERRO AO CARREGAR COMPOSIÇÃO DO PRODUTO.");
     }
 
-    async function validarEstoqueItem(item: OrdemItem) {
-      if (!empresaId || !item.produtoId) return;
+    return (data || []) as ProdutoComposicao[];
+  }
 
-      const produto = produtos.find((p) => p.id === item.produtoId);
+  async function validarEstoqueItem(item: OrdemItem) {
+    if (!empresaId || !item.produtoId) return;
 
-      if (!produto) {
-        throw new Error(`PRODUTO NÃO ENCONTRADO: ${item.nome}`);
+    const produto = produtos.find((p) => p.id === item.produtoId);
+
+    if (!produto) {
+      throw new Error(`PRODUTO NÃO ENCONTRADO: ${item.nome}`);
+    }
+
+    const tipo = normalizarTipoProduto(produto.tipo_produto);
+
+    if (tipo !== "COMPOSTO") {
+      if (produto.controla_estoque && toMoney(produto.estoque_atual) < toMoney(item.quantidade)) {
+        throw new Error(`ESTOQUE INSUFICIENTE PARA ${produto.nome}.`);
+      }
+      return;
+    }
+
+    const composicao = await buscarComposicaoProduto(produto.id);
+
+    if (composicao.length === 0) {
+      throw new Error(`O PRODUTO COMPOSTO ${produto.nome} NÃO TEM COMPOSIÇÃO CADASTRADA.`);
+    }
+
+    const idsComponentes = composicao.map((c) => c.produto_item_id);
+
+    const { data: componentes, error } = await supabase
+      .from("produtos")
+      .select("id,nome,estoque_atual,controla_estoque")
+      .in("id", idsComponentes)
+      .eq("empresa_id", empresaId);
+
+    if (error) {
+      throw new Error("ERRO AO VALIDAR COMPONENTES DO PRODUTO COMPOSTO.");
+    }
+
+    const mapa = new Map((componentes || []).map((p: any) => [p.id, p]));
+
+    for (const comp of composicao) {
+      const produtoComp: any = mapa.get(comp.produto_item_id);
+      const qtdNecessaria = toMoney(comp.quantidade) * toMoney(item.quantidade);
+
+      if (!produtoComp) {
+        throw new Error(`COMPONENTE NÃO ENCONTRADO NA COMPOSIÇÃO DE ${produto.nome}.`);
       }
 
-      const tipo = normalizarTipoProduto(produto.tipo_produto);
-
-      if (tipo !== "COMPOSTO") {
-        if (produto.controla_estoque && toMoney(produto.estoque_atual) < toMoney(item.quantidade)) {
-          throw new Error(`ESTOQUE INSUFICIENTE PARA ${produto.nome}.`);
-        }
-        return;
+      if (!!produtoComp.controla_estoque && toMoney(produtoComp.estoque_atual) < qtdNecessaria) {
+        throw new Error(
+          `ESTOQUE INSUFICIENTE PARA O COMPONENTE ${produtoComp.nome} DO PRODUTO ${produto.nome}.`
+        );
       }
+    }
+  }
 
-      const composicao = await buscarComposicaoProduto(produto.id);
+  async function baixarEstoqueItem(item: OrdemItem, ordemId: string) {
+    if (!empresaId || !item.produtoId) return;
 
-      if (composicao.length === 0) {
-        throw new Error(`O PRODUTO COMPOSTO ${produto.nome} NÃO TEM COMPOSIÇÃO CADASTRADA.`);
-      }
+    const produto = produtos.find((p) => p.id === item.produtoId);
+    if (!produto) return;
 
-      const idsComponentes = composicao.map((c) => c.produto_item_id);
+    const tipo = normalizarTipoProduto(produto.tipo_produto);
 
-      const { data: componentes, error } = await supabase
+    if (tipo !== "COMPOSTO") {
+      if (!produto.controla_estoque) return;
+
+      const novoEstoque = toMoney(produto.estoque_atual) - toMoney(item.quantidade);
+
+      const { error: upError } = await supabase
         .from("produtos")
-        .select("id,nome,estoque_atual,controla_estoque")
-        .in("id", idsComponentes)
-        .eq("empresa_id", empresaId);
+        .update({ estoque_atual: novoEstoque })
+        .eq("empresa_id", empresaId)
+        .eq("id", produto.id);
 
-      if (error) {
-        throw new Error("ERRO AO VALIDAR COMPONENTES DO PRODUTO COMPOSTO.");
+      if (upError) {
+        throw new Error(`ERRO AO BAIXAR ESTOQUE DE ${produto.nome}.`);
       }
 
-      const mapa = new Map((componentes || []).map((p: any) => [p.id, p]));
+      await supabase.from("movimentacoes_estoque").insert([
+        {
+          empresa_id: empresaId,
+          produto_id: produto.id,
+          tipo: "SAIDA",
+          quantidade: toMoney(item.quantidade),
+          origem: "OS",
+          origem_id: ordemId,
+          observacoes: `OS ${numeroOs} - PRODUTO SIMPLES`,
+        },
+      ]);
 
-      for (const comp of composicao) {
-        const produtoComp: any = mapa.get(comp.produto_item_id);
-        const qtdNecessaria = toMoney(comp.quantidade) * toMoney(item.quantidade);
-
-        if (!produtoComp) {
-          throw new Error(`COMPONENTE NÃO ENCONTRADO NA COMPOSIÇÃO DE ${produto.nome}.`);
-        }
-
-        if (!!produtoComp.controla_estoque && toMoney(produtoComp.estoque_atual) < qtdNecessaria) {
-          throw new Error(
-            `ESTOQUE INSUFICIENTE PARA O COMPONENTE ${produtoComp.nome} DO PRODUTO ${produto.nome}.`
-          );
-        }
-      }
+      return;
     }
 
-    async function baixarEstoqueItem(item: OrdemItem, ordemId: string) {
-      if (!empresaId || !item.produtoId) return;
+    const composicao = await buscarComposicaoProduto(produto.id);
 
-      const produto = produtos.find((p) => p.id === item.produtoId);
-      if (!produto) return;
+    const idsComponentes = composicao.map((c) => c.produto_item_id);
 
-      const tipo = normalizarTipoProduto(produto.tipo_produto);
+    const { data: componentes, error } = await supabase
+      .from("produtos")
+      .select("id,nome,estoque_atual,controla_estoque")
+      .in("id", idsComponentes)
+      .eq("empresa_id", empresaId);
 
-      if (tipo !== "COMPOSTO") {
-        if (!produto.controla_estoque) return;
+    if (error) {
+      throw new Error(`ERRO AO CARREGAR COMPONENTES DE ${produto.nome}.`);
+    }
 
-        const novoEstoque = toMoney(produto.estoque_atual) - toMoney(item.quantidade);
+    const mapa = new Map((componentes || []).map((p: any) => [p.id, p]));
+
+    for (const comp of composicao) {
+      const produtoComp: any = mapa.get(comp.produto_item_id);
+      if (!produtoComp) continue;
+
+      const qtdBaixa = toMoney(comp.quantidade) * toMoney(item.quantidade);
+
+      if (!!produtoComp.controla_estoque) {
+        const novoEstoque = toMoney(produtoComp.estoque_atual) - qtdBaixa;
 
         const { error: upError } = await supabase
           .from("produtos")
           .update({ estoque_atual: novoEstoque })
           .eq("empresa_id", empresaId)
-          .eq("id", produto.id);
+          .eq("id", produtoComp.id);
 
         if (upError) {
-          throw new Error(`ERRO AO BAIXAR ESTOQUE DE ${produto.nome}.`);
+          throw new Error(`ERRO AO BAIXAR COMPONENTE ${produtoComp.nome}.`);
         }
-
-        await supabase.from("movimentacoes_estoque").insert([
-          {
-            empresa_id: empresaId,
-            produto_id: produto.id,
-            tipo: "SAIDA",
-            quantidade: toMoney(item.quantidade),
-            origem: "OS",
-            origem_id: ordemId,
-            observacoes: `OS ${numeroOs} - PRODUTO SIMPLES`,
-          },
-        ]);
-
-        return;
       }
 
-      const composicao = await buscarComposicaoProduto(produto.id);
+      await supabase.from("movimentacoes_estoque").insert([
+        {
+          empresa_id: empresaId,
+          produto_id: produtoComp.id,
+          tipo: "SAIDA",
+          quantidade: qtdBaixa,
+          origem: "OS",
+          origem_id: ordemId,
+          observacoes: `OS ${numeroOs} - BAIXA AUTOMÁTICA POR PRODUTO COMPOSTO: ${produto.nome}`,
+        },
+      ]);
+    }
+  }
 
-      const idsComponentes = composicao.map((c) => c.produto_item_id);
+  async function salvarOS() {
+    if (!empresaId) return;
 
-      const { data: componentes, error } = await supabase
-        .from("produtos")
-        .select("id,nome,estoque_atual,controla_estoque")
-        .in("id", idsComponentes)
-        .eq("empresa_id", empresaId);
+    if (!veiculoDescricao.trim()) {
+      alert("PREENCHA A DESCRIÇÃO DO VEÍCULO.");
+      return;
+    }
+
+    if (itens.length === 0) {
+      alert("ADICIONE PELO MENOS 1 ITEM.");
+      return;
+    }
+
+    if (faturado && !contaFinanceiraId) {
+      alert("SELECIONE A CONTA FINANCEIRA PARA FATURAR.");
+      return;
+    }
+
+    if (faturado && isCartao(formaPagamento) && !taxaCartaoId) {
+      alert("SELECIONE A TAXA DE CARTÃO.");
+      return;
+    }
+
+    if (faturado && isCartao(formaPagamento) && !taxaCompativelComForma) {
+      alert("A TAXA SELECIONADA NÃO É COMPATÍVEL COM A FORMA DE PAGAMENTO.");
+      return;
+    }
+
+    if (faturado) {
+      try {
+        for (const item of itens) {
+          await validarEstoqueItem(item);
+        }
+      } catch (e: any) {
+        alert(e?.message || "ERRO AO VALIDAR ESTOQUE.");
+        return;
+      }
+    }
+
+    const payload = {
+      empresa_id: empresaId,
+      numero: numeroOs,
+      cliente_id: clienteSelecionado?.id || null,
+      cliente_nome: clienteSelecionado?.nome || null,
+      cliente_telefone: clienteSelecionado?.telefone || null,
+      veiculo_descricao: up(veiculoDescricao),
+      observacoes: up(observacoes),
+      subtotal,
+      desconto: toMoney(desconto),
+      total: totalGeral,
+      status: up(status),
+      faturado,
+      data_faturamento: faturado ? agoraLocalISO() : null,
+      forma_pagamento: faturado ? up(formaPagamento) : null,
+    };
+
+    let ordemId = editingId;
+
+    if (editingId) {
+      const { error } = await supabase
+        .from("ordens_servico")
+        .update(payload)
+        .eq("empresa_id", empresaId)
+        .eq("id", editingId);
 
       if (error) {
-        throw new Error(`ERRO AO CARREGAR COMPONENTES DE ${produto.nome}.`);
+        alert("ERRO AO ATUALIZAR OS: " + error.message);
+        return;
       }
 
-      const mapa = new Map((componentes || []).map((p: any) => [p.id, p]));
+      const { error: delError } = await supabase
+        .from("ordens_servico_itens")
+        .delete()
+        .eq("ordem_servico_id", editingId);
 
-      for (const comp of composicao) {
-        const produtoComp: any = mapa.get(comp.produto_item_id);
-        if (!produtoComp) continue;
-
-        const qtdBaixa = toMoney(comp.quantidade) * toMoney(item.quantidade);
-
-        if (!!produtoComp.controla_estoque) {
-          const novoEstoque = toMoney(produtoComp.estoque_atual) - qtdBaixa;
-
-          const { error: upError } = await supabase
-            .from("produtos")
-            .update({ estoque_atual: novoEstoque })
-            .eq("empresa_id", empresaId)
-            .eq("id", produtoComp.id);
-
-          if (upError) {
-            throw new Error(`ERRO AO BAIXAR COMPONENTE ${produtoComp.nome}.`);
-          }
-        }
-
-        await supabase.from("movimentacoes_estoque").insert([
-          {
-            empresa_id: empresaId,
-            produto_id: produtoComp.id,
-            tipo: "SAIDA",
-            quantidade: qtdBaixa,
-            origem: "OS",
-            origem_id: ordemId,
-            observacoes: `OS ${numeroOs} - BAIXA AUTOMÁTICA POR PRODUTO COMPOSTO: ${produto.nome}`,
-          },
-        ]);
+      if (delError) {
+        alert("OS SALVA, MAS DEU ERRO AO LIMPAR ITENS: " + delError.message);
+        return;
       }
+    } else {
+      const { data, error } = await supabase
+        .from("ordens_servico")
+        .insert([payload])
+        .select("id")
+        .single();
+
+      if (error || !data) {
+        alert("ERRO AO CRIAR OS: " + (error?.message || ""));
+        return;
+      }
+
+      ordemId = data.id;
     }
 
-    async function salvarOS() {
-      if (!empresaId) return;
+    const itensPayload = itens.map((item) => ({
+      ordem_servico_id: ordemId,
+      produto_id: item.produtoId,
+      produto_nome: up(item.nome),
+      codigo: up(item.codigo || ""),
+      quantidade: toMoney(item.quantidade),
+      valor_unitario: toMoney(item.valorUnitario),
+      total: toMoney(item.total),
+      tipo_produto: up(item.tipoProduto || "SIMPLES"),
+      unidade_medida: up(item.unidadeMedida || "UN"),
+    }));
 
-      if (!veiculoDescricao.trim()) {
-        alert("PREENCHA A DESCRIÇÃO DO VEÍCULO.");
-        return;
-      }
+    const { error: itensError } = await supabase
+      .from("ordens_servico_itens")
+      .insert(itensPayload);
 
-      if (itens.length === 0) {
-        alert("ADICIONE PELO MENOS 1 ITEM.");
-        return;
-      }
+    if (itensError) {
+      alert("OS SALVA, MAS DEU ERRO AO SALVAR ITENS: " + itensError.message);
+      return;
+    }
 
-      if (faturado && !contaFinanceiraId) {
-        alert("SELECIONE A CONTA FINANCEIRA PARA FATURAR.");
-        return;
-      }
-
-      if (faturado && isCartao(formaPagamento) && !taxaCartaoId) {
-        alert("SELECIONE A TAXA DE CARTÃO.");
-        return;
-      }
-
-      if (faturado && isCartao(formaPagamento) && !taxaCompativelComForma) {
-        alert("A TAXA SELECIONADA NÃO É COMPATÍVEL COM A FORMA DE PAGAMENTO.");
-        return;
-      }
-
-      if (faturado) {
-        try {
-          for (const item of itens) {
-            await validarEstoqueItem(item);
-          }
-        } catch (e: any) {
-          alert(e?.message || "ERRO AO VALIDAR ESTOQUE.");
-          return;
+    if (faturado && ordemId) {
+      try {
+        for (const item of itens) {
+          await baixarEstoqueItem(item, ordemId);
         }
+      } catch (e: any) {
+        alert(e?.message || "OS SALVA, MAS DEU ERRO AO BAIXAR ESTOQUE.");
+        return;
       }
 
-      const payload = {
+      const financeiroPayload = {
         empresa_id: empresaId,
-        numero: numeroOs,
+        tipo: "RECEBER",
+        descricao: up(`OS ${numeroOs}`),
         cliente_id: clienteSelecionado?.id || null,
-        cliente_nome: clienteSelecionado?.nome || null,
-        cliente_telefone: clienteSelecionado?.telefone || null,
-        veiculo_descricao: up(veiculoDescricao),
-        observacoes: up(observacoes),
-        subtotal,
-        desconto: toMoney(desconto),
-        total: totalGeral,
-        status: up(status),
-        faturado,
-        data_faturamento: faturado ? agoraLocalISO() : null,
-        forma_pagamento: faturado ? up(formaPagamento) : null,
+        cliente_nome: clienteSelecionado?.nome || up("CLIENTE NÃO INFORMADO"),
+        documento: up(numeroOs),
+        categoria: "ORDEM DE SERVICO",
+        valor_original: totalGeral,
+        valor_pago: isPagamentoImediato(formaPagamento) ? valorLiquidoCalculado : 0,
+        desconto: 0,
+        juros: 0,
+        multa: 0,
+        data_emissao: hojeLocalISO(),
+        data_vencimento: hojeLocalISO(),
+        data_pagamento: isPagamentoImediato(formaPagamento) ? hojeLocalISO() : null,
+        forma_pagamento: up(formaPagamento),
+        status: isPagamentoImediato(formaPagamento) ? "PAGO" : "ABERTO",
+        observacoes: up(observacoes || `TÍTULO GERADO PELA OS ${numeroOs}`),
+        conta_financeira_id: contaFinanceiraId || null,
+        taxa_cartao_id: taxaCartaoId || null,
+        valor_taxa: valorTaxaCalculado,
+        valor_liquido: valorLiquidoCalculado,
+        tipo_recebimento: up(formaPagamento),
       };
 
-      let ordemId = editingId;
+      const { error: financeiroError } = await supabase
+        .from("financeiro_titulos")
+        .insert([financeiroPayload]);
 
-      if (editingId) {
-        const { error } = await supabase
-          .from("ordens_servico")
-          .update(payload)
-          .eq("empresa_id", empresaId)
-          .eq("id", editingId);
-
-        if (error) {
-          alert("ERRO AO ATUALIZAR OS: " + error.message);
-          return;
-        }
-
-        const { error: delError } = await supabase
-          .from("ordens_servico_itens")
-          .delete()
-          .eq("ordem_servico_id", editingId);
-
-        if (delError) {
-          alert("OS SALVA, MAS DEU ERRO AO LIMPAR ITENS: " + delError.message);
-          return;
-        }
-      } else {
-        const { data, error } = await supabase
-          .from("ordens_servico")
-          .insert([payload])
-          .select("id")
-          .single();
-
-        if (error || !data) {
-          alert("ERRO AO CRIAR OS: " + (error?.message || ""));
-          return;
-        }
-
-        ordemId = data.id;
-      }
-
-      const itensPayload = itens.map((item) => ({
-        ordem_servico_id: ordemId,
-        produto_id: item.produtoId,
-        produto_nome: up(item.nome),
-        codigo: up(item.codigo || ""),
-        quantidade: toMoney(item.quantidade),
-        valor_unitario: toMoney(item.valorUnitario),
-        total: toMoney(item.total),
-        tipo_produto: up(item.tipoProduto || "SIMPLES"),
-        unidade_medida: up(item.unidadeMedida || "UN"),
-      }));
-
-      const { error: itensError } = await supabase
-        .from("ordens_servico_itens")
-        .insert(itensPayload);
-
-      if (itensError) {
-        alert("OS SALVA, MAS DEU ERRO AO SALVAR ITENS: " + itensError.message);
+      if (financeiroError) {
+        alert("OS SALVA, MAS DEU ERRO NO FINANCEIRO: " + financeiroError.message);
         return;
       }
 
-      if (faturado && ordemId) {
-        try {
-          for (const item of itens) {
-            await baixarEstoqueItem(item, ordemId);
-          }
-        } catch (e: any) {
-          alert(e?.message || "OS SALVA, MAS DEU ERRO AO BAIXAR ESTOQUE.");
-          return;
-        }
+      if (isPagamentoImediato(formaPagamento) && contaFinanceiraId) {
+        const conta = contasFinanceiras.find((c) => c.id === contaFinanceiraId);
 
-        const financeiroPayload = {
-          empresa_id: empresaId,
-          tipo: "RECEBER",
-          descricao: up(`OS ${numeroOs}`),
-          cliente_id: clienteSelecionado?.id || null,
-          cliente_nome: clienteSelecionado?.nome || up("CLIENTE NÃO INFORMADO"),
-          documento: up(numeroOs),
-          categoria: "ORDEM DE SERVICO",
-          valor_original: totalGeral,
-          valor_pago: isPagamentoImediato(formaPagamento) ? valorLiquidoCalculado : 0,
-          desconto: 0,
-          juros: 0,
-          multa: 0,
-          data_emissao: hojeLocalISO(),
-          data_vencimento: hojeLocalISO(),
-          data_pagamento: isPagamentoImediato(formaPagamento) ? hojeLocalISO() : null,
-          forma_pagamento: up(formaPagamento),
-          status: isPagamentoImediato(formaPagamento) ? "PAGO" : "ABERTO",
-          observacoes: up(observacoes || `TÍTULO GERADO PELA OS ${numeroOs}`),
-          conta_financeira_id: contaFinanceiraId || null,
-          taxa_cartao_id: taxaCartaoId || null,
-          valor_taxa: valorTaxaCalculado,
-          valor_liquido: valorLiquidoCalculado,
-          tipo_recebimento: up(formaPagamento),
-        };
+        if (conta) {
+          const novoSaldo = toMoney(conta.saldo_atual) + valorLiquidoCalculado;
 
-        const { error: financeiroError } = await supabase
-          .from("financeiro_titulos")
-          .insert([financeiroPayload]);
+          const { error: contaError } = await supabase
+            .from("contas_financeiras")
+            .update({ saldo_atual: novoSaldo })
+            .eq("id", contaFinanceiraId)
+            .eq("empresa_id", empresaId);
 
-        if (financeiroError) {
-          alert("OS SALVA, MAS DEU ERRO NO FINANCEIRO: " + financeiroError.message);
-          return;
-        }
-
-        if (isPagamentoImediato(formaPagamento) && contaFinanceiraId) {
-          const conta = contasFinanceiras.find((c) => c.id === contaFinanceiraId);
-
-          if (conta) {
-            const novoSaldo = toMoney(conta.saldo_atual) + valorLiquidoCalculado;
-
-            const { error: contaError } = await supabase
-              .from("contas_financeiras")
-              .update({ saldo_atual: novoSaldo })
-              .eq("id", contaFinanceiraId)
-              .eq("empresa_id", empresaId);
-
-            if (contaError) {
-              alert("OS SALVA, MAS DEU ERRO AO ATUALIZAR A CONTA FINANCEIRA.");
-              return;
-            }
+          if (contaError) {
+            alert("OS SALVA, MAS DEU ERRO AO ATUALIZAR A CONTA FINANCEIRA.");
+            return;
           }
         }
       }
-
-      alert(faturado ? "OS FATURADA COM SUCESSO!" : "OS SALVA COM SUCESSO!");
-      setModalAberto(false);
-      resetForm();
-      await carregarBase(empresaId);
     }
 
-    if (!ready) {
-      return <div className="p-6">CARREGANDO...</div>;
-    }
+    alert(faturado ? "OS FATURADA COM SUCESSO!" : "OS SALVA COM SUCESSO!");
+    setModalAberto(false);
+    resetForm();
+    await carregarBase(empresaId);
+  }
 
-    return (
-      <div className="min-h-screen flex bg-[#F4F6F8]">
-        <Sidebar />
+  if (!ready) {
+    return <div className="p-6">CARREGANDO...</div>;
+  }
 
-        <main className="flex-1 p-4 md:p-6">
-          <div className="mb-6 rounded-[26px] bg-gradient-to-r from-[#0456A3] to-[#0A6FD6] p-5 md:p-6 text-white shadow-lg">
-            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
-              <div>
-                <p className="text-[12px] font-bold tracking-[0.2em] opacity-80">
-                  AUTO GESTÃO PRO
-                </p>
-                <h1 className="mt-2 text-[28px] md:text-[34px] font-black leading-none">
-                  ORDEM DE SERVIÇO
-                </h1>
-                <p className="mt-3 text-sm text-white/85">
-                  CLIENTE OPCIONAL, BUSCA INTELIGENTE DE PRODUTOS E FATURAMENTO INTEGRADO
-                </p>
-              </div>
+  return (
+    <div className="min-h-screen flex bg-[#F4F6F8]">
+      <Sidebar />
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
-                <KpiMini titulo="OS" valor={String(ordens.length)} />
-                <KpiMini
-                  titulo="ABERTAS"
-                  valor={String(ordens.filter((o) => up(o.status) === "ABERTA").length)}
-                />
-                <KpiMini
-                  titulo="FATURADAS"
-                  valor={String(ordens.filter((o) => !!o.faturado).length)}
-                />
-                <KpiMini
-                  titulo="TOTAL"
-                  valor={moneyBR(
-                    ordens.reduce((acc, o) => acc + toMoney(o.total), 0)
-                  )}
-                  destaque
-                />
-              </div>
+      <main className="flex-1 p-4 md:p-6">
+        <div className="mb-6 rounded-[26px] bg-gradient-to-r from-[#0456A3] to-[#0A6FD6] p-5 md:p-6 text-white shadow-lg">
+          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+            <div>
+              <p className="text-[12px] font-bold tracking-[0.2em] opacity-80">
+                AUTO GESTÃO PRO
+              </p>
+              <h1 className="mt-2 text-[28px] md:text-[34px] font-black leading-none">
+                ORDEM DE SERVIÇO
+              </h1>
+              <p className="mt-3 text-sm text-white/85">
+                CLIENTE OPCIONAL, BUSCA INTELIGENTE DE PRODUTOS E FATURAMENTO INTEGRADO
+              </p>
             </div>
 
-            <div className="mt-5 flex gap-3 flex-wrap">
-              <button
-                onClick={() => {
-                  resetForm();
-                  setModalAberto(true);
-                }}
-                className="botao-header-primary"
-                type="button"
-              >
-                NOVA OS
-              </button>
-
-              <input
-                placeholder="BUSCAR OS..."
-                value={buscaHistorico}
-                onChange={(e) => setBuscaHistorico(e.target.value)}
-                className="h-[48px] w-[320px] xl:w-[420px] max-w-full rounded-2xl border border-white/20 bg-white/10 px-5 text-[16px] text-white outline-none placeholder:text-white/70"
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
+              <KpiMini titulo="OS" valor={String(ordens.length)} />
+              <KpiMini
+                titulo="ABERTAS"
+                valor={String(ordens.filter((o) => up(o.status) === "ABERTA").length)}
+              />
+              <KpiMini
+                titulo="FATURADAS"
+                valor={String(ordens.filter((o) => !!o.faturado).length)}
+              />
+              <KpiMini
+                titulo="TOTAL"
+                valor={moneyBR(
+                  ordens.reduce((acc, o) => acc + toMoney(o.total), 0)
+                )}
+                destaque
               />
             </div>
           </div>
 
-          <section className="card">
-            <div className="section-header">
-              <div>
-                <h2 className="section-title">ORDENS CADASTRADAS</h2>
-                <p className="section-subtitle">
-                  Cliente pode ficar em branco. O veículo e os itens continuam sendo obrigatórios.
-                </p>
-              </div>
-            </div>
+          <div className="mt-5 flex gap-3 flex-wrap">
+            <button
+              onClick={() => {
+                resetForm();
+                setModalAberto(true);
+              }}
+              className="botao-header-primary"
+              type="button"
+            >
+              NOVA OS
+            </button>
 
-            <div className="overflow-auto">
-              <table className="tabela min-w-[1200px]">
-                <thead>
+            <input
+              placeholder="BUSCAR OS..."
+              value={buscaHistorico}
+              onChange={(e) => setBuscaHistorico(e.target.value)}
+              className="h-[48px] w-[320px] xl:w-[420px] max-w-full rounded-2xl border border-white/20 bg-white/10 px-5 text-[16px] text-white outline-none placeholder:text-white/70"
+            />
+          </div>
+        </div>
+
+        <section className="card">
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">ORDENS CADASTRADAS</h2>
+              <p className="section-subtitle">
+                Cliente pode ficar em branco. O veículo e os itens continuam sendo obrigatórios.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-auto">
+            <table className="tabela min-w-[1200px]">
+              <thead>
+                <tr>
+                  <th>NÚMERO</th>
+                  <th>CLIENTE</th>
+                  <th>VEÍCULO</th>
+                  <th>STATUS</th>
+                  <th>FATURADO</th>
+                  <th>FORMA</th>
+                  <th>TOTAL</th>
+                  <th>CRIADA EM</th>
+                  <th>AÇÕES</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
                   <tr>
-                    <th>NÚMERO</th>
-                    <th>CLIENTE</th>
-                    <th>VEÍCULO</th>
-                    <th>STATUS</th>
-                    <th>FATURADO</th>
-                    <th>FORMA</th>
-                    <th>TOTAL</th>
-                    <th>CRIADA EM</th>
-                    <th>AÇÕES</th>
+                    <td colSpan={9} className="empty-state">
+                      CARREGANDO...
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan={9} className="empty-state">
-                        CARREGANDO...
+                ) : historicoFiltrado.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="empty-state">
+                      NENHUMA OS ENCONTRADA.
+                    </td>
+                  </tr>
+                ) : (
+                  historicoFiltrado.map((o) => (
+                    <tr key={o.id}>
+                      <td className="font-bold">{o.numero || "-"}</td>
+                      <td>{o.cliente_nome || "SEM CLIENTE"}</td>
+                      <td>{o.veiculo_descricao || "-"}</td>
+                      <td>{o.status || "-"}</td>
+                      <td>{o.faturado ? "SIM" : "NÃO"}</td>
+                      <td>{o.forma_pagamento || "-"}</td>
+                      <td className="font-bold">{moneyBR(toMoney(o.total))}</td>
+                      <td>{formatDateTimeBr(o.created_at)}</td>
+                      <td>
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => editarOrdem(o)}
+                            className="botao-mini"
+                            type="button"
+                          >
+                            EDITAR
+                          </button>
+
+                          <button
+                            onClick={() => removerOrdem(o.id)}
+                            className="botao-mini danger"
+                            type="button"
+                          >
+                            REMOVER
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  ) : historicoFiltrado.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="empty-state">
-                        NENHUMA OS ENCONTRADA.
-                      </td>
-                    </tr>
-                  ) : (
-                    historicoFiltrado.map((o) => (
-                      <tr key={o.id}>
-                        <td className="font-bold">{o.numero || "-"}</td>
-                        <td>{o.cliente_nome || "SEM CLIENTE"}</td>
-                        <td>{o.veiculo_descricao || "-"}</td>
-                        <td>{o.status || "-"}</td>
-                        <td>{o.faturado ? "SIM" : "NÃO"}</td>
-                        <td>{o.forma_pagamento || "-"}</td>
-                        <td className="font-bold">{moneyBR(toMoney(o.total))}</td>
-                        <td>{formatDateTimeBr(o.created_at)}</td>
-                        <td>
-                          <div className="flex gap-2 flex-wrap">
-                            <button
-                              onClick={() => editarOrdem(o)}
-                              className="botao-mini"
-                              type="button"
-                            >
-                              EDITAR
-                            </button>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-                            <button
-                              onClick={() => removerOrdem(o.id)}
-                              className="botao-mini danger"
-                              type="button"
-                            >
-                              REMOVER
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          {modalAberto && (
-            <div className="modal-overlay" onClick={() => setModalAberto(false)}>
-              <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">
-                  <div>
-                    <div className="modal-kicker">AUTO GESTÃO PRO</div>
-                    <h2 className="modal-title">
-                      {editingId ? "EDITAR ORDEM DE SERVIÇO" : "NOVA ORDEM DE SERVIÇO"}
-                    </h2>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setModalAberto(false)}
-                    className="close-btn"
-                  >
-                    ✕
-                  </button>
+        {modalAberto && (
+          <div className="modal-overlay" onClick={() => setModalAberto(false)}>
+            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <div className="modal-kicker">AUTO GESTÃO PRO</div>
+                  <h2 className="modal-title">
+                    {editingId ? "EDITAR ORDEM DE SERVIÇO" : "NOVA ORDEM DE SERVIÇO"}
+                  </h2>
                 </div>
 
-                <div className="modal-scroll">
-                  <div className="card-interno">
-                    <h3 className="section-title mb-4">DADOS DA OS</h3>
+                <button
+                  type="button"
+                  onClick={() => setModalAberto(false)}
+                  className="close-btn"
+                >
+                  ✕
+                </button>
+              </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="label">NÚMERO</label>
-                        <input className="campo" value={numeroOs} readOnly />
-                      </div>
+              <div className="modal-scroll">
+                <div className="card-interno">
+                  <h3 className="section-title mb-4">DADOS DA OS</h3>
 
-                      <div>
-                        <label className="label">STATUS</label>
-                        <select className="campo" value={status} onChange={(e) => setStatus(e.target.value)}>
-                          <option value="ABERTA">ABERTA</option>
-                          <option value="EM ANDAMENTO">EM ANDAMENTO</option>
-                          <option value="FINALIZADA">FINALIZADA</option>
-                          <option value="ENTREGUE">ENTREGUE</option>
-                        </select>
-                      </div>
-
-                      <div className="flex items-end">
-                        <label className="checkbox-box">
-                          <input
-                            type="checkbox"
-                            checked={faturado}
-                            onChange={(e) => setFaturado(e.target.checked)}
-                          />
-                          <span>FATURAR AGORA</span>
-                        </label>
-                      </div>
-
-                      <div className="md:col-span-2 relative" ref={clienteBoxRef}>
-                        <label className="label">CLIENTE (OPCIONAL)</label>
-                        <input
-                          className="campo"
-                          placeholder="PODE DEIXAR EM BRANCO"
-                          value={clienteBusca}
-                          onChange={async (e) => {
-                            const valor = e.target.value;
-                            setClienteBusca(valor);
-
-                            if (!valor.trim()) {
-                              setClienteSelecionado(null);
-                              setClientesEncontrados([]);
-                              setOpenClientes(false);
-                              return;
-                            }
-
-                            setOpenClientes(true);
-                            await buscarClientes(valor);
-                          }}
-                          onFocus={async () => {
-                            if (clienteBusca.trim().length >= 2) {
-                              setOpenClientes(true);
-                              await buscarClientes(clienteBusca);
-                            }
-                          }}
-                        />
-
-                        {buscandoClientes && (
-                          <div className="text-xs text-[#64748B] mt-2">BUSCANDO CLIENTES...</div>
-                        )}
-
-                        {openClientes && clientesEncontrados.length > 0 && (
-                          <div className="dropdown">
-                            {clientesEncontrados.map((c) => (
-                              <button
-                                key={c.id}
-                                type="button"
-                                onClick={() => selecionarCliente(c)}
-                                className="dropdown-item"
-                              >
-                                <div className="font-bold text-[#0F172A]">{c.nome}</div>
-                                <div className="text-xs text-[#64748B]">
-                                  {c.telefone || "-"} {c.email ? `• ${c.email}` : ""}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="label">VEÍCULO / DESCRIÇÃO</label>
-                        <input
-                          className="campo"
-                          value={veiculoDescricao}
-                          onChange={(e) => setVeiculoDescricao(e.target.value)}
-                          placeholder="EX.: GOL G5 PRATA PLACA XXX-0000"
-                        />
-                      </div>
-
-                      <div className="md:col-span-3">
-                        <label className="label">OBSERVAÇÕES</label>
-                        <textarea
-                          className="campo-textarea"
-                          value={observacoes}
-                          onChange={(e) => setObservacoes(e.target.value)}
-                        />
-                      </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="label">NÚMERO</label>
+                      <input className="campo" value={numeroOs} readOnly />
                     </div>
-                  </div>
 
-                  <div className="card-interno mt-5" ref={produtoBoxRef}>
-                    <h3 className="section-title mb-4">PRODUTOS DA OS</h3>
+                    <div>
+                      <label className="label">STATUS</label>
+                      <select className="campo" value={status} onChange={(e) => setStatus(e.target.value)}>
+                        <option value="ABERTA">ABERTA</option>
+                        <option value="EM ANDAMENTO">EM ANDAMENTO</option>
+                        <option value="FINALIZADA">FINALIZADA</option>
+                        <option value="ENTREGUE">ENTREGUE</option>
+                      </select>
+                    </div>
 
-                    <div className="relative">
-                      <label className="label">BUSCAR PRODUTO</label>
+                    <div className="flex items-end">
+                      <label className="checkbox-box">
+                        <input
+                          type="checkbox"
+                          checked={faturado}
+                          onChange={(e) => setFaturado(e.target.checked)}
+                        />
+                        <span>FATURAR AGORA</span>
+                      </label>
+                    </div>
+
+                    <div className="md:col-span-2 relative" ref={clienteBoxRef}>
+                      <label className="label">CLIENTE (OPCIONAL)</label>
                       <input
                         className="campo"
-                        placeholder="EX.: FECHADURA G5 ou G5 FECHADURA"
-                        value={produtoBusca}
-                        onChange={(e) => {
-                          setProdutoBusca(e.target.value);
-                          setOpenProdutos(!!e.target.value.trim());
+                        placeholder="PODE DEIXAR EM BRANCO"
+                        value={clienteBusca}
+                        onChange={async (e) => {
+                          const valor = e.target.value;
+                          setClienteBusca(valor);
+
+                          if (!valor.trim()) {
+                            setClienteSelecionado(null);
+                            setClientesEncontrados([]);
+                            setOpenClientes(false);
+                            return;
+                          }
+
+                          setOpenClientes(true);
+                          await buscarClientes(valor);
                         }}
-                        onFocus={() => {
-                          if (produtoBusca.trim()) setOpenProdutos(true);
+                        onFocus={async () => {
+                          if (clienteBusca.trim().length >= 2) {
+                            setOpenClientes(true);
+                            await buscarClientes(clienteBusca);
+                          }
                         }}
                       />
 
-                      {openProdutos && produtosEncontrados.length > 0 && (
-                        <div className="dropdown top-full mt-2">
-                          {produtosEncontrados.map((p) => (
+                      {buscandoClientes && (
+                        <div className="text-xs text-[#64748B] mt-2">BUSCANDO CLIENTES...</div>
+                      )}
+
+                      {openClientes && clientesEncontrados.length > 0 && (
+                        <div className="dropdown">
+                          {clientesEncontrados.map((c) => (
                             <button
-                              key={p.id}
+                              key={c.id}
                               type="button"
-                              onClick={() => adicionarProduto(p)}
+                              onClick={() => selecionarCliente(c)}
                               className="dropdown-item"
                             >
-                              <div className="flex justify-between gap-4">
-                                <div>
-                                  <div className="font-bold text-[#0F172A]">{up(p.nome)}</div>
-                                  <div className="text-xs text-[#64748B]">
-                                    {up(p.codigo_sku || p.codigo_barras || "-")} • ESTOQUE{" "}
-                                    {toMoney(p.estoque_atual)} • {up(p.tipo_produto || "SIMPLES")}
-                                  </div>
-                                </div>
-
-                                <div className="font-black text-[#0456A3]">
-                                  {moneyBR(getPrecoPadraoProduto(p))}
-                                </div>
+                              <div className="font-bold text-[#0F172A]">{c.nome}</div>
+                              <div className="text-xs text-[#64748B]">
+                                {c.telefone || "-"} {c.email ? `• ${c.email}` : ""}
                               </div>
                             </button>
                           ))}
                         </div>
                       )}
-
-                      {openProdutos && produtoBusca.trim() && produtosEncontrados.length === 0 && (
-                        <div className="dropdown top-full mt-2">
-                          <div className="dropdown-item text-[#B91C1C]">
-                            NENHUM PRODUTO ENCONTRADO.
-                          </div>
-                        </div>
-                      )}
                     </div>
 
-                    <div className="mt-4 overflow-auto">
-                      <table className="tabela min-w-[1300px]">
-                        <thead>
-                          <tr>
-                            <th>PRODUTO</th>
-                            <th>CÓDIGO</th>
-                            <th>TIPO</th>
-                            <th>UNIDADE</th>
-                            <th>ESTOQUE</th>
-                            <th>QTD</th>
-                            <th>V. UNIT.</th>
-                            <th>TOTAL</th>
-                            <th>AÇÃO</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {itens.length === 0 ? (
-                            <tr>
-                              <td className="empty-state" colSpan={9}>
-                                NENHUM ITEM ADICIONADO.
-                              </td>
-                            </tr>
-                          ) : (
-                            itens.map((item) => (
-                              <tr key={item.id}>
-                                <td>
-                                  <input
-                                    value={item.nome}
-                                    onChange={(e) => atualizarItem(item.id, "nome", e.target.value)}
-                                    className="campo-tabela"
-                                  />
-                                </td>
+                    <div>
+                      <label className="label">VEÍCULO / DESCRIÇÃO</label>
+                      <input
+                        className="campo"
+                        value={veiculoDescricao}
+                        onChange={(e) => setVeiculoDescricao(e.target.value)}
+                        placeholder="EX.: GOL G5 PRATA PLACA XXX-0000"
+                      />
+                    </div>
 
-                                <td>
-                                  <input
-                                    value={item.codigo || ""}
-                                    onChange={(e) => atualizarItem(item.id, "codigo", e.target.value)}
-                                    className="campo-tabela"
-                                  />
-                                </td>
-
-                                <td className="font-semibold">{item.tipoProduto || "SIMPLES"}</td>
-                                <td>{item.unidadeMedida || "UN"}</td>
-                                <td className="font-semibold">
-                                  {item.controlaEstoque ? toMoney(item.estoqueAtual) : "-"}
-                                </td>
-
-                                <td>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    step="0.0001"
-                                    value={item.quantidade}
-                                    onChange={(e) =>
-                                      atualizarItem(item.id, "quantidade", Number(e.target.value))
-                                    }
-                                    className="campo-tabela text-right"
-                                  />
-                                </td>
-
-                                <td>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={item.valorUnitario}
-                                    onChange={(e) =>
-                                      atualizarItem(item.id, "valorUnitario", Number(e.target.value))
-                                    }
-                                    className="campo-tabela text-right"
-                                  />
-                                </td>
-
-                                <td className="font-black text-right text-[#0F172A]">
-                                  {moneyBR(item.total)}
-                                </td>
-
-                                <td className="text-right">
-                                  <button
-                                    onClick={() => removerItem(item.id)}
-                                    className="botao-mini danger"
-                                    type="button"
-                                  >
-                                    REMOVER
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
+                    <div className="md:col-span-3">
+                      <label className="label">OBSERVAÇÕES</label>
+                      <textarea
+                        className="campo-textarea"
+                        value={observacoes}
+                        onChange={(e) => setObservacoes(e.target.value)}
+                      />
                     </div>
                   </div>
+                </div>
 
-                  {faturado && (
-                    <div className="card-interno mt-5">
-                      <h3 className="section-title mb-4">FATURAMENTO</h3>
+                <div className="card-interno mt-5" ref={produtoBoxRef}>
+                  <h3 className="section-title mb-4">PRODUTOS DA OS</h3>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="label">FORMA DE PAGAMENTO</label>
-                          <select
-                            value={formaPagamento}
-                            onChange={(e) => {
-                              const novaForma = e.target.value;
-                              setFormaPagamento(novaForma);
+                  <div className="relative">
+                    <label className="label">BUSCAR PRODUTO</label>
+                    <input
+                      className="campo"
+                      placeholder="EX.: FECHADURA G5 ou G5 FECHADURA"
+                      value={produtoBusca}
+                      onChange={(e) => {
+                        setProdutoBusca(e.target.value);
+                        setOpenProdutos(!!e.target.value.trim());
+                      }}
+                      onFocus={() => {
+                        if (produtoBusca.trim()) setOpenProdutos(true);
+                      }}
+                    />
 
-                              if (!isCartao(novaForma)) {
-                                setTaxaCartaoId("");
-                              }
-                            }}
-                            className="campo"
+                    {openProdutos && produtosEncontrados.length > 0 && (
+                      <div className="dropdown top-full mt-2">
+                        {produtosEncontrados.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => adicionarProduto(p)}
+                            className="dropdown-item"
                           >
-                            <option>DINHEIRO</option>
-                            <option>PIX</option>
-                            <option>CARTÃO DE DÉBITO</option>
-                            <option>CARTÃO DE CRÉDITO</option>
-                            <option>BOLETO</option>
-                            <option>TRANSFERÊNCIA</option>
-                            <option>A PRAZO</option>
-                            <option>FIADO</option>
-                          </select>
-                        </div>
+                            <div className="flex justify-between gap-4">
+                              <div>
+                                <div className="font-bold text-[#0F172A]">{up(p.nome)}</div>
+                                <div className="text-xs text-[#64748B]">
+                                  {up(p.codigo_sku || p.codigo_barras || "-")} • ESTOQUE{" "}
+                                  {toMoney(p.estoque_atual)} • {up(p.tipo_produto || "SIMPLES")}
+                                </div>
+                              </div>
 
-                        <div>
-                          <label className="label">CONTA FINANCEIRA</label>
-                          <select
-                            value={contaFinanceiraId}
-                            onChange={(e) => setContaFinanceiraId(e.target.value)}
-                            className="campo"
-                          >
-                            <option value="">SELECIONE A CONTA</option>
-                            {contasFinanceiras.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.nome}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                              <div className="font-black text-[#0456A3]">
+                                {moneyBR(getPrecoPadraoProduto(p))}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-                        <div>
-                          <label className="label">TAXA DE CARTÃO</label>
-                          <select
-                            value={taxaCartaoId}
-                            onChange={(e) => setTaxaCartaoId(e.target.value)}
-                            className="campo"
-                            disabled={!isCartao(formaPagamento)}
-                          >
-                            <option value="">
-                              {isCartao(formaPagamento) ? "SELECIONE A TAXA" : "NÃO SE APLICA"}
-                            </option>
-                            {taxasFiltradasPorForma.map((t) => (
-                              <option key={t.id} value={t.id}>
-                                {t.nome} - {toMoney(t.taxa_percentual).toFixed(2)}%
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="label">DESCONTO</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={desconto}
-                            onChange={(e) => setDesconto(e.target.value)}
-                            className="campo"
-                          />
+                    {openProdutos && produtoBusca.trim() && produtosEncontrados.length === 0 && (
+                      <div className="dropdown top-full mt-2">
+                        <div className="dropdown-item text-[#B91C1C]">
+                          NENHUM PRODUTO ENCONTRADO.
                         </div>
                       </div>
+                    )}
+                  </div>
 
-                      <div className="finance-box mt-4">
-                        <div className="finance-line">
-                          <span>SUBTOTAL</span>
-                          <strong>{moneyBR(subtotal)}</strong>
-                        </div>
-                        <div className="finance-line">
-                          <span>DESCONTO</span>
-                          <strong>{moneyBR(toMoney(desconto))}</strong>
-                        </div>
-                        <div className="finance-line">
-                          <span>TAXA</span>
-                          <strong>{moneyBR(valorTaxaCalculado)}</strong>
-                        </div>
-                        <div className="finance-total">
-                          <span>LÍQUIDO</span>
-                          <strong>{moneyBR(valorLiquidoCalculado)}</strong>
-                        </div>
+                  <div className="mt-4 overflow-auto">
+                    <table className="tabela min-w-[1300px]">
+                      <thead>
+                        <tr>
+                          <th>PRODUTO</th>
+                          <th>CÓDIGO</th>
+                          <th>TIPO</th>
+                          <th>UNIDADE</th>
+                          <th>ESTOQUE</th>
+                          <th>QTD</th>
+                          <th>V. UNIT.</th>
+                          <th>TOTAL</th>
+                          <th>AÇÃO</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {itens.length === 0 ? (
+                          <tr>
+                            <td className="empty-state" colSpan={9}>
+                              NENHUM ITEM ADICIONADO.
+                            </td>
+                          </tr>
+                        ) : (
+                          itens.map((item) => (
+                            <tr key={item.id}>
+                              <td>
+                                <input
+                                  value={item.nome}
+                                  onChange={(e) => atualizarItem(item.id, "nome", e.target.value)}
+                                  className="campo-tabela"
+                                />
+                              </td>
+
+                              <td>
+                                <input
+                                  value={item.codigo || ""}
+                                  onChange={(e) => atualizarItem(item.id, "codigo", e.target.value)}
+                                  className="campo-tabela"
+                                />
+                              </td>
+
+                              <td className="font-semibold">{item.tipoProduto || "SIMPLES"}</td>
+                              <td>{item.unidadeMedida || "UN"}</td>
+                              <td className="font-semibold">
+                                {item.controlaEstoque ? toMoney(item.estoqueAtual) : "-"}
+                              </td>
+
+                              <td>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="0.0001"
+                                  value={item.quantidade}
+                                  onChange={(e) =>
+                                    atualizarItem(item.id, "quantidade", Number(e.target.value))
+                                  }
+                                  className="campo-tabela text-right"
+                                />
+                              </td>
+
+                              <td>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={item.valorUnitario}
+                                  onChange={(e) =>
+                                    atualizarItem(item.id, "valorUnitario", Number(e.target.value))
+                                  }
+                                  className="campo-tabela text-right"
+                                />
+                              </td>
+
+                              <td className="font-black text-right text-[#0F172A]">
+                                {moneyBR(item.total)}
+                              </td>
+
+                              <td className="text-right">
+                                <button
+                                  onClick={() => removerItem(item.id)}
+                                  className="botao-mini danger"
+                                  type="button"
+                                >
+                                  REMOVER
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {faturado && (
+                  <div className="card-interno mt-5">
+                    <h3 className="section-title mb-4">FATURAMENTO</h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="label">FORMA DE PAGAMENTO</label>
+                        <select
+                          value={formaPagamento}
+                          onChange={(e) => {
+                            const novaForma = e.target.value;
+                            setFormaPagamento(novaForma);
+
+                            if (!isCartao(novaForma)) {
+                              setTaxaCartaoId("");
+                            }
+                          }}
+                          className="campo"
+                        >
+                          <option>DINHEIRO</option>
+                          <option>PIX</option>
+                          <option>CARTÃO DE DÉBITO</option>
+                          <option>CARTÃO DE CRÉDITO</option>
+                          <option>BOLETO</option>
+                          <option>TRANSFERÊNCIA</option>
+                          <option>A PRAZO</option>
+                          <option>FIADO</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="label">CONTA FINANCEIRA</label>
+                        <select
+                          value={contaFinanceiraId}
+                          onChange={(e) => setContaFinanceiraId(e.target.value)}
+                          className="campo"
+                        >
+                          <option value="">SELECIONE A CONTA</option>
+                          {contasFinanceiras.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="label">TAXA DE CARTÃO</label>
+                        <select
+                          value={taxaCartaoId}
+                          onChange={(e) => setTaxaCartaoId(e.target.value)}
+                          className="campo"
+                          disabled={!isCartao(formaPagamento)}
+                        >
+                          <option value="">
+                            {isCartao(formaPagamento) ? "SELECIONE A TAXA" : "NÃO SE APLICA"}
+                          </option>
+                          {taxasFiltradasPorForma.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.nome} - {toMoney(t.taxa_percentual).toFixed(2)}%
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="label">DESCONTO</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={desconto}
+                          onChange={(e) => setDesconto(e.target.value)}
+                          className="campo"
+                        />
                       </div>
                     </div>
-                  )}
-                </div>
 
-                <div className="modal-footer">
-                  <button onClick={salvarOS} className="botao-azul" type="button">
-                    {editingId ? "SALVAR ALTERAÇÕES" : faturado ? "SALVAR E FATURAR" : "SALVAR OS"}
-                  </button>
+                    <div className="finance-box mt-4">
+                      <div className="finance-line">
+                        <span>SUBTOTAL</span>
+                        <strong>{moneyBR(subtotal)}</strong>
+                      </div>
+                      <div className="finance-line">
+                        <span>DESCONTO</span>
+                        <strong>{moneyBR(toMoney(desconto))}</strong>
+                      </div>
+                      <div className="finance-line">
+                        <span>TAXA</span>
+                        <strong>{moneyBR(valorTaxaCalculado)}</strong>
+                      </div>
+                      <div className="finance-total">
+                        <span>LÍQUIDO</span>
+                        <strong>{moneyBR(valorLiquidoCalculado)}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-                  <button
-                    onClick={() => {
-                      setModalAberto(false);
-                      resetForm();
-                    }}
-                    className="botao"
-                    type="button"
-                  >
-                    CANCELAR
-                  </button>
-                </div>
+              <div className="modal-footer">
+                <button onClick={salvarOS} className="botao-azul" type="button">
+                  {editingId ? "SALVAR ALTERAÇÕES" : faturado ? "SALVAR E FATURAR" : "SALVAR OS"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setModalAberto(false);
+                    resetForm();
+                  }}
+                  className="botao"
+                  type="button"
+                >
+                  CANCELAR
+                </button>
               </div>
             </div>
-          )}
-        </main>
+          </div>
+        )}
+      </main>
 
-        <style jsx>{`
+           <style jsx>{`
         .card {
           background: white;
           border-radius: 24px;
@@ -1588,8 +1626,8 @@ function scoreSearch(haystack: string, query: string) {
         }
 
         .card-interno {
-          background: #fff;
-          border: 1px solid #e5e7eb;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
           border-radius: 22px;
           padding: 18px;
         }
@@ -1836,28 +1874,45 @@ function scoreSearch(haystack: string, query: string) {
           max-height: 92vh;
           overflow: hidden;
           border-radius: 28px;
-          background: #f8fafc;
+          background: #ffffff;
           box-shadow: 0 30px 90px rgba(15, 23, 42, 0.32);
-          border: 1px solid #dbe4ee;
+          border: 1px solid #cbd5e1;
           display: flex;
           flex-direction: column;
         }
 
         .modal-header {
           padding: 18px 20px;
-          background: linear-gradient(135deg, #0456a3 0%, #0a6fd6 100%);
-          color: white;
+          background: #0456a3;
+          background-image: linear-gradient(135deg, #0456a3 0%, #0a6fd6 100%);
+          color: #ffffff !important;
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
           gap: 14px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .modal-header * {
+          color: inherit;
+        }
+
+        .modal-header h1,
+        .modal-header h2,
+        .modal-header h3,
+        .modal-header p,
+        .modal-header span,
+        .modal-header div,
+        .modal-header button {
+          color: #ffffff !important;
         }
 
         .modal-kicker {
           font-size: 11px;
           font-weight: 900;
           letter-spacing: 0.16em;
-          opacity: 0.82;
+          opacity: 0.92;
+          color: #dbeafe !important;
         }
 
         .modal-title {
@@ -1865,15 +1920,16 @@ function scoreSearch(haystack: string, query: string) {
           font-size: 28px;
           font-weight: 900;
           line-height: 1;
+          color: #ffffff !important;
         }
 
         .close-btn {
           width: 42px;
           height: 42px;
           border-radius: 14px;
-          border: 1px solid rgba(255,255,255,0.24);
-          background: rgba(255,255,255,0.1);
-          color: white;
+          border: 1px solid rgba(255,255,255,0.28);
+          background: rgba(255,255,255,0.14);
+          color: #ffffff !important;
           font-size: 16px;
           font-weight: 900;
         }
@@ -1882,6 +1938,7 @@ function scoreSearch(haystack: string, query: string) {
           padding: 18px;
           overflow: auto;
           flex: 1;
+          background: #f8fafc;
         }
 
         .modal-footer {
@@ -1893,26 +1950,29 @@ function scoreSearch(haystack: string, query: string) {
           background: white;
         }
       `}</style>
-      </div>
-    );
-  }
+    </div>
+  );
+}
 
 function KpiMini({
-    titulo,
-    valor,
-    destaque = false,
-  }: {
-    titulo: string;
-    valor: string;
-    destaque?: boolean;
-  }) {
-      return (
-        <div
-          className={`rounded-[18px] px-4 py-3 ${destaque ? "bg-white text-[#0456A3]" : "bg-white/12 text-white border border-white/15"
-            }`}
-        >
-          <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">{titulo}</div>
-          <div className="mt-1 text-[18px] font-black leading-none">{valor}</div>
-        </div>
-      );
-    }
+  titulo,
+  valor,
+  destaque = false,
+}: {
+  titulo: string;
+  valor: string;
+  destaque?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-[18px] px-4 py-3 ${
+        destaque
+          ? "bg-white text-[#0456A3]"
+          : "bg-white/12 text-white border border-white/15"
+      }`}
+    >
+      <div className="text-[10px] font-bold tracking-[0.12em] opacity-80">{titulo}</div>
+      <div className="mt-1 text-[18px] font-black leading-none">{valor}</div>
+    </div>
+  );
+}
