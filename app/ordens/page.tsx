@@ -643,6 +643,36 @@ export default function OrdensPage() {
     setModalAberto(true);
   }
 
+  function abrirImpressaoTecnica(ordemId: string) {
+    const win = window.open(`/imprimir-tecnico?id=${ordemId}`, "_blank");
+
+    if (!win) {
+      alert("NÃO FOI POSSÍVEL ABRIR A IMPRESSÃO TÉCNICA.");
+      return;
+    }
+
+    setTimeout(() => {
+      try {
+        win.print();
+      } catch {}
+    }, 700);
+  }
+
+  function abrirImpressaoCliente(ordemId: string) {
+    const win = window.open(`/imprimir-cliente?id=${ordemId}`, "_blank");
+
+    if (!win) {
+      alert("NÃO FOI POSSÍVEL ABRIR A IMPRESSÃO DO CLIENTE.");
+      return;
+    }
+
+    setTimeout(() => {
+      try {
+        win.print();
+      } catch {}
+    }, 700);
+  }
+
   async function removerOrdem(id: string) {
     if (!empresaId) return;
     if (!confirm("REMOVER ESTA ORDEM DE SERVIÇO?")) return;
@@ -1161,7 +1191,7 @@ export default function OrdensPage() {
           </div>
 
           <div className="overflow-auto">
-            <table className="tabela min-w-[1200px]">
+            <table className="tabela min-w-[1400px]">
               <thead>
                 <tr>
                   <th>NÚMERO</th>
@@ -1207,6 +1237,22 @@ export default function OrdensPage() {
                             type="button"
                           >
                             EDITAR
+                          </button>
+
+                          <button
+                            onClick={() => abrirImpressaoTecnica(o.id)}
+                            className="botao-mini print"
+                            type="button"
+                          >
+                            IMP. TÉCNICO
+                          </button>
+
+                          <button
+                            onClick={() => abrirImpressaoCliente(o.id)}
+                            className="botao-mini print-secondary"
+                            type="button"
+                          >
+                            IMP. CLIENTE
                           </button>
 
                           <button
@@ -1616,7 +1662,7 @@ export default function OrdensPage() {
         )}
       </main>
 
-           <style jsx>{`
+      <style jsx>{`
         .card {
           background: white;
           border-radius: 24px;
@@ -1793,6 +1839,18 @@ export default function OrdensPage() {
           border-color: #fecaca;
           background: #fef2f2;
           color: #b91c1c;
+        }
+
+        .botao-mini.print {
+          border-color: #bfdbfe;
+          background: #eff6ff;
+          color: #0456a3;
+        }
+
+        .botao-mini.print-secondary {
+          border-color: #c7d2fe;
+          background: #eef2ff;
+          color: #4338ca;
         }
 
         .tabela {
