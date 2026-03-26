@@ -644,34 +644,34 @@ export default function OrdensPage() {
   }
 
   function abrirImpressaoTecnica(ordemId: string) {
-    const win = window.open(`ordens/imprimir-tecnico?id=${ordemId}`, "_blank");
+  const win = window.open(`/ordens/imprimir-tecnico?id=${ordemId}`, "_blank");
 
-    if (!win) {
-      alert("NÃO FOI POSSÍVEL ABRIR A IMPRESSÃO TÉCNICA.");
-      return;
-    }
-
-    setTimeout(() => {
-      try {
-        win.print();
-      } catch {}
-    }, 700);
+  if (!win) {
+    alert("NÃO FOI POSSÍVEL ABRIR A IMPRESSÃO TÉCNICA.");
+    return;
   }
 
-  function abrirImpressaoCliente(ordemId: string) {
-    const win = window.open(`/ordens/imprimir-cliente?id=${ordemId}`, "_blank");
+  setTimeout(() => {
+    try {
+      win.print();
+    } catch {}
+  }, 700);
+}
 
-    if (!win) {
-      alert("NÃO FOI POSSÍVEL ABRIR A IMPRESSÃO DO CLIENTE.");
-      return;
-    }
+function abrirImpressaoCliente(ordemId: string) {
+  const win = window.open(`/ordens/imprimir-cliente?id=${ordemId}`, "_blank");
 
-    setTimeout(() => {
-      try {
-        win.print();
-      } catch {}
-    }, 700);
+  if (!win) {
+    alert("NÃO FOI POSSÍVEL ABRIR A IMPRESSÃO DO CLIENTE.");
+    return;
   }
+
+  setTimeout(() => {
+    try {
+      win.print();
+    } catch {}
+  }, 700);
+}
 
   async function removerOrdem(id: string) {
     if (!empresaId) return;
