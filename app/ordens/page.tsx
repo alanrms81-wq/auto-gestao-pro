@@ -644,7 +644,7 @@ export default function OrdensPage() {
   }
 
   function abrirImpressaoTecnica(ordemId: string) {
-    const win = window.open(`/imprimir-tecnico?id=${ordemId}`, "_blank");
+    const win = window.open(`ordens//imprimir-tecnico?id=${ordemId}`, "_blank");
 
     if (!win) {
       alert("NÃO FOI POSSÍVEL ABRIR A IMPRESSÃO TÉCNICA.");
@@ -659,7 +659,7 @@ export default function OrdensPage() {
   }
 
   function abrirImpressaoCliente(ordemId: string) {
-    const win = window.open(`/imprimir-cliente?id=${ordemId}`, "_blank");
+    const win = window.open(`/ordens/imprimir-cliente?id=${ordemId}`, "_blank");
 
     if (!win) {
       alert("NÃO FOI POSSÍVEL ABRIR A IMPRESSÃO DO CLIENTE.");
