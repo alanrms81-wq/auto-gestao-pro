@@ -1,19 +1,30 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSessionUser } from "@/lib/session";
+import { canAccess } from "@/lib/authGuard";
+
+type SessionUser = {
+  id?: string;
+  empresa_id: string;
+  role?: string | null;
+};
 
 type Cliente = {
   id: string;
+  codigo_cliente?: string | null;
   nome: string;
   telefone?: string | null;
   celular?: string | null;
   whatsapp?: string | null;
   cpf_cnpj?: string | null;
+  email?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
   status?: string | null;
 };
 
@@ -44,8 +55,20 @@ type Agendamento = {
   created_at?: string | null;
 };
 
-function up(v: any) {
+function up(v: unknown) {
   return String(v ?? "").toUpperCase();
+}
+
+function normalizeText(v: unknown) {
+  return String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
+}
+
+function normalizeDigits(v: unknown) {
+  return String(v ?? "").replace(/\D/g, "");
 }
 
 function montarDescricaoVeiculo(v: Veiculo) {
@@ -68,6 +91,7 @@ function statusClass(status: string) {
 
 export default function AgendamentosPage() {
   const router = useRouter();
+  const clienteBoxRef = useRef<HTMLDivElement | null>(null);
 
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -99,10 +123,19 @@ export default function AgendamentosPage() {
 
   useEffect(() => {
     async function init() {
-      const user = await getSessionUser();
+      const user = (await getSessionUser()) as SessionUser | null;
 
       if (!user) {
         router.push("/login");
+        return;
+      }
+
+      const role = String(user.role || "").toUpperCase();
+      const isMaster = role === "MASTER";
+      const isAdmin = role === "ADMIN";
+
+      if (!isMaster && !isAdmin && !canAccess("AGENDAMENTOS")) {
+        router.push("/dashboard");
         return;
       }
 
@@ -113,6 +146,18 @@ export default function AgendamentosPage() {
 
     init();
   }, [router]);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (clienteBoxRef.current && !clienteBoxRef.current.contains(target)) {
+        setMostrarDropdownCliente(false);
+      }
+    }
+
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
 
   async function carregarBase(eid?: string) {
     const emp = eid || empresaId;
@@ -139,6 +184,8 @@ export default function AgendamentosPage() {
     if (!empresaId) return;
 
     const q = termo.trim();
+    const qNormal = normalizeText(q);
+    const qDigits = normalizeDigits(q);
 
     if (q.length < 2) {
       setClientesBusca([]);
@@ -149,19 +196,24 @@ export default function AgendamentosPage() {
 
     const { data, error } = await supabase
       .from("clientes")
-      .select("id,nome,telefone,celular,whatsapp,cpf_cnpj,status")
+      .select(
+        "id,codigo_cliente,nome,telefone,celular,whatsapp,cpf_cnpj,email,cidade,estado,status"
+      )
       .eq("empresa_id", empresaId)
       .or(
         [
           `nome.ilike.%${q}%`,
+          `codigo_cliente.ilike.%${q}%`,
           `telefone.ilike.%${q}%`,
           `celular.ilike.%${q}%`,
           `whatsapp.ilike.%${q}%`,
           `cpf_cnpj.ilike.%${q}%`,
+          `email.ilike.%${q}%`,
+          `cidade.ilike.%${q}%`,
         ].join(",")
       )
       .order("nome")
-      .limit(20);
+      .limit(50);
 
     if (error) {
       alert("ERRO AO BUSCAR CLIENTES: " + error.message);
@@ -170,9 +222,36 @@ export default function AgendamentosPage() {
       return;
     }
 
-    const lista = ((data || []) as Cliente[]).filter(
-      (c) => up(c.status || "ATIVO") !== "INATIVO"
-    );
+    const lista = ((data || []) as Cliente[])
+      .filter((c) => up(c.status || "ATIVO") !== "INATIVO")
+      .filter((c) => {
+        const nome = normalizeText(c.nome || "");
+        const codigo = normalizeText(c.codigo_cliente || "");
+        const email = normalizeText(c.email || "");
+        const cidade = normalizeText(c.cidade || "");
+        const telefoneDigits = normalizeDigits(c.telefone);
+        const celularDigits = normalizeDigits(c.celular);
+        const whatsappDigits = normalizeDigits(c.whatsapp);
+        const cpfCnpjDigits = normalizeDigits(c.cpf_cnpj);
+
+        const bateTexto =
+          nome.includes(qNormal) ||
+          codigo.includes(qNormal) ||
+          email.includes(qNormal) ||
+          cidade.includes(qNormal);
+
+        const bateNumero =
+          qDigits.length >= 2 &&
+          (
+            telefoneDigits.includes(qDigits) ||
+            celularDigits.includes(qDigits) ||
+            whatsappDigits.includes(qDigits) ||
+            cpfCnpjDigits.includes(qDigits)
+          );
+
+        return bateTexto || bateNumero;
+      })
+      .slice(0, 20);
 
     setClientesBusca(lista);
     setLoadingClientesBusca(false);
@@ -216,7 +295,9 @@ export default function AgendamentosPage() {
       total: agendamentos.length,
       agendados: agendamentos.filter((a) => up(a.status) === "AGENDADO").length,
       andamento: agendamentos.filter((a) => up(a.status) === "EM ANDAMENTO").length,
-      concluidos: agendamentos.filter((a) => up(a.status) === "CONCLUÍDO" || up(a.status) === "CONCLUIDO").length,
+      concluidos: agendamentos.filter(
+        (a) => up(a.status) === "CONCLUÍDO" || up(a.status) === "CONCLUIDO"
+      ).length,
     };
   }, [agendamentos]);
 
@@ -242,7 +323,9 @@ export default function AgendamentosPage() {
   async function selecionarCliente(c: Cliente) {
     setClienteId(c.id);
     setClienteNome(c.nome);
-    setBuscaCliente(c.nome);
+    setBuscaCliente(
+      c.codigo_cliente ? `${c.nome} (${c.codigo_cliente})` : c.nome
+    );
     setClientesBusca([]);
     setMostrarDropdownCliente(false);
 
@@ -297,7 +380,7 @@ export default function AgendamentosPage() {
 
       alert("AGENDAMENTO ATUALIZADO!");
       resetForm();
-      carregarBase();
+      await carregarBase();
       return;
     }
 
@@ -310,7 +393,7 @@ export default function AgendamentosPage() {
 
     alert("AGENDAMENTO CRIADO!");
     resetForm();
-    carregarBase();
+    await carregarBase();
   }
 
   async function editarAgendamento(a: Agendamento) {
@@ -355,7 +438,7 @@ export default function AgendamentosPage() {
     }
 
     alert("AGENDAMENTO REMOVIDO!");
-    carregarBase();
+    await carregarBase();
   }
 
   if (!ready) {
@@ -429,10 +512,10 @@ export default function AgendamentosPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="md:col-span-2 relative">
+            <div className="md:col-span-2 relative" ref={clienteBoxRef}>
               <label className="label">CLIENTE</label>
               <input
-                placeholder="PESQUISE O CLIENTE POR NOME, TELEFONE OU DOCUMENTO..."
+                placeholder="PESQUISE POR NOME, CÓDIGO, TELEFONE OU DOCUMENTO..."
                 value={buscaCliente}
                 onChange={async (e) => {
                   const valor = e.target.value;
@@ -477,9 +560,17 @@ export default function AgendamentosPage() {
                         onClick={() => selecionarCliente(c)}
                         className="dropdown-item"
                       >
-                        <div className="font-semibold text-[#111827]">{c.nome}</div>
+                        <div className="font-semibold text-[#111827]">
+                          {c.nome}
+                          {c.codigo_cliente ? ` • CÓDIGO ${c.codigo_cliente}` : ""}
+                        </div>
                         <div className="text-xs text-[#6B7280]">
-                          {c.telefone || c.celular || c.whatsapp || c.cpf_cnpj || "-"}
+                          {c.telefone ||
+                            c.celular ||
+                            c.whatsapp ||
+                            c.cpf_cnpj ||
+                            c.email ||
+                            "-"}
                         </div>
                       </button>
                     ))}

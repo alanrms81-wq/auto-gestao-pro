@@ -60,6 +60,8 @@ const MENU_PRINCIPAL: MenuItem[] = [
   { label: "VENDAS", href: "/vendas", modulo: "VENDAS", icon: ShoppingCart },
   { label: "FINANCEIRO", href: "/financeiro", modulo: "FINANCEIRO", icon: Wallet },
   { label: "USUÁRIOS", href: "/usuarios", modulo: "USUARIOS", icon: UserCog },
+  { label: "FORNECEDORES", href: "/fornecedores", modulo: "USUAFORNECEDORESRIOS", icon: UserCog },
+
 ];
 
 const MENU_ADMIN_EMPRESA: MenuItem[] = [

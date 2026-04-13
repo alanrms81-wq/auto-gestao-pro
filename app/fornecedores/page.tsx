@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "@/app/components/Sidebar";
 import { useRouter } from "next/navigation";
-import { canAccess, isLogged } from "@/lib/authGuard";
+import { canAccess } from "@/lib/authGuard";
+import { getSessionUser } from "@/lib/session";
 
 type Fornecedor = {
   id: number;
@@ -197,12 +198,19 @@ export default function FornecedoresPage() {
   const [consultandoCnpj, setConsultandoCnpj] = useState(false);
 
   useEffect(() => {
-    if (!isLogged()) {
+  async function init() {
+    const user = await getSessionUser();
+
+    if (!user) {
       router.push("/login");
       return;
     }
 
-    if (!canAccess("FORNECEDORES")) {
+    const role = String(user.role || "").toUpperCase();
+    const isMaster = role === "MASTER";
+    const isAdmin = role === "ADMIN";
+
+    if (!isMaster && !isAdmin && !canAccess("FORNECEDORES")) {
       alert("ACESSO NEGADO");
       router.push("/dashboard");
       return;
@@ -210,7 +218,10 @@ export default function FornecedoresPage() {
 
     setFornecedores(readLS<Fornecedor[]>(LS_FORNECEDORES, []));
     setReady(true);
-  }, [router]);
+  }
+
+  init();
+}, [router]);
 
   const fornecedoresFiltrados = useMemo(() => {
     const q = up(busca.trim());

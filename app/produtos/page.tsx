@@ -32,6 +32,7 @@ type Produto = {
   unidade_medida?: string | null;
   controla_composicao?: boolean | null;
   observacoes?: string | null;
+  imagem_url?: string | null;
   created_at?: string | null;
 };
 
@@ -62,6 +63,134 @@ function moneyBR(v: number) {
   });
 }
 
+function normalizeText(v: unknown) {
+  return String(v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
+}
+
+function normalizeDigits(v: unknown) {
+  return String(v ?? "").replace(/\D/g, "");
+}
+
+function tokenize(v: string) {
+  return normalizeText(v)
+    .split(/[\s\-_/.,;:()]+/)
+    .filter(Boolean);
+}
+
+function uniqueTokens(tokens: string[]) {
+  return [...new Set(tokens.filter(Boolean))];
+}
+
+function expandToken(token: string) {
+  const t = normalizeText(token);
+
+  const mapa: Record<string, string[]> = {
+    VW: ["VOLKSWAGEN"],
+    VOLKS: ["VOLKSWAGEN"],
+    GM: ["CHEVROLET"],
+    CHEV: ["CHEVROLET"],
+    MERCEDES: ["MB", "MERCEDESBENZ"],
+    BENZ: ["MERCEDES", "MERCEDESBENZ"],
+    SAVEIRO: ["VOLKSWAGEN", "VW"],
+    G5: ["GERACAO5", "GOLG5"],
+    G6: ["GERACAO6", "GOLG6"],
+    G7: ["GERACAO7", "GOLG7"],
+  };
+
+  return uniqueTokens([t, ...(mapa[t] || [])]);
+}
+
+function buildSearchGroups(query: string) {
+  return tokenize(query).map((token) => expandToken(token));
+}
+
+function matchSmart(haystack: string, query: string) {
+  const h = normalizeText(haystack);
+  const groups = buildSearchGroups(query);
+
+  if (!groups.length) return true;
+
+  return groups.every((group) => group.some((alt) => h.includes(alt)));
+}
+
+function scoreSearch(haystack: string, query: string) {
+  const h = normalizeText(haystack);
+  const original = normalizeText(query);
+  const groups = buildSearchGroups(query);
+
+  if (!groups.length) return 0;
+
+  let score = 0;
+
+  for (const group of groups) {
+    if (group.some((alt) => h.includes(alt))) score += 1;
+  }
+
+  if (original && h.includes(original)) score += 4;
+
+  for (const token of tokenize(query)) {
+    if (h.startsWith(token)) score += 1;
+  }
+
+  return score;
+}
+
+function scoreProduto(p: Produto, query: string) {
+  const qText = normalizeText(query);
+  const qDigits = normalizeDigits(query);
+
+  const nome = normalizeText(p.nome);
+  const sku = normalizeText(p.codigo_sku);
+  const barras = normalizeText(p.codigo_barras);
+  const categoria = normalizeText(p.categoria);
+  const subcategoria = normalizeText(p.subcategoria);
+  const tipo = normalizeText(p.tipo_produto);
+
+  const skuDigits = normalizeDigits(p.codigo_sku);
+  const barrasDigits = normalizeDigits(p.codigo_barras);
+
+  const textoCompleto = [nome, sku, barras, categoria, subcategoria, tipo].join(" ");
+
+  let score = scoreSearch(textoCompleto, query);
+
+  if (qText) {
+    if (nome === qText) score += 20;
+    if (sku === qText) score += 25;
+    if (barras === qText) score += 25;
+    if (nome.startsWith(qText)) score += 8;
+    if (sku.startsWith(qText)) score += 10;
+    if (barras.startsWith(qText)) score += 10;
+    if (categoria.includes(qText)) score += 4;
+    if (subcategoria.includes(qText)) score += 4;
+    if (tipo.includes(qText)) score += 4;
+  }
+
+  if (qDigits) {
+    if (skuDigits === qDigits) score += 30;
+    if (barrasDigits === qDigits) score += 30;
+    if (skuDigits.startsWith(qDigits)) score += 12;
+    if (barrasDigits.startsWith(qDigits)) score += 12;
+    if (skuDigits.includes(qDigits)) score += 6;
+    if (barrasDigits.includes(qDigits)) score += 6;
+  }
+
+  return score;
+}
+
+function isValidImageUrl(url: string) {
+  const v = String(url || "").trim();
+  if (!v) return true;
+  return /^https?:\/\/.+/i.test(v);
+}
+
+function getPreviewImage(url?: string | null) {
+  return String(url || "").trim();
+}
+
 export default function ProdutosPage() {
   const router = useRouter();
 
@@ -90,6 +219,7 @@ export default function ProdutosPage() {
   const [tipoProduto, setTipoProduto] = useState("SIMPLES");
   const [unidadeMedida, setUnidadeMedida] = useState("UN");
   const [observacoes, setObservacoes] = useState("");
+  const [imagemUrl, setImagemUrl] = useState("");
 
   const [produtoBuscaComponente, setProdutoBuscaComponente] = useState("");
   const [produtoComponenteId, setProdutoComponenteId] = useState("");
@@ -164,6 +294,7 @@ export default function ProdutosPage() {
     setTipoProduto("SIMPLES");
     setUnidadeMedida("UN");
     setObservacoes("");
+    setImagemUrl("");
     setProdutoBuscaComponente("");
     setProdutoComponenteId("");
     setQuantidadeComponente("");
@@ -194,6 +325,7 @@ export default function ProdutosPage() {
     setTipoProduto(produto.tipo_produto || "SIMPLES");
     setUnidadeMedida(produto.unidade_medida || "UN");
     setObservacoes(produto.observacoes || "");
+    setImagemUrl(produto.imagem_url || "");
     setComposicao([]);
 
     if ((produto.tipo_produto || "SIMPLES") === "COMPOSTO") {
@@ -256,28 +388,60 @@ export default function ProdutosPage() {
   }
 
   const produtosFiltrados = useMemo(() => {
-    const q = up(busca.trim());
+    const q = busca.trim();
     if (!q) return produtos;
 
-    return produtos.filter((p) =>
-      up(
-        `${p.nome || ""} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""} ${p.subcategoria || ""} ${p.tipo_produto || ""} ${p.status || ""}`
-      ).includes(q)
-    );
+    return [...produtos]
+      .filter((p) => {
+        const texto = [
+          p.nome,
+          p.codigo_sku,
+          p.codigo_barras,
+          p.categoria,
+          p.subcategoria,
+          p.tipo_produto,
+          p.status,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        const qDigits = normalizeDigits(q);
+        const skuDigits = normalizeDigits(p.codigo_sku);
+        const barrasDigits = normalizeDigits(p.codigo_barras);
+
+        return (
+          normalizeText(texto).includes(normalizeText(q)) ||
+          matchSmart(texto, q) ||
+          (qDigits.length >= 2 && (skuDigits.includes(qDigits) || barrasDigits.includes(qDigits)))
+        );
+      })
+      .sort((a, b) => scoreProduto(b, q) - scoreProduto(a, q));
   }, [produtos, busca]);
 
   const produtosComponentesDisponiveis = useMemo(() => {
-    const q = up(produtoBuscaComponente.trim());
+    const q = produtoBuscaComponente.trim();
 
-    return produtos
+    return [...produtos]
       .filter((p) => p.id !== editingId)
       .filter((p) => up(p.status || "ATIVO") !== "INATIVO")
       .filter((p) => {
         if (!q) return true;
-        return up(
-          `${p.nome || ""} ${p.codigo_sku || ""} ${p.codigo_barras || ""} ${p.categoria || ""}`
-        ).includes(q);
+
+        const texto = [p.nome, p.codigo_sku, p.codigo_barras, p.categoria]
+          .filter(Boolean)
+          .join(" ");
+
+        const qDigits = normalizeDigits(q);
+        const skuDigits = normalizeDigits(p.codigo_sku);
+        const barrasDigits = normalizeDigits(p.codigo_barras);
+
+        return (
+          normalizeText(texto).includes(normalizeText(q)) ||
+          matchSmart(texto, q) ||
+          (qDigits.length >= 2 && (skuDigits.includes(qDigits) || barrasDigits.includes(qDigits)))
+        );
       })
+      .sort((a, b) => scoreProduto(b, q) - scoreProduto(a, q))
       .slice(0, 20);
   }, [produtos, produtoBuscaComponente, editingId]);
 
@@ -350,6 +514,11 @@ export default function ProdutosPage() {
       return;
     }
 
+    if (!isValidImageUrl(imagemUrl)) {
+      alert("COLE UM LINK VÁLIDO DE IMAGEM.");
+      return;
+    }
+
     if (tipoProduto === "COMPOSTO" && composicao.length === 0) {
       alert("PRODUTO COMPOSTO PRECISA TER PELO MENOS 1 COMPONENTE.");
       return;
@@ -373,6 +542,7 @@ export default function ProdutosPage() {
       unidade_medida: up(unidadeMedida),
       controla_composicao: tipoProduto === "COMPOSTO",
       observacoes: up(observacoes),
+      imagem_url: imagemUrl.trim() || null,
     };
 
     let produtoId = editingId;
@@ -459,7 +629,7 @@ export default function ProdutosPage() {
                 PRODUTOS
               </h1>
               <p className="mt-3 text-sm text-white/85">
-                CADASTRO COM MODAL, PRODUTO SIMPLES E PRODUTO COMPOSTO
+                LISTA PROFISSIONAL COM FOTO, ESTOQUE E BUSCA RÁPIDA
               </p>
             </div>
 
@@ -467,13 +637,22 @@ export default function ProdutosPage() {
               <KpiMini titulo="TOTAL" valor={String(produtos.length)} />
               <KpiMini
                 titulo="COMPOSTOS"
-                valor={String(produtos.filter((p) => up(p.tipo_produto || "SIMPLES") === "COMPOSTO").length)}
+                valor={String(
+                  produtos.filter((p) => up(p.tipo_produto || "SIMPLES") === "COMPOSTO").length
+                )}
               />
               <KpiMini
                 titulo="ATIVOS"
                 valor={String(produtos.filter((p) => up(p.status || "ATIVO") === "ATIVO").length)}
               />
-              <KpiMini titulo="ESTOQUE BAIXO" valor={String(produtos.filter((p) => toMoney(p.estoque_atual) <= toMoney(p.estoque_minimo)).length)} destaque />
+              <KpiMini
+                titulo="ESTOQUE BAIXO"
+                valor={String(
+                  produtos.filter((p) => toMoney(p.estoque_atual) <= toMoney(p.estoque_minimo))
+                    .length
+                )}
+                destaque
+              />
             </div>
           </div>
 
@@ -483,7 +662,7 @@ export default function ProdutosPage() {
             </button>
 
             <input
-              placeholder="BUSCAR PRODUTO..."
+              placeholder="BUSCAR POR NOME, SKU, CÓDIGO, CATEGORIA..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               className="h-[48px] w-[320px] xl:w-[420px] max-w-full rounded-2xl border border-white/20 bg-white/10 px-5 text-[16px] text-white outline-none placeholder:text-white/70"
@@ -496,16 +675,17 @@ export default function ProdutosPage() {
             <div>
               <h2 className="section-title">PRODUTOS CADASTRADOS</h2>
               <p className="section-subtitle">
-                Gerencie itens simples e compostos com baixa automática.
+                Lista rápida com imagem, estoque, preços e ações.
               </p>
             </div>
           </div>
 
           <div className="overflow-auto">
-            <table className="tabela min-w-[1300px]">
+            <table className="tabela min-w-[1450px]">
               <thead>
                 <tr>
-                  <th>NOME</th>
+                  <th>IMG</th>
+                  <th>PRODUTO</th>
                   <th>SKU</th>
                   <th>CATEGORIA</th>
                   <th>TIPO</th>
@@ -520,30 +700,68 @@ export default function ProdutosPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="empty-state">
+                    <td colSpan={10} className="empty-state">
                       CARREGANDO...
                     </td>
                   </tr>
                 ) : produtosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="empty-state">
+                    <td colSpan={10} className="empty-state">
                       NENHUM PRODUTO ENCONTRADO.
                     </td>
                   </tr>
                 ) : (
                   produtosFiltrados.map((item) => (
                     <tr key={item.id}>
-                      <td className="font-bold">{item.nome || "-"}</td>
+                      <td>
+                        <div className="img-thumb">
+                          {getPreviewImage(item.imagem_url) ? (
+                            <img
+                              src={getPreviewImage(item.imagem_url)}
+                              alt={item.nome || "PRODUTO"}
+                            />
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td>
+                        <div className="font-bold">{item.nome || "-"}</div>
+                        <div className="text-xs text-[#64748B]">
+                          {item.codigo_barras || "-"}
+                        </div>
+                      </td>
+
                       <td>{item.codigo_sku || "-"}</td>
+
                       <td>
                         {item.categoria || "-"}
                         {item.subcategoria ? ` / ${item.subcategoria}` : ""}
                       </td>
+
                       <td>{item.tipo_produto || "SIMPLES"}</td>
+
                       <td>{item.unidade_medida || "UN"}</td>
-                      <td>{moneyBR(toMoney(item.preco_balcao))}</td>
-                      <td>{toMoney(item.estoque_atual)}</td>
-                      <td>{item.status || "-"}</td>
+
+                      <td className="font-bold">{moneyBR(toMoney(item.preco_balcao))}</td>
+
+                      <td>
+                        <span
+                          className={
+                            toMoney(item.estoque_atual) <= toMoney(item.estoque_minimo)
+                              ? "estoque-baixo"
+                              : "estoque-ok"
+                          }
+                        >
+                          {toMoney(item.estoque_atual)}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className="status-chip">{item.status || "ATIVO"}</span>
+                      </td>
+
                       <td>
                         <div className="flex gap-2 flex-wrap">
                           <button
@@ -682,6 +900,30 @@ export default function ProdutosPage() {
                         />
                         <span>CONTROLA ESTOQUE</span>
                       </label>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="label">LINK DA FOTO</label>
+                      <input
+                        className="campo"
+                        value={imagemUrl}
+                        onChange={(e) => setImagemUrl(e.target.value)}
+                        placeholder="COLE AQUI O LINK DIRETO DA IMAGEM"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <div className="preview-box">
+                        {getPreviewImage(imagemUrl) ? (
+                          <img
+                            src={getPreviewImage(imagemUrl)}
+                            alt="PREVIEW DO PRODUTO"
+                            className="preview-img"
+                          />
+                        ) : (
+                          <div className="preview-empty">PREVIEW DA FOTO</div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="md:col-span-2">
@@ -982,6 +1224,75 @@ export default function ProdutosPage() {
           border-color: #fecaca;
           background: #fef2f2;
           color: #b91c1c;
+        }
+
+        .img-thumb {
+          width: 50px;
+          height: 50px;
+          border-radius: 10px;
+          overflow: hidden;
+          border: 1px solid #e5e7eb;
+          background: #f8fafc;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .img-thumb img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .estoque-ok {
+          color: #16a34a;
+          font-weight: 800;
+        }
+
+        .estoque-baixo {
+          color: #dc2626;
+          font-weight: 800;
+        }
+
+        .status-chip {
+          background: #e0f2fe;
+          color: #0369a1;
+          padding: 4px 8px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 800;
+          display: inline-flex;
+        }
+
+        .preview-box {
+          width: 100%;
+          min-height: 220px;
+          border: 1px dashed #cbd5e1;
+          border-radius: 18px;
+          background: #f8fafc;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .preview-img {
+          width: 100%;
+          max-height: 320px;
+          object-fit: contain;
+          display: block;
+          background: white;
+        }
+
+        .preview-empty {
+          font-size: 12px;
+          font-weight: 800;
+          color: #64748b;
+          padding: 20px;
         }
 
         .tabela {
